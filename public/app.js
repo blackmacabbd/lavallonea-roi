@@ -582,7 +582,7 @@ function renderDonutDottore(t) {
 function renderBarreMia(dati) {
   el('barre-legend').innerHTML = legendHtml([
     { label: 'Prezzo concorrenza scontato', color: '#e74c3c' },
-    { label: 'Prezzo Lavallonea scontato',  color: '#f5a800' }
+    { label: 'Prezzo Lavallonea scontato',  color: '#1a7a4a' }
   ]);
 
   const canvas = el('chart-barre');
@@ -607,7 +607,7 @@ function renderBarreMia(dati) {
         {
           label: 'Prezzo Lavallonea scontato',
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
-          backgroundColor: '#f5a800',
+          backgroundColor: '#1a7a4a',
           borderRadius: 4
         }
       ]
@@ -645,7 +645,7 @@ function renderBarreMia(dati) {
 function renderBarreDottore(dati) {
   el('barre-legend').innerHTML = legendHtml([
     { label: 'Prezzo di mercato',  color: '#e74c3c' },
-    { label: 'Prezzo Lavallonea',  color: '#f5a800' }
+    { label: 'Prezzo Lavallonea',  color: '#1a7a4a' }
   ]);
 
   const canvas = el('chart-barre');
@@ -670,7 +670,7 @@ function renderBarreDottore(dati) {
         {
           label: 'Prezzo Lavallonea',
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
-          backgroundColor: '#f5a800',
+          backgroundColor: '#1a7a4a',
           borderRadius: 4
         }
       ]
