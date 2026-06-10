@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lavallonea ROI Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="app-layout">
+
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <span class="logo-name">Lavallonea</span>
+      <span class="logo-sub">ROI Dashboard</span>
+    </div>
+
+    <nav class="sidebar-nav" id="sidebar-nav">
+      <!-- Populated by app.js -->
+      <div class="sidebar-loading">Caricamento...</div>
+    </nav>
+  </aside>
+
+  <!-- ── MAIN CONTENT ── -->
+  <main class="main-content" id="main-content">
+    <div class="page-loading">
+      <div class="spinner"></div>
+    </div>
+  </main>
+
+</div>
+
+<!-- ═══════════════════════════════════════════
+     UPLOAD MODAL
+══════════════════════════════════════════════ -->
+<div class="modal-backdrop" id="modal-backdrop" hidden></div>
+<div class="modal" id="upload-modal" hidden role="dialog" aria-modal="true" aria-label="Carica file Excel">
+  <div class="modal-header">
+    <h2>Carica file Excel</h2>
+    <button class="modal-close" id="modal-close" aria-label="Chiudi">&times;</button>
+  </div>
+
+  <div class="modal-body">
+    <div class="dropzone" id="dropzone">
+      <div class="dropzone-icon">📂</div>
+      <div class="dropzone-text">Trascina qui il file <strong>.xlsx</strong></div>
+      <div class="dropzone-sub">oppure</div>
+      <label class="btn-outline" for="file-input">Seleziona file</label>
+      <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
+    </div>
+
+    <div class="upload-status" id="upload-status" hidden></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     CONFIRM MODAL (duplicati)
+══════════════════════════════════════════════ -->
+<div class="modal modal--sm" id="confirm-modal" hidden role="dialog" aria-modal="true">
+  <div class="modal-header">
+    <h2>File già presente</h2>
+  </div>
+  <div class="modal-body">
+    <p id="confirm-msg" style="color:#6b7280;margin-bottom:20px;line-height:1.5"></p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn-ghost" id="confirm-cancel">Annulla</button>
+      <button class="btn-primary" id="confirm-ok">Sovrascrivi</button>
+    </div>
+  </div>
+</div>
+
+<script src="/vendor/chart.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
