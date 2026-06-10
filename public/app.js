@@ -194,12 +194,25 @@ async function renderDashboard() {
   const { strutture_count, file_count, differenziale_totale, ultimi_file, per_struttura } = data;
 
   if (strutture_count === 0) {
-    setMain(`<div class="empty-state">
-      <div class="empty-icon">📂</div>
-      <div class="empty-title">Nessun dato ancora</div>
-      <div class="empty-sub">Carica il primo file Excel per iniziare.</div>
-      <button class="btn-primary mt-4" onclick="openUploadModal()">+ Carica file Excel</button>
-    </div>`);
+    setMain(`
+      <div class="page-header">
+        <div><div class="page-title">Dashboard</div></div>
+      </div>
+      <div class="page-body">
+        <div class="empty-state" style="margin-bottom:24px">
+          <div class="empty-icon">📂</div>
+          <div class="empty-title">Nessun dato ancora</div>
+          <div class="empty-sub">Carica un file Excel oppure usa il Calcolatore ROI qui sotto.</div>
+          <button class="btn-primary mt-4" onclick="openUploadModal()">+ Carica file Excel</button>
+        </div>
+      </div>
+    `);
+    const roiSection = document.createElement('div');
+    roiSection.className = 'section-card';
+    roiSection.style.cssText = 'margin:0 24px 24px';
+    roiSection.innerHTML = buildRoiSectionHtml();
+    el('main-content').querySelector('.page-body').appendChild(roiSection);
+    initRoiEvents();
     return;
   }
 
@@ -958,7 +971,7 @@ async function renderCronologia() {
           <table>
             <thead><tr>
               <th>Data</th><th>File</th><th>Struttura</th><th>Fogli</th>
-              <th>Concorrenza scontata</th><th>Lavallonea scontata</th><th>Risparmio</th>
+              <th>Concorrenza scontata</th><th>Lavallonea scontata</th><th>Risparmio</th><th></th>
             </tr></thead>
             <tbody id="crono-tbody">
               ${buildCronoRows(rows)}
@@ -985,6 +998,9 @@ function buildCronoRows(rows) {
       <td style="color:#c0392b">${euro(r.totale_dottore)}</td>
       <td class="td-yellow">${euro(r.totale_costo)}</td>
       <td class="td-green">${euro(r.differenziale)}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="roi-del-btn" onclick="deleteCrono(${r.id})" title="Elimina">×</button>
+      </td>
     </tr>`).join('');
 }
 
@@ -994,6 +1010,18 @@ async function filterCronologia() {
   const rows = await api(url).catch(() => []);
   const tbody = el('crono-tbody');
   if (tbody) tbody.innerHTML = buildCronoRows(rows);
+}
+
+async function deleteCrono(id) {
+  if (!confirm('Eliminare questo file dalla cronologia? Verranno rimossi tutti i dati associati.')) return;
+  try {
+    await fetch(`/api/cronologia/${id}`, { method: 'DELETE' });
+    await loadStrutture();
+    buildSidebar();
+    renderCronologia();
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  }
 }
 
 function navigateFromCrono(fileId, strutturaId, foglio) {
@@ -1255,20 +1283,13 @@ function buildRoiSectionHtml() {
     <button class="roi-tab-btn ${tab === t ? 'active' : ''}" onclick="switchRoiTab('${t}')">${t}</button>
   `).join('');
 
-  const struttureListId = 'roi-strutture-list';
   const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
 
   return `
-    <datalist id="${struttureListId}">${struttureOpts}</datalist>
+    <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:500;color:#1a1a1a">Calcolatore ROI</div>
-      <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <input id="roi-struttura-sel" list="${struttureListId}" value="${escHtml(S.roi.struttura)}"
-          placeholder="Struttura…" autocomplete="off"
-          style="font-size:12px;padding:5px 8px;border:1px solid #e8e9eb;border-radius:6px;background:#fff;width:180px"
-          oninput="S.roi.struttura=this.value">
-        <div class="roi-tabs-wrap">${tabHtml}</div>
-      </div>
+      <div class="roi-tabs-wrap">${tabHtml}</div>
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml(tab)}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -1399,10 +1420,9 @@ function buildRoiRigaHtml(r, i, tipo) {
   }
 
   const rispColor = risp >= 0 ? '#1a7a4a' : '#c0392b';
-  const strutturaNome = S.roi.struttura;
 
   const strutturaCell = i === 0
-    ? `<td><span style="font-size:11px;color:#6b7280;font-style:italic">${strutturaNome || '—'}</span></td>`
+    ? `<td><input class="roi-input roi-struttura-inp" list="roi-strutture-list" value="${escHtml(S.roi.struttura)}" placeholder="Struttura…" autocomplete="off" oninput="S.roi.struttura=this.value" style="width:120px"></td>`
     : `<td></td>`;
 
   if (isFoglio1) {
@@ -1727,16 +1747,11 @@ function getRoiRigheValide(tipo) {
 }
 
 async function salvaCalcolo() {
-  const tipo   = S.roi.tab;
-  const righe  = getRoiRigheValide(tipo);
-  const strSel = el('roi-struttura-sel');
-  let struttura = strSel ? strSel.value : S.roi.struttura;
+  const tipo     = S.roi.tab;
+  const righe    = getRoiRigheValide(tipo);
+  const struttura = (document.querySelector('.roi-struttura-inp')?.value || S.roi.struttura || '').trim();
 
-  if (struttura === '__nuova__') {
-    struttura = prompt('Nome nuova struttura:');
-    if (!struttura) return;
-  }
-  if (!struttura) return roiMsg('Seleziona una struttura prima di salvare', 'error');
+  if (!struttura) return roiMsg('Scrivi il nome della struttura nella prima colonna', 'error');
   if (!righe.length) return roiMsg('Nessun esame con nome compilato', 'error');
 
   const nomeFile = `Calcolo_${tipo}_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
@@ -1756,10 +1771,9 @@ async function salvaCalcolo() {
 
 async function esportaExcelRoi() {
   syncRoiStateFromDOM();
-  const tipo   = S.roi.tab;
-  const righe  = getRoiRigheValide(tipo);
-  const strSel = el('roi-struttura-sel');
-  const struttura = strSel ? strSel.value : S.roi.struttura;
+  const tipo      = S.roi.tab;
+  const righe     = getRoiRigheValide(tipo);
+  const struttura = (document.querySelector('.roi-struttura-inp')?.value || S.roi.struttura || '').trim();
 
   if (!righe.length) return roiMsg('Nessun esame compilato', 'error');
   try {

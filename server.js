@@ -936,6 +936,17 @@ app.post('/api/export-excel', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.delete('/api/cronologia/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    db.prepare('DELETE FROM dati_foglio WHERE file_id = ?').run(id);
+    db.prepare('DELETE FROM file_caricati WHERE id = ?').run(id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`\n  ✓ Lavallonea ROI Dashboard`);
   console.log(`  → http://localhost:${PORT}\n`);
