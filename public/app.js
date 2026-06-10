@@ -578,17 +578,17 @@ function renderDonutDottore(t) {
   });
 }
 
-// ─── BARRE Vista MIA (grouped: conc rosso vs lav giallo) ──
+// ─── BARRE Vista MIA (stacked: giallo=Lav + verde=risparmio = totale concorrenza) ──
 function renderBarreMia(dati) {
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Prezzo concorrenza scontato', color: '#e74c3c' },
-    { label: 'Prezzo Lavallonea scontato',  color: '#1a7a4a' }
+    { label: 'Paghi con Lavallonea', color: '#f5a800' },
+    { label: 'Risparmio dottore',    color: '#1a7a4a' }
   ]);
 
   const canvas = el('chart-barre');
   if (!canvas) return;
 
-  const h = Math.max(220, dati.length * 48);
+  const h = Math.max(200, dati.length * 32);
   canvas.parentElement.style.height = h + 'px';
   canvas.style.display = 'block';
 
@@ -599,59 +599,52 @@ function renderBarreMia(dati) {
       labels: dati.map(d => d.esame),
       datasets: [
         {
-          label: 'Prezzo concorrenza scontato',
-          data: dati.map(d => Math.max(0, d.prezzo_scontato_concorrenza || 0)),
-          backgroundColor: '#e74c3c',
-          borderRadius: 4
+          label: 'Paghi con Lavallonea',
+          data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
+          backgroundColor: '#f5a800',
+          borderRadius: 0
         },
         {
-          label: 'Prezzo Lavallonea scontato',
-          data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
+          label: 'Risparmio dottore',
+          data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
           backgroundColor: '#1a7a4a',
-          borderRadius: 4
+          borderRadius: { topRight: 4, bottomRight: 4 }
         }
       ]
     },
-    options: makeBarreOptions(dati, {
+    options: makeBarreOptions(dati, true, {
       title: items => {
         const d = dati[items[0]?.dataIndex];
-        if (!d) return '';
-        return `${d.esame} (N. esami: ${d.n_esami})`;
+        return d ? `${d.esame}${d.n_esami > 1 ? ` (×${d.n_esami})` : ''}` : '';
       },
       label: ctx => {
         const d = dati[ctx.dataIndex];
         if (!d) return '';
-        if (ctx.datasetIndex === 0) return `  Concorrenza (scontato): ${euro(d.prezzo_scontato_concorrenza)}`;
-        return `  Lavallonea (scontato): ${euro(d.totale_scontato_lav)}`;
+        if (ctx.datasetIndex === 0) return `  Paghi con Lavallonea: ${euro(d.totale_scontato_lav)}`;
+        const pct = d.prezzo_scontato_concorrenza > 0
+          ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
+        return `  Risparmio: ${euro(d.risparmio_dottore)} (${pct}%)`;
       },
       afterBody: items => {
         const d = dati[items[0]?.dataIndex];
         if (!d) return [];
-        const risp = d.risparmio_dottore || 0;
-        const pct  = d.prezzo_scontato_concorrenza > 0
-          ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
-        return [
-          `  ──────────────────────`,
-          `  Risparmio dottore: ${euro(risp)} (+${pct}%)`,
-          `  Sconto concorrenza: ${euro(d.sconto_concorrenza)}`,
-          `  Sconto Lavallonea: ${euro(d.sconto_lav)}`
-        ];
+        return [`  Totale barra = prezzo concorrenza: ${euro(d.prezzo_scontato_concorrenza)}`];
       }
     })
   });
 }
 
-// ─── BARRE Vista DOTTORE (grouped: stesso layout, tooltip semplice) ──
+// ─── BARRE Vista DOTTORE (stacked: giallo=Lav + verde=risparmio) ──
 function renderBarreDottore(dati) {
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Prezzo di mercato',  color: '#e74c3c' },
-    { label: 'Prezzo Lavallonea',  color: '#1a7a4a' }
+    { label: 'Paghi con Lavallonea', color: '#f5a800' },
+    { label: 'Risparmio vs mercato', color: '#1a7a4a' }
   ]);
 
   const canvas = el('chart-barre');
   if (!canvas) return;
 
-  const h = Math.max(220, dati.length * 48);
+  const h = Math.max(200, dati.length * 32);
   canvas.parentElement.style.height = h + 'px';
   canvas.style.display = 'block';
 
@@ -662,40 +655,39 @@ function renderBarreDottore(dati) {
       labels: dati.map(d => d.esame),
       datasets: [
         {
-          label: 'Prezzo di mercato',
-          data: dati.map(d => Math.max(0, d.prezzo_scontato_concorrenza || 0)),
-          backgroundColor: '#e74c3c',
-          borderRadius: 4
+          label: 'Paghi con Lavallonea',
+          data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
+          backgroundColor: '#f5a800',
+          borderRadius: 0
         },
         {
-          label: 'Prezzo Lavallonea',
-          data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
+          label: 'Risparmio vs mercato',
+          data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
           backgroundColor: '#1a7a4a',
-          borderRadius: 4
+          borderRadius: { topRight: 4, bottomRight: 4 }
         }
       ]
     },
-    options: makeBarreOptions(dati, {
+    options: makeBarreOptions(dati, true, {
       title: items => dati[items[0]?.dataIndex]?.esame || '',
       label: ctx => {
         const d = dati[ctx.dataIndex];
         if (!d) return '';
-        if (ctx.datasetIndex === 0) return `  Prezzo mercato: ${euro(d.prezzo_scontato_concorrenza)}`;
-        return `  Prezzo Lavallonea: ${euro(d.totale_scontato_lav)}`;
+        if (ctx.datasetIndex === 0) return `  Prezzo Lavallonea: ${euro(d.totale_scontato_lav)}`;
+        const pct = d.prezzo_scontato_concorrenza > 0
+          ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
+        return `  Risparmi: ${euro(d.risparmio_dottore)} (${pct}%)`;
       },
       afterBody: items => {
         const d = dati[items[0]?.dataIndex];
         if (!d) return [];
-        const risp = d.risparmio_dottore || 0;
-        const pct  = d.prezzo_scontato_concorrenza > 0
-          ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
-        return [`  Risparmi: ${euro(risp)} (${pct}%)`];
+        return [`  Prezzo di mercato: ${euro(d.prezzo_scontato_concorrenza)}`];
       }
     })
   });
 }
 
-function makeBarreOptions(dati, tooltipCbs) {
+function makeBarreOptions(dati, stacked, tooltipCbs) {
   return {
     indexAxis: 'y',
     responsive: true,
@@ -703,12 +695,12 @@ function makeBarreOptions(dati, tooltipCbs) {
     animation: { duration: 500 },
     scales: {
       x: {
-        stacked: false,
+        stacked: !!stacked,
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: { font: { size: 11 }, callback: v => euroCompact(v) }
       },
       y: {
-        stacked: false,
+        stacked: !!stacked,
         grid: { display: false },
         ticks: { font: { size: 11 } }
       }
