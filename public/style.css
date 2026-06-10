@@ -704,6 +704,136 @@ tbody tr.clickable:hover td { background: #edf7f2; color: #1a7a4a; }
 }
 
 /* ═══════════════════════════════════════════════════
+   ROI CALCOLATORE
+   ═══════════════════════════════════════════════════ */
+
+.roi-tabs-wrap {
+  display: flex;
+  gap: 4px;
+}
+
+.roi-tab-btn {
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #e8e9eb;
+  border-radius: 6px;
+  background: #fff;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 120ms;
+}
+.roi-tab-btn.active {
+  background: #f5a800;
+  border-color: #f5a800;
+  color: #fff;
+}
+.roi-tab-btn:hover:not(.active) { background: #f9fafb; }
+
+.roi-editable-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.roi-editable-table th {
+  padding: 6px 8px;
+  background: #f8f9fa;
+  border: 1px solid #e8e9eb;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+  text-align: left;
+  font-size: 11px;
+}
+
+.roi-editable-table td {
+  padding: 4px 6px;
+  border: 1px solid #f0f0f0;
+  vertical-align: middle;
+}
+
+.roi-editable-table tbody tr:hover td { background: rgba(245,168,0,0.04); }
+
+.roi-input {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 12px;
+  background: transparent;
+  transition: all 80ms;
+  color: #1a1a1a;
+}
+.roi-input:focus {
+  outline: none;
+  border-color: #f5a800;
+  background: #fffdf0;
+}
+.roi-input.roi-num { text-align: right; width: 88px; }
+
+.roi-calc {
+  text-align: right;
+  color: #374151;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.roi-totals-row td {
+  border-top: 2px solid #e8e9eb;
+  padding: 6px 8px;
+  font-size: 12px;
+  background: #f8f9fa;
+}
+
+.roi-diff-row td {
+  padding: 8px 8px 4px;
+  border-top: none;
+  background: #fff;
+  font-size: 13px;
+}
+
+.roi-del-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fee2e2;
+  color: #c0392b;
+  font-size: 14px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  opacity: 0.6;
+  transition: opacity 120ms;
+}
+.roi-del-btn:hover { opacity: 1; }
+
+.roi-autocomplete {
+  position: absolute;
+  background: #fff;
+  border: 1px solid #e8e9eb;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 200;
+  min-width: 200px;
+}
+
+.roi-ac-item {
+  padding: 7px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f3f4f6;
+}
+.roi-ac-item:last-child { border-bottom: none; }
+.roi-ac-item:hover { background: #fff9e6; }
+
+/* ═══════════════════════════════════════════════════
    UTILITY
    ═══════════════════════════════════════════════════ */
 .hidden { display: none !important; }

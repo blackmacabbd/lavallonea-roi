@@ -814,6 +814,128 @@ app.post('/api/pdf/completo/:fileId/:foglio', express.json({ limit: '15mb' }), a
   }
 });
 
+// ── Calcolatore endpoints ──────────────────────────
+
+app.get('/api/esami/autocomplete', (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (q.length < 1) return res.json([]);
+    const rows = db.prepare(
+      `SELECT DISTINCT esame FROM dati_foglio WHERE esame LIKE ? ORDER BY esame LIMIT 20`
+    ).all(`%${q}%`);
+    res.json(rows.map(r => r.esame));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/esami/prezzi', (req, res) => {
+  try {
+    const nome = String(req.query.nome || '').trim();
+    const row = db.prepare(`
+      SELECT
+        ROUND(AVG(listino_concorrenza), 2) as listino_concorrenza,
+        ROUND(AVG(listino_lav), 2)         as listino_lav,
+        ROUND(AVG(prezzo_scontato_lav), 2) as prezzo_scontato_lav
+      FROM dati_foglio WHERE LOWER(TRIM(esame)) = LOWER(TRIM(?))
+    `).get(nome);
+    res.json(row || {});
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/calcolo/salva', express.json(), (req, res) => {
+  try {
+    const { struttura: strutturaNome, foglio, righe, nomeFile } = req.body || {};
+    if (!strutturaNome || !foglio || !righe?.length)
+      return res.status(400).json({ error: 'Dati mancanti' });
+
+    db.exec('BEGIN');
+    try {
+      let strRow = db.prepare('SELECT id FROM strutture WHERE nome = ?').get(strutturaNome);
+      if (!strRow) {
+        const r = db.prepare('INSERT INTO strutture (nome) VALUES (?)').run(strutturaNome);
+        strRow = { id: Number(r.lastInsertRowid) };
+      }
+      const nomef = nomeFile || `Calcolo_${foglio}_${new Date().toISOString().split('T')[0]}`;
+      const fRow  = db.prepare(
+        'INSERT INTO file_caricati (struttura_id, nome_file, path_file) VALUES (?, ?, ?)'
+      ).run(strRow.id, nomef, '');
+      const fileId = Number(fRow.lastInsertRowid);
+
+      const ins = db.prepare(`
+        INSERT INTO dati_foglio
+          (file_id, foglio, esame, n_esami,
+           listino_concorrenza, totale_concorrenza, prezzo_scontato_concorrenza,
+           listino_lav, totale_listino_lav, prezzo_scontato_lav, totale_scontato_lav,
+           risparmio_dottore, sconto_concorrenza, sconto_lav)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const r of righe) {
+        const n        = r.n_esami || 1;
+        const lConc    = r.listino_concorrenza || 0;
+        const tConc    = lConc * n;
+        const pConc    = parseFloat((tConc * 0.9).toFixed(2));
+        const lLav     = r.listino_lav || 0;
+        const tLLav    = lLav * n;
+        const pLav     = r.prezzo_scontato_lav || 0;
+        const tPLav    = pLav * n;
+        ins.run(fileId, foglio, r.esame, n,
+          lConc, tConc, pConc, lLav, tLLav, pLav, tPLav,
+          pConc - tPLav, tConc - pConc, tLLav - tPLav);
+      }
+      db.exec('COMMIT');
+      res.json({ success: true, file_id: fileId, struttura_id: strRow.id, struttura: strutturaNome, fogli: [foglio] });
+    } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/export-excel', express.json(), (req, res) => {
+  try {
+    const { foglio, struttura, righe } = req.body || {};
+    if (!righe?.length) return res.status(400).json({ error: 'Nessuna riga' });
+    const wb = XLSX.utils.book_new();
+    let wsData;
+    if (foglio === 'Foglio 1') {
+      wsData = [
+        ['Struttura', '', 'ESAMI', 'listino vet med', 'prezzo vet med', '', 'Listino lav', 'prezzo lav'],
+        ...righe.map((r, i) => [
+          i === 0 ? struttura : '', '',
+          r.esame,
+          r.listino_concorrenza || 0,
+          parseFloat(((r.listino_concorrenza || 0) * 0.9).toFixed(2)),
+          '',
+          r.listino_lav || 0,
+          r.prezzo_scontato_lav || 0
+        ])
+      ];
+    } else {
+      wsData = [
+        ['Struttura', '', 'ESAMI', 'N. esami', 'Costo esami', 'Totale costo esami',
+         'prezzo vet med scontato', '', 'LISTINO LAVALLONEA', 'TOTALE LISTINO',
+         `prezzo lav. ${foglio}`, 'Totale prezzo lav'],
+        ...righe.map((r, i) => {
+          const n = r.n_esami || 1;
+          const lc = r.listino_concorrenza || 0;
+          return [
+            i === 0 ? struttura : '', '', r.esame, n,
+            lc, lc * n, parseFloat((lc * n * 0.9).toFixed(2)),
+            '',
+            r.listino_lav || 0, (r.listino_lav || 0) * n,
+            r.prezzo_scontato_lav || 0, (r.prezzo_scontato_lav || 0) * n
+          ];
+        })
+      ];
+    }
+    const ws  = XLSX.utils.aoa_to_sheet(wsData);
+    XLSX.utils.book_append_sheet(wb, ws, foglio);
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="lavallonea_${(struttura||'export').replace(/\s/g,'_')}_${foglio}.xlsx"`
+    });
+    res.send(buf);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.listen(PORT, () => {
   console.log(`\n  ✓ Lavallonea ROI Dashboard`);
   console.log(`  → http://localhost:${PORT}\n`);
