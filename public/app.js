@@ -1255,19 +1255,18 @@ function buildRoiSectionHtml() {
     <button class="roi-tab-btn ${tab === t ? 'active' : ''}" onclick="switchRoiTab('${t}')">${t}</button>
   `).join('');
 
-  const struttureSel = S.strutture.map(s =>
-    `<option value="${s.nome}" ${S.roi.struttura === s.nome ? 'selected' : ''}>${s.nome}</option>`
-  ).join('');
+  const struttureListId = 'roi-strutture-list';
+  const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
 
   return `
+    <datalist id="${struttureListId}">${struttureOpts}</datalist>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:500;color:#1a1a1a">Calcolatore ROI</div>
       <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
-        <select id="roi-struttura-sel" style="font-size:12px;padding:5px 8px;border:1px solid #e8e9eb;border-radius:6px;background:#fff" onchange="S.roi.struttura=this.value">
-          <option value="">Struttura…</option>
-          ${struttureSel}
-          <option value="__nuova__">+ Nuova…</option>
-        </select>
+        <input id="roi-struttura-sel" list="${struttureListId}" value="${escHtml(S.roi.struttura)}"
+          placeholder="Struttura…" autocomplete="off"
+          style="font-size:12px;padding:5px 8px;border:1px solid #e8e9eb;border-radius:6px;background:#fff;width:180px"
+          oninput="S.roi.struttura=this.value">
         <div class="roi-tabs-wrap">${tabHtml}</div>
       </div>
     </div>
