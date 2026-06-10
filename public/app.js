@@ -2,44 +2,31 @@
 
 /* ════════════════════════════════════════════════════
    Lavallonea ROI Dashboard — app.js
-   Pure Vanilla JS, no frameworks
    ════════════════════════════════════════════════════ */
 
-// ── State ──────────────────────────────────────────
 const S = {
-  strutture:    [],
-  expanded:     {},   // struttura_id -> bool
-  vistaMia:     true,
-  charts:       {},   // active Chart instances
-  // current view data (for toggle re-render)
-  foglio: {
-    dati:   null,
-    totali: null,
-    file:   null,
-    foglio: null
-  }
+  strutture: [],
+  expanded:  {},
+  vistaMia:  true,
+  charts:    {},
+  foglio: { dati: null, totali: null, file: null, foglio: null, fileId: null }
 };
 
 // ── Utils ──────────────────────────────────────────
 function euro(n) {
-  return '€ ' + (Number(n) || 0).toLocaleString('it-IT', {
+  return '€ ' + (Number(n) || 0).toLocaleString('it-IT', {
     minimumFractionDigits: 2, maximumFractionDigits: 2
   });
 }
-
 function euroCompact(n) {
   const v = Number(n) || 0;
-  if (Math.abs(v) >= 1000) return '€ ' + (v / 1000).toFixed(1) + 'k';
-  return '€ ' + v.toFixed(0);
+  if (Math.abs(v) >= 1000) return '€ ' + (v / 1000).toFixed(1) + 'k';
+  return '€ ' + v.toFixed(0);
 }
-
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('it-IT', {
-    day: '2-digit', month: '2-digit', year: 'numeric'
-  });
+  return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
-
 async function api(path, opts = {}) {
   const res = await fetch(path, opts);
   if (!res.ok) {
@@ -48,14 +35,11 @@ async function api(path, opts = {}) {
   }
   return res.json();
 }
-
 function destroyCharts() {
   Object.values(S.charts).forEach(c => { try { c.destroy(); } catch (_) {} });
   S.charts = {};
 }
-
 function el(id) { return document.getElementById(id); }
-
 function setMain(html) {
   destroyCharts();
   el('main-content').innerHTML = html;
@@ -95,7 +79,6 @@ function buildSidebar() {
         <div class="struttura-children ${open}" id="sc-${s.id}">
     `;
 
-    // Show fogli available
     const fogliOrder = ['Foglio 1', 'Platinum', 'Gold'];
     for (const foglio of fogliOrder) {
       if (s.fogli.includes(foglio)) {
@@ -108,7 +91,6 @@ function buildSidebar() {
       }
     }
 
-    // "Totali struttura" only if ≥2 files
     if (s.file_count >= 2) {
       html += `<div class="struttura-sep"></div>
         <div class="struttura-child ${isActive('totali', s.id)}"
@@ -148,21 +130,17 @@ function isActive(view, extra) {
   }
   return '';
 }
-
 function isActiveFoglio(strutturaId, foglio) {
   if (window._currentView === 'foglio' &&
       window._currentStrutturaId === strutturaId &&
       window._currentFoglio === foglio) return 'active';
   return '';
 }
-
 function toggleStruttura(id) {
   S.expanded[id] = !S.expanded[id];
   buildSidebar();
 }
-
 async function navigateToStruttura(strutturaId, foglio) {
-  // Get the most recent file for this struttura and foglio
   const files = await api(`/api/strutture/${strutturaId}/file`);
   const f = files.find(x => x.fogli && x.fogli.includes(foglio));
   if (!f) return;
@@ -178,12 +156,12 @@ function navigate(view, params = {}) {
   setMain('<div class="page-loading"><div class="spinner"></div></div>');
 
   switch (view) {
-    case 'dashboard': renderDashboard();                           break;
-    case 'foglio':    renderFoglio(params.fileId, params.foglio);  break;
-    case 'totali':    renderTotali(params.strutturaId, params.nome); break;
-    case 'cronologia': renderCronologia();                         break;
-    case 'confronto':  renderConfronto();                          break;
-    case 'debug':      renderDebug();                              break;
+    case 'dashboard':  renderDashboard();                              break;
+    case 'foglio':     renderFoglio(params.fileId, params.foglio);     break;
+    case 'totali':     renderTotali(params.strutturaId, params.nome);  break;
+    case 'cronologia': renderCronologia();                             break;
+    case 'confronto':  renderConfronto();                              break;
+    case 'debug':      renderDebug();                                  break;
   }
   buildSidebar();
 }
@@ -234,10 +212,10 @@ async function renderDashboard() {
           <div class="kpi-value">${file_count}</div>
           <div class="kpi-sub">Totale upload</div>
         </div>
-        <div class="kpi-card kpi-blue">
-          <div class="kpi-label">Differenziale totale</div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-label">Risparmio totale dottori</div>
           <div class="kpi-value">${euro(differenziale_totale)}</div>
-          <div class="kpi-sub">Guadagno cumulativo</div>
+          <div class="kpi-sub">vs concorrenza</div>
         </div>
       </div>
 
@@ -271,7 +249,6 @@ async function renderDashboard() {
     </div>
   `);
 
-  // Donut confronto strutture (se ci sono dati)
   if (per_struttura.length >= 2) {
     const ctx = el('chart-confronto-dash');
     if (ctx) {
@@ -280,15 +257,14 @@ async function renderDashboard() {
         data: {
           labels: per_struttura.map(s => s.nome),
           datasets: [
-            { label: 'Fatturato dottore', data: per_struttura.map(s => s.fatturato), backgroundColor: '#1a7a4a', borderRadius: 4 },
-            { label: 'Tuo costo',        data: per_struttura.map(s => s.costo),    backgroundColor: '#f5a800', borderRadius: 4 }
+            { label: 'Concorrenza scontata', data: per_struttura.map(s => s.fatturato), backgroundColor: '#e74c3c', borderRadius: 4 },
+            { label: 'Lavallonea scontata',  data: per_struttura.map(s => s.costo),    backgroundColor: '#f5a800', borderRadius: 4 }
           ]
         },
         options: {
           animation: { duration: 600 },
-          plugins: { legend: { display: false },
-            tooltip: tooltipDefaults()
-          },
+          plugins: { legend: { display: true, labels: { font: { size: 11 } } },
+            tooltip: tooltipDefaults() },
           scales: {
             x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 } } },
             y: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 },
@@ -321,10 +297,8 @@ async function renderFoglio(fileId, foglio) {
     return;
   }
 
-  // Sort by differenziale desc (mia: prezzo_vet_scontato - totale_prezzo_lav)
-  const datiSorted = [...dati].sort((a, b) =>
-    (b.prezzo_vet_scontato - b.totale_prezzo_lav) - (a.prezzo_vet_scontato - a.totale_prezzo_lav)
-  );
+  const datiSorted = [...dati].sort((a, b) => (b.risparmio_dottore || 0) - (a.risparmio_dottore || 0));
+  const rispPct = t.risparmio_pct || 0;
 
   setMain(`
     <div class="page-header">
@@ -343,27 +317,27 @@ async function renderFoglio(fileId, foglio) {
     </div>
 
     <div class="page-body">
-      <!-- KPI -->
+      <!-- KPI 4 card -->
       <div class="kpi-grid kpi-grid-4">
-        <div class="kpi-card">
-          <div class="kpi-label">Listino pieno dottore</div>
-          <div class="kpi-value">${euro(t.totale_listino)}</div>
-          <div class="kpi-sub">Prezzo di listino</div>
+        <div class="kpi-card kpi-yellow">
+          <div class="kpi-label">Paghi con Lavallonea</div>
+          <div class="kpi-value">${euro(t.totale_scontato_lav)}</div>
+          <div class="kpi-sub">Prezzo scontato Lavallonea</div>
+        </div>
+        <div class="kpi-card kpi-red">
+          <div class="kpi-label">Pagheresti con concorrenza</div>
+          <div class="kpi-value">${euro(t.prezzo_scontato_concorrenza)}</div>
+          <div class="kpi-sub">Prezzo scontato mercato</div>
         </div>
         <div class="kpi-card kpi-green">
-          <div class="kpi-label">Prezzo scontato dottore</div>
-          <div class="kpi-value">${euro(t.prezzo_vet_scontato)}</div>
-          <div class="kpi-sub">Fattura al dottore</div>
-        </div>
-        <div class="kpi-card kpi-yellow">
-          <div class="kpi-label">Tuo costo totale</div>
-          <div class="kpi-value">${euro(t.totale_prezzo_lav)}</div>
-          <div class="kpi-sub">Costo Lavallonea</div>
+          <div class="kpi-label">Risparmi scegliendo noi</div>
+          <div class="kpi-value">${euro(t.risparmio_totale_dottore)}</div>
+          <div class="kpi-sub">vs prezzo concorrenza</div>
         </div>
         <div class="kpi-card kpi-blue">
-          <div class="kpi-label">Differenziale</div>
-          <div class="kpi-value">${euro(t.differenziale)}</div>
-          <div class="kpi-sub">Guadagno netto</div>
+          <div class="kpi-label">% risparmio</div>
+          <div class="kpi-value">${rispPct}%</div>
+          <div class="kpi-sub">Sul prezzo di mercato</div>
         </div>
       </div>
 
@@ -382,7 +356,7 @@ async function renderFoglio(fileId, foglio) {
       <div class="charts-row">
         <!-- Donut -->
         <div class="chart-card">
-          <div class="chart-title" id="donut-title">Ripartizione totale</div>
+          <div class="chart-title" id="donut-title">Confronto prezzi totali</div>
           <div id="donut-legend" class="chart-legend"></div>
           <div class="donut-wrap">
             <canvas id="chart-donut" height="220"></canvas>
@@ -395,7 +369,7 @@ async function renderFoglio(fileId, foglio) {
 
         <!-- Barre orizzontali -->
         <div class="chart-card">
-          <div class="chart-title" id="barre-title">Guadagno per esame</div>
+          <div class="chart-title" id="barre-title">Confronto per esame</div>
           <div id="barre-legend" class="chart-legend"></div>
           <div class="chart-canvas-wrap" style="overflow:auto;max-height:320px">
             <canvas id="chart-barre"></canvas>
@@ -429,7 +403,7 @@ function setVista(mia) {
 
   if (S.foglio.dati) {
     const sorted = [...S.foglio.dati].sort((a, b) =>
-      (b.prezzo_vet_scontato - b.totale_prezzo_lav) - (a.prezzo_vet_scontato - a.totale_prezzo_lav)
+      (b.risparmio_dottore || 0) - (a.risparmio_dottore || 0)
     );
     renderFoglioCharts(sorted, S.foglio.totali);
     renderFoglioTable(sorted);
@@ -457,7 +431,6 @@ function tooltipDefaults(mode = 'index', stacked = false) {
   };
 }
 
-// Plugin: sfondo bianco sul canvas (necessario per PNG export e visibilità)
 const whiteBgPlugin = {
   id: 'whiteBg',
   beforeDraw(chart) {
@@ -469,7 +442,7 @@ const whiteBgPlugin = {
   }
 };
 
-function makeDonutOptions(tooltipCb) {
+function makeDonutOptions(tooltipCallbacks) {
   return {
     cutout: '65%',
     responsive: true,
@@ -485,7 +458,7 @@ function makeDonutOptions(tooltipCb) {
         bodyColor: '#6b7280',
         padding: 12,
         cornerRadius: 8,
-        callbacks: { label: tooltipCb }
+        callbacks: tooltipCallbacks
       }
     }
   };
@@ -505,58 +478,22 @@ function renderFoglioCharts(dati, t) {
   }
 }
 
-// Donut — vista MIA
+// ─── DONUT Vista MIA (4 fette) ─────────────────────
 function renderDonutMia(t) {
-  const tuoCosto  = Math.max(0, t.totale_prezzo_lav   || 0);
-  const guadagno  = Math.max(0, t.differenziale        || 0);
-  const sconto    = Math.max(0, t.sconto_applicato     || 0);
-  const totale    = tuoCosto + guadagno + sconto;
+  const v1 = Math.max(0, t.totale_scontato_lav         || 0); // giallo
+  const v2 = Math.max(0, t.sconto_totale_lav            || 0); // giallo chiaro
+  const v3 = Math.max(0, t.risparmio_totale_dottore     || 0); // verde
+  const v4 = Math.max(0, t.sconto_totale_concorrenza    || 0); // rosso
+  const totale = v1 + v2 + v3 + v4;
+  const base   = t.totale_concorrenza || 1;
 
-  el('donut-cv').textContent = euro(t.prezzo_vet_scontato);
-  el('donut-cl').textContent = 'Fatturato dottore';
-  el('donut-legend').innerHTML = legendHtml([
-    { label: 'Tuo costo',        color: '#f5a800' },
-    { label: 'Tuo guadagno',     color: '#2563a8' },
-    { label: 'Sconto al dottore',color: '#1a7a4a' }
-  ]);
-
-  const canvas = el('chart-donut');
-  if (!canvas) return;
-  canvas.style.display = 'block';
-
-  S.charts.donut = new Chart(canvas, {
-    type: 'doughnut',
-    plugins: [whiteBgPlugin],
-    data: {
-      labels: ['Tuo costo', 'Tuo guadagno', 'Sconto al dottore'],
-      datasets: [{
-        data: totale > 0 ? [tuoCosto, guadagno, sconto] : [1, 1, 1],
-        backgroundColor: ['#f5a800', '#2563a8', '#1a7a4a'],
-        borderWidth: 2,
-        borderColor: '#fff'
-      }]
-    },
-    options: makeDonutOptions(ctx => {
-      if (totale === 0) return '  Nessun dato';
-      const v = ctx.raw;
-      const pct = totale > 0 ? ((v / totale) * 100).toFixed(1) : 0;
-      return `  ${ctx.label}: ${euro(v)} (${pct}%)`;
-    })
-  });
-}
-
-// Donut — vista DOTTORE
-function renderDonutDottore(t) {
-  const prezzo = Math.max(0, t.prezzo_vet_scontato || 0);
-  const sconto = Math.max(0, t.sconto_applicato    || 0);
-  const totale = prezzo + sconto;
-  const pct    = t.risparmio_pct || 0;
-
-  el('donut-cv').textContent = `${pct}%`;
+  el('donut-cv').textContent = euro(t.risparmio_totale_dottore);
   el('donut-cl').textContent = 'Risparmio';
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Prezzo per te',  color: '#1a7a4a' },
-    { label: 'Sconto ottenuto',color: '#d1fae5' }
+    { label: 'Prezzo Lavallonea al dottore', color: '#f5a800' },
+    { label: 'Sconto Lavallonea applicato',  color: '#ffd166' },
+    { label: 'Risparmio dottore vs concorrenza', color: '#1a7a4a' },
+    { label: 'Sconto concorrenza applicato', color: '#e74c3c' }
   ]);
 
   const canvas = el('chart-donut');
@@ -567,24 +504,198 @@ function renderDonutDottore(t) {
     type: 'doughnut',
     plugins: [whiteBgPlugin],
     data: {
-      labels: ['Prezzo per te', 'Sconto ottenuto'],
+      labels: [
+        'Prezzo Lavallonea al dottore',
+        'Sconto Lavallonea applicato',
+        'Risparmio dottore vs concorrenza',
+        'Sconto concorrenza applicato'
+      ],
       datasets: [{
-        data: totale > 0 ? [prezzo, sconto] : [1, 1],
-        backgroundColor: ['#1a7a4a', '#d1fae5'],
+        data: totale > 0 ? [v1, v2, v3, v4] : [1, 1, 1, 1],
+        backgroundColor: ['#f5a800', '#ffd166', '#1a7a4a', '#e74c3c'],
         borderWidth: 2,
         borderColor: '#fff'
       }]
     },
-    options: makeDonutOptions(ctx => {
-      if (totale === 0) return '  Nessun dato';
-      return ctx.dataIndex === 0
-        ? `  Paghi: ${euro(ctx.raw)}`
-        : `  Risparmi: ${euro(ctx.raw)} (${pct}%)`;
+    options: makeDonutOptions({
+      title: items => items[0]?.label || '',
+      label: ctx => {
+        if (totale === 0) return '  Nessun dato';
+        const v   = ctx.raw;
+        const pct = base > 0 ? ((v / base) * 100).toFixed(1) : 0;
+        return [`  € ${(Number(v)||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, `  ${pct}% del listino concorrenza`];
+      }
     })
   });
 }
 
-function makeBarreOptions(dati, tooltipLabelCb) {
+// ─── DONUT Vista DOTTORE (2 fette) ────────────────
+function renderDonutDottore(t) {
+  const v1 = Math.max(0, t.totale_scontato_lav         || 0);
+  const v2 = Math.max(0, t.risparmio_totale_dottore     || 0);
+  const totale = v1 + v2;
+  const pct = t.risparmio_pct || 0;
+
+  el('donut-cv').textContent = `${pct}%`;
+  el('donut-cl').textContent = 'Risparmi';
+  el('donut-legend').innerHTML = legendHtml([
+    { label: 'Paghi con Lavallonea', color: '#f5a800' },
+    { label: 'Risparmio vs mercato', color: '#1a7a4a' }
+  ]);
+
+  const canvas = el('chart-donut');
+  if (!canvas) return;
+  canvas.style.display = 'block';
+
+  const concBase = t.prezzo_scontato_concorrenza || 0;
+
+  S.charts.donut = new Chart(canvas, {
+    type: 'doughnut',
+    plugins: [whiteBgPlugin],
+    data: {
+      labels: ['Paghi con Lavallonea', 'Risparmio vs mercato'],
+      datasets: [{
+        data: totale > 0 ? [v1, v2] : [1, 1],
+        backgroundColor: ['#f5a800', '#1a7a4a'],
+        borderWidth: 2,
+        borderColor: '#fff'
+      }]
+    },
+    options: makeDonutOptions({
+      title: items => items[0]?.label || '',
+      label: ctx => {
+        if (totale === 0) return '  Nessun dato';
+        if (ctx.dataIndex === 0) return [
+          `  Paghi con Lavallonea: ${euro(ctx.raw)}`,
+          `  Invece di: ${euro(concBase)} (concorrenza)`
+        ];
+        return [
+          `  Risparmio: ${euro(ctx.raw)}`,
+          `  Percentuale: ${pct}%`
+        ];
+      }
+    })
+  });
+}
+
+// ─── BARRE Vista MIA (grouped: conc rosso vs lav giallo) ──
+function renderBarreMia(dati) {
+  el('barre-legend').innerHTML = legendHtml([
+    { label: 'Prezzo concorrenza scontato', color: '#e74c3c' },
+    { label: 'Prezzo Lavallonea scontato',  color: '#f5a800' }
+  ]);
+
+  const canvas = el('chart-barre');
+  if (!canvas) return;
+
+  const h = Math.max(220, dati.length * 48);
+  canvas.parentElement.style.height = h + 'px';
+  canvas.style.display = 'block';
+
+  S.charts.barre = new Chart(canvas, {
+    type: 'bar',
+    plugins: [whiteBgPlugin],
+    data: {
+      labels: dati.map(d => d.esame),
+      datasets: [
+        {
+          label: 'Prezzo concorrenza scontato',
+          data: dati.map(d => Math.max(0, d.prezzo_scontato_concorrenza || 0)),
+          backgroundColor: '#e74c3c',
+          borderRadius: 4
+        },
+        {
+          label: 'Prezzo Lavallonea scontato',
+          data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
+          backgroundColor: '#f5a800',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: makeBarreOptions(dati, {
+      title: items => {
+        const d = dati[items[0]?.dataIndex];
+        if (!d) return '';
+        return `${d.esame} (N. esami: ${d.n_esami})`;
+      },
+      label: ctx => {
+        const d = dati[ctx.dataIndex];
+        if (!d) return '';
+        if (ctx.datasetIndex === 0) return `  Concorrenza (scontato): ${euro(d.prezzo_scontato_concorrenza)}`;
+        return `  Lavallonea (scontato): ${euro(d.totale_scontato_lav)}`;
+      },
+      afterBody: items => {
+        const d = dati[items[0]?.dataIndex];
+        if (!d) return [];
+        const risp = d.risparmio_dottore || 0;
+        const pct  = d.prezzo_scontato_concorrenza > 0
+          ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
+        return [
+          `  ──────────────────────`,
+          `  Risparmio dottore: ${euro(risp)} (+${pct}%)`,
+          `  Sconto concorrenza: ${euro(d.sconto_concorrenza)}`,
+          `  Sconto Lavallonea: ${euro(d.sconto_lav)}`
+        ];
+      }
+    })
+  });
+}
+
+// ─── BARRE Vista DOTTORE (grouped: stesso layout, tooltip semplice) ──
+function renderBarreDottore(dati) {
+  el('barre-legend').innerHTML = legendHtml([
+    { label: 'Prezzo di mercato',  color: '#e74c3c' },
+    { label: 'Prezzo Lavallonea',  color: '#f5a800' }
+  ]);
+
+  const canvas = el('chart-barre');
+  if (!canvas) return;
+
+  const h = Math.max(220, dati.length * 48);
+  canvas.parentElement.style.height = h + 'px';
+  canvas.style.display = 'block';
+
+  S.charts.barre = new Chart(canvas, {
+    type: 'bar',
+    plugins: [whiteBgPlugin],
+    data: {
+      labels: dati.map(d => d.esame),
+      datasets: [
+        {
+          label: 'Prezzo di mercato',
+          data: dati.map(d => Math.max(0, d.prezzo_scontato_concorrenza || 0)),
+          backgroundColor: '#e74c3c',
+          borderRadius: 4
+        },
+        {
+          label: 'Prezzo Lavallonea',
+          data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
+          backgroundColor: '#f5a800',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: makeBarreOptions(dati, {
+      title: items => dati[items[0]?.dataIndex]?.esame || '',
+      label: ctx => {
+        const d = dati[ctx.dataIndex];
+        if (!d) return '';
+        if (ctx.datasetIndex === 0) return `  Prezzo mercato: ${euro(d.prezzo_scontato_concorrenza)}`;
+        return `  Prezzo Lavallonea: ${euro(d.totale_scontato_lav)}`;
+      },
+      afterBody: items => {
+        const d = dati[items[0]?.dataIndex];
+        if (!d) return [];
+        const risp = d.risparmio_dottore || 0;
+        const pct  = d.prezzo_scontato_concorrenza > 0
+          ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
+        return [`  Risparmi: ${euro(risp)} (${pct}%)`];
+      }
+    })
+  });
+}
+
+function makeBarreOptions(dati, tooltipCbs) {
   return {
     indexAxis: 'y',
     responsive: true,
@@ -592,12 +703,12 @@ function makeBarreOptions(dati, tooltipLabelCb) {
     animation: { duration: 500 },
     scales: {
       x: {
-        stacked: true,
+        stacked: false,
         grid: { color: 'rgba(0,0,0,0.05)' },
         ticks: { font: { size: 11 }, callback: v => euroCompact(v) }
       },
       y: {
-        stacked: true,
+        stacked: false,
         grid: { display: false },
         ticks: { font: { size: 11 } }
       }
@@ -609,105 +720,10 @@ function makeBarreOptions(dati, tooltipLabelCb) {
         backgroundColor: '#fff', borderColor: '#e8e9eb', borderWidth: 1,
         titleColor: '#1a1a1a', bodyColor: '#6b7280',
         padding: 12, cornerRadius: 8,
-        callbacks: {
-          title: items => items[0]?.label || '',
-          label: tooltipLabelCb
-        }
+        callbacks: tooltipCbs
       }
     }
   };
-}
-
-// Barre — vista MIA
-function renderBarreMia(dati) {
-  el('barre-legend').innerHTML = legendHtml([
-    { label: 'Tuo costo',     color: '#f5a800' },
-    { label: 'Guadagno netto',color: '#2563a8' }
-  ]);
-
-  const canvas = el('chart-barre');
-  if (!canvas) return;
-
-  const h = Math.max(220, dati.length * 38);
-  canvas.parentElement.style.height = h + 'px';
-  canvas.style.display = 'block';
-
-  S.charts.barre = new Chart(canvas, {
-    type: 'bar',
-    plugins: [whiteBgPlugin],
-    data: {
-      labels: dati.map(d => d.esame),
-      datasets: [
-        {
-          label: 'Tuo costo',
-          data: dati.map(d => Math.max(0, d.totale_prezzo_lav || 0)),
-          backgroundColor: '#f5a800',
-          borderRadius: { topLeft: 4, bottomLeft: 4 }
-        },
-        {
-          label: 'Guadagno netto',
-          data: dati.map(d => Math.max(0, (d.prezzo_vet_scontato - d.totale_prezzo_lav) || 0)),
-          backgroundColor: '#2563a8',
-          borderRadius: { topRight: 4, bottomRight: 4 }
-        }
-      ]
-    },
-    options: makeBarreOptions(dati, ctx => {
-      const d = dati[ctx.dataIndex];
-      if (!d) return '';
-      if (ctx.datasetIndex === 0) return [
-        `  Prezzo dottore: ${euro(d.prezzo_vet_scontato)}`,
-        `  Tuo costo:      ${euro(d.totale_prezzo_lav)}`
-      ];
-      return `  Guadagno: ${euro(d.prezzo_vet_scontato - d.totale_prezzo_lav)}`;
-    })
-  });
-}
-
-// Barre — vista DOTTORE
-function renderBarreDottore(dati) {
-  el('barre-legend').innerHTML = legendHtml([
-    { label: 'Prezzo tuo', color: '#1a7a4a' },
-    { label: 'Sconto',     color: '#d1d5db' }
-  ]);
-
-  const canvas = el('chart-barre');
-  if (!canvas) return;
-
-  const h = Math.max(220, dati.length * 38);
-  canvas.parentElement.style.height = h + 'px';
-  canvas.style.display = 'block';
-
-  S.charts.barre = new Chart(canvas, {
-    type: 'bar',
-    plugins: [whiteBgPlugin],
-    data: {
-      labels: dati.map(d => d.esame),
-      datasets: [
-        {
-          label: 'Prezzo tuo',
-          data: dati.map(d => Math.max(0, d.prezzo_vet_scontato || 0)),
-          backgroundColor: '#1a7a4a',
-          borderRadius: { topLeft: 4, bottomLeft: 4 }
-        },
-        {
-          label: 'Sconto',
-          data: dati.map(d => Math.max(0, (d.costo_listino - d.prezzo_vet_scontato) || 0)),
-          backgroundColor: '#d1d5db',
-          borderRadius: { topRight: 4, bottomRight: 4 }
-        }
-      ]
-    },
-    options: makeBarreOptions(dati, ctx => {
-      const d = dati[ctx.dataIndex];
-      if (!d) return '';
-      return [
-        `  Listino:    ${euro(d.costo_listino)}`,
-        `  Prezzo tuo: ${euro(d.prezzo_vet_scontato)}`,
-        `  Risparmio:  ${euro(d.costo_listino - d.prezzo_vet_scontato)}`
-      ];
-    })
-  });
 }
 
 function legendHtml(items) {
@@ -725,41 +741,43 @@ function renderFoglioTable(dati) {
 
   if (S.vistaMia) {
     head.innerHTML = `<tr>
-      <th>Esame</th><th>N.</th><th>Listino vet</th>
-      <th>Prezzo scontato</th><th>Listino Lav</th>
-      <th>Tuo costo</th><th>Differenziale</th><th>%</th>
+      <th>Esame</th><th>N.</th>
+      <th>Listino conc.</th><th>Scontato conc.</th>
+      <th>Listino Lav</th><th>Scontato Lav</th>
+      <th>Risparmio €</th><th>Risparmio %</th>
     </tr>`;
     body.innerHTML = dati.map(d => {
-      const diff = d.prezzo_vet_scontato - d.totale_prezzo_lav;
-      const pct  = d.prezzo_vet_scontato > 0
-        ? ((diff / d.prezzo_vet_scontato) * 100).toFixed(1) : '0.0';
+      const risp = d.risparmio_dottore || 0;
+      const pct  = d.prezzo_scontato_concorrenza > 0
+        ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
       return `<tr>
         <td>${d.esame}</td>
         <td class="text-center">${d.n_esami}</td>
-        <td>${euro(d.costo_listino)}</td>
-        <td class="td-green">${euro(d.prezzo_vet_scontato)}</td>
+        <td class="td-muted">${euro(d.listino_concorrenza)}</td>
+        <td style="color:#c0392b">${euro(d.prezzo_scontato_concorrenza)}</td>
         <td class="td-muted">${euro(d.listino_lav)}</td>
-        <td class="td-yellow">${euro(d.prezzo_lav)}</td>
-        <td class="td-blue">${euro(diff)}</td>
-        <td class="td-blue">${pct}%</td>
+        <td class="td-yellow">${euro(d.totale_scontato_lav)}</td>
+        <td class="td-green">${euro(risp)}</td>
+        <td class="td-green">${pct}%</td>
       </tr>`;
     }).join('');
   } else {
     head.innerHTML = `<tr>
-      <th>Esame</th><th>N.</th><th>Listino</th>
-      <th>Prezzo tuo</th><th>Risparmio €</th><th>Risparmio %</th>
+      <th>Esame</th><th>N.</th>
+      <th>Prezzo mercato</th><th>Prezzo Lavallonea</th>
+      <th>Risparmi €</th><th>Risparmi %</th>
     </tr>`;
     body.innerHTML = dati.map(d => {
-      const risp  = d.costo_listino - d.prezzo_vet_scontato;
-      const rispP = d.costo_listino > 0
-        ? ((risp / d.costo_listino) * 100).toFixed(1) : '0.0';
+      const risp = d.risparmio_dottore || 0;
+      const pct  = d.prezzo_scontato_concorrenza > 0
+        ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
       return `<tr>
         <td>${d.esame}</td>
         <td class="text-center">${d.n_esami}</td>
-        <td class="td-muted">${euro(d.costo_listino)}</td>
-        <td class="td-green">${euro(d.prezzo_vet_scontato)}</td>
+        <td style="color:#c0392b">${euro(d.prezzo_scontato_concorrenza)}</td>
+        <td class="td-yellow">${euro(d.totale_scontato_lav)}</td>
         <td class="td-green">${euro(risp)}</td>
-        <td class="td-green">${rispP}%</td>
+        <td class="td-green">${pct}%</td>
       </tr>`;
     }).join('');
   }
@@ -783,20 +801,18 @@ async function renderTotali(strutturaId, nome) {
     return;
   }
 
-  // Cumulative totals
   const cum = files.reduce((acc, f) => {
-    for (const [foglio, t] of Object.entries(f.fogli)) {
-      acc.totale_listino      += t.totale_listino;
-      acc.prezzo_vet_scontato += t.prezzo_vet_scontato;
-      acc.totale_prezzo_lav   += t.totale_prezzo_lav;
-      acc.differenziale       += t.differenziale;
+    for (const t of Object.values(f.fogli)) {
+      acc.totale_concorrenza          += t.totale_concorrenza          || 0;
+      acc.prezzo_scontato_concorrenza += t.prezzo_scontato_concorrenza || 0;
+      acc.totale_scontato_lav         += t.totale_scontato_lav         || 0;
+      acc.risparmio_totale_dottore    += t.risparmio_totale_dottore    || 0;
     }
     return acc;
-  }, { totale_listino: 0, prezzo_vet_scontato: 0, totale_prezzo_lav: 0, differenziale: 0 });
+  }, { totale_concorrenza: 0, prezzo_scontato_concorrenza: 0, totale_scontato_lav: 0, risparmio_totale_dottore: 0 });
 
-  // Labels = dates of files
-  const labels    = files.map(f => fmtDate(f.file.data_carico));
-  const foglioSet = ['Foglio 1', 'Platinum', 'Gold'];
+  const labels       = files.map(f => fmtDate(f.file.data_carico));
+  const foglioSet    = ['Foglio 1', 'Platinum', 'Gold'];
   const foglioColors = { 'Foglio 1': '#6b7280', 'Platinum': '#1a7a4a', 'Gold': '#f5a800' };
 
   setMain(`
@@ -809,25 +825,25 @@ async function renderTotali(strutturaId, nome) {
     <div class="page-body">
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card">
-          <div class="kpi-label">Listino pieno</div>
-          <div class="kpi-value">${euro(cum.totale_listino)}</div>
+          <div class="kpi-label">Listino concorrenza</div>
+          <div class="kpi-value">${euro(cum.totale_concorrenza)}</div>
         </div>
-        <div class="kpi-card kpi-green">
-          <div class="kpi-label">Fatturato dottore</div>
-          <div class="kpi-value">${euro(cum.prezzo_vet_scontato)}</div>
+        <div class="kpi-card kpi-red">
+          <div class="kpi-label">Scontato concorrenza</div>
+          <div class="kpi-value">${euro(cum.prezzo_scontato_concorrenza)}</div>
         </div>
         <div class="kpi-card kpi-yellow">
-          <div class="kpi-label">Tuo costo</div>
-          <div class="kpi-value">${euro(cum.totale_prezzo_lav)}</div>
+          <div class="kpi-label">Scontato Lavallonea</div>
+          <div class="kpi-value">${euro(cum.totale_scontato_lav)}</div>
         </div>
-        <div class="kpi-card kpi-blue">
-          <div class="kpi-label">Differenziale cumulativo</div>
-          <div class="kpi-value">${euro(cum.differenziale)}</div>
+        <div class="kpi-card kpi-green">
+          <div class="kpi-label">Risparmio dottore</div>
+          <div class="kpi-value">${euro(cum.risparmio_totale_dottore)}</div>
         </div>
       </div>
 
       <div class="section-card">
-        <div class="section-card-title">Differenziale nel tempo</div>
+        <div class="section-card-title">Risparmio nel tempo</div>
         <div id="linea-legend" class="chart-legend" style="margin-bottom:12px"></div>
         <canvas id="chart-linea" height="220"></canvas>
       </div>
@@ -839,12 +855,11 @@ async function renderTotali(strutturaId, nome) {
     </div>
   `);
 
-  // Line chart — differenziale per foglio nel tempo
   const lineDatasets = foglioSet
     .filter(fg => files.some(f => f.fogli[fg]))
     .map(fg => ({
       label: fg,
-      data: files.map(f => f.fogli[fg]?.differenziale ?? null),
+      data: files.map(f => f.fogli[fg]?.risparmio_totale_dottore ?? null),
       borderColor: foglioColors[fg],
       backgroundColor: foglioColors[fg] + '22',
       tension: 0.3,
@@ -873,12 +888,11 @@ async function renderTotali(strutturaId, nome) {
     }
   });
 
-  // Grouped bar — Platinum vs Gold per file
   const pgDatasets = ['Platinum', 'Gold']
     .filter(fg => files.some(f => f.fogli[fg]))
     .map(fg => ({
       label: fg,
-      data: files.map(f => f.fogli[fg]?.prezzo_vet_scontato ?? 0),
+      data: files.map(f => f.fogli[fg]?.prezzo_scontato_concorrenza ?? 0),
       backgroundColor: foglioColors[fg],
       borderRadius: 4
     }));
@@ -903,19 +917,14 @@ async function renderTotali(strutturaId, nome) {
 async function renderCronologia() {
   let rows, strutture;
   try {
-    [rows, strutture] = await Promise.all([
-      api('/api/cronologia'),
-      api('/api/strutture')
-    ]);
+    [rows, strutture] = await Promise.all([api('/api/cronologia'), api('/api/strutture')]);
   } catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
       <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
     return;
   }
 
-  const optStrutture = strutture.map(s =>
-    `<option value="${s.id}">${s.nome}</option>`
-  ).join('');
+  const optStrutture = strutture.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
 
   setMain(`
     <div class="page-header">
@@ -936,7 +945,7 @@ async function renderCronologia() {
           <table>
             <thead><tr>
               <th>Data</th><th>File</th><th>Struttura</th><th>Fogli</th>
-              <th>Fatturato dottore</th><th>Tuo costo</th><th>Differenziale</th>
+              <th>Concorrenza scontata</th><th>Lavallonea scontata</th><th>Risparmio</th>
             </tr></thead>
             <tbody id="crono-tbody">
               ${buildCronoRows(rows)}
@@ -960,9 +969,9 @@ function buildCronoRows(rows) {
       <td>${r.nome_file}</td>
       <td>${r.struttura_nome}</td>
       <td>${(r.fogli || '').split(',').map(f => `<span class="badge badge-gray">${f}</span>`).join(' ')}</td>
-      <td class="td-green">${euro(r.totale_dottore)}</td>
+      <td style="color:#c0392b">${euro(r.totale_dottore)}</td>
       <td class="td-yellow">${euro(r.totale_costo)}</td>
-      <td class="td-blue">${euro(r.differenziale)}</td>
+      <td class="td-green">${euro(r.differenziale)}</td>
     </tr>`).join('');
 }
 
@@ -1005,7 +1014,7 @@ async function renderConfronto() {
     </div>
     <div class="page-body">
       <div class="section-card">
-        <div class="section-card-title">Fatturato dottore vs Tuo costo vs Differenziale</div>
+        <div class="section-card-title">Concorrenza vs Lavallonea vs Risparmio</div>
         <div class="chart-legend" id="conf-legend" style="margin-bottom:12px"></div>
         <canvas id="chart-conf" height="240"></canvas>
       </div>
@@ -1014,16 +1023,16 @@ async function renderConfronto() {
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Struttura</th><th>Listino pieno</th>
-              <th>Fatturato dottore</th><th>Tuo costo</th><th>Differenziale</th>
+              <th>Struttura</th><th>Listino conc.</th>
+              <th>Scontato conc.</th><th>Scontato Lav</th><th>Risparmio</th>
             </tr></thead>
             <tbody>
               ${data.map(s => `<tr>
                 <td><strong>${s.nome}</strong></td>
-                <td class="td-muted">${euro(s.totale_listino)}</td>
-                <td class="td-green">${euro(s.prezzo_scontato)}</td>
-                <td class="td-yellow">${euro(s.costo_lav)}</td>
-                <td class="td-blue">${euro(s.differenziale)}</td>
+                <td class="td-muted">${euro(s.totale_concorrenza)}</td>
+                <td style="color:#c0392b">${euro(s.prezzo_scontato_concorrenza)}</td>
+                <td class="td-yellow">${euro(s.totale_scontato_lav)}</td>
+                <td class="td-green">${euro(s.risparmio_totale)}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -1033,9 +1042,9 @@ async function renderConfronto() {
   `);
 
   el('conf-legend').innerHTML = legendHtml([
-    { label: 'Fatturato dottore', color: '#1a7a4a' },
-    { label: 'Tuo costo',         color: '#f5a800' },
-    { label: 'Differenziale',     color: '#2563a8' }
+    { label: 'Concorrenza scontata', color: '#e74c3c' },
+    { label: 'Lavallonea scontata',  color: '#f5a800' },
+    { label: 'Risparmio dottore',    color: '#1a7a4a' }
   ]);
 
   S.charts.conf = new Chart(el('chart-conf'), {
@@ -1043,9 +1052,9 @@ async function renderConfronto() {
     data: {
       labels: data.map(s => s.nome),
       datasets: [
-        { label: 'Fatturato dottore', data: data.map(s => s.prezzo_scontato), backgroundColor: '#1a7a4a', borderRadius: 4 },
-        { label: 'Tuo costo',         data: data.map(s => s.costo_lav),       backgroundColor: '#f5a800', borderRadius: 4 },
-        { label: 'Differenziale',     data: data.map(s => s.differenziale),    backgroundColor: '#2563a8', borderRadius: 4 }
+        { label: 'Concorrenza scontata', data: data.map(s => s.prezzo_scontato_concorrenza), backgroundColor: '#e74c3c', borderRadius: 4 },
+        { label: 'Lavallonea scontata',  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#f5a800', borderRadius: 4 },
+        { label: 'Risparmio dottore',    data: data.map(s => s.risparmio_totale),              backgroundColor: '#1a7a4a', borderRadius: 4 }
       ]
     },
     options: {
@@ -1062,18 +1071,16 @@ async function renderConfronto() {
 
 // ── Upload ─────────────────────────────────────────
 function openUploadModal() {
-  el('upload-modal').hidden  = false;
+  el('upload-modal').hidden   = false;
   el('modal-backdrop').hidden = false;
   el('upload-status').hidden  = true;
   el('upload-status').className = 'upload-status';
   el('upload-status').textContent = '';
 }
-
 function closeUploadModal() {
   el('upload-modal').hidden   = true;
   el('modal-backdrop').hidden = true;
 }
-
 function showStatus(type, msg) {
   const s = el('upload-status');
   s.hidden = false;
@@ -1094,7 +1101,6 @@ async function doUpload(file, force = false) {
     resp = await res.json();
 
     if (res.status === 409 && resp.conflict) {
-      // Show confirm modal
       el('confirm-msg').textContent = resp.message;
       el('confirm-modal').hidden = false;
       el('confirm-ok').onclick  = () => { el('confirm-modal').hidden = true; doUpload(file, true); };
@@ -1103,17 +1109,14 @@ async function doUpload(file, force = false) {
       return;
     }
     if (!res.ok) throw new Error(resp.error || 'Errore upload');
-
   } catch (e) {
     showStatus('error', '❌ ' + e.message);
     return;
   }
 
-  // Reload strutture and sidebar
   await loadStrutture();
   S.expanded[resp.struttura_id] = true;
   closeUploadModal();
-  // Navigate directly to the first foglio of the uploaded file
   navigate('foglio', {
     fileId:      resp.file_id,
     foglio:      resp.fogli[0],
@@ -1122,7 +1125,6 @@ async function doUpload(file, force = false) {
 }
 
 async function downloadPdf(fileId, foglio, tipo) {
-  // Capture live chart canvases as PNG data URLs
   const donutCanvas = el('chart-donut');
   const barreCanvas = el('chart-barre');
   const donutImg = donutCanvas ? donutCanvas.toDataURL('image/png') : null;
@@ -1149,15 +1151,14 @@ async function downloadPdf(fileId, foglio, tipo) {
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  const nome = `lavallonea_${foglio}_${tipo}.pdf`;
-  a.href = url; a.download = nome;
+  a.href = url; a.download = `lavallonea_${foglio}_${tipo}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
 
-// ── Dropzone ──────────────────────────────────────
+// ── Dropzone ───────────────────────────────────────
 function initDropzone() {
   const dz = el('dropzone');
   const fi = el('file-input');
@@ -1181,7 +1182,7 @@ function initDropzone() {
   el('modal-backdrop').addEventListener('click', closeUploadModal);
 }
 
-// ── Debug Excel ────────────────────────────────────
+// ── Debug Excel ─────────────────────────────────────
 function renderDebug() {
   setMain(`
     <div class="page-header">
@@ -1215,11 +1216,11 @@ function renderDebug() {
     for (const [sheet, info] of Object.entries(data)) {
       html += `<div style="margin-bottom:24px">
         <div style="font-weight:500;font-size:14px;margin-bottom:8px;color:#1a7a4a">
-          Foglio: <strong>${sheet}</strong> — riga header rilevata: ${info.hRow}
+          Foglio: <strong>${sheet}</strong> — riga header: ${info.hRow}
         </div>
         <div style="font-family:monospace;font-size:12px;background:#f5f6f8;
                     padding:12px;border-radius:6px;overflow-x:auto;white-space:pre">${info.headers.join('\n')}</div>
-        <div style="margin-top:8px;font-size:12px;color:#6b7280;font-weight:500">Prime 3 righe dati:</div>
+        <div style="margin-top:8px;font-size:12px;color:#6b7280;font-weight:500">Prime 3 righe:</div>
         <div style="font-family:monospace;font-size:11px;background:#f5f6f8;
                     padding:10px;border-radius:6px;overflow-x:auto;white-space:pre;margin-top:4px">${
           info.sample.map((r,i) => `Riga ${i+1}: ${JSON.stringify(r)}`).join('\n')
@@ -1230,7 +1231,7 @@ function renderDebug() {
   });
 }
 
-// ── Init ──────────────────────────────────────────
+// ── Init ───────────────────────────────────────────
 async function init() {
   await loadStrutture();
   buildSidebar();

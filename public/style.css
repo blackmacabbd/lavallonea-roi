@@ -270,9 +270,11 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
 .kpi-card.kpi-green  .kpi-value { color: #1a7a4a; }
 .kpi-card.kpi-yellow .kpi-value { color: #f5a800; }
 .kpi-card.kpi-blue   .kpi-value { color: #2563a8; }
+.kpi-card.kpi-red    .kpi-value { color: #c0392b; }
 .kpi-card.kpi-green  { border-left: 3px solid #1a7a4a; }
 .kpi-card.kpi-yellow { border-left: 3px solid #f5a800; }
 .kpi-card.kpi-blue   { border-left: 3px solid #2563a8; }
+.kpi-card.kpi-red    { border-left: 3px solid #c0392b; }
 
 /* ═══════════════════════════════════════════════════
    CHARTS
