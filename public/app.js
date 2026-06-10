@@ -22,7 +22,7 @@ const S = {
 };
 
 function roiRigaVuota() {
-  return { esame: '', n_esami: 1, listino_concorrenza: '', listino_lav: '', prezzo_scontato_lav: '' };
+  return { esame: '', n_esami: 1, listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: '' };
 }
 
 // ── Utils ──────────────────────────────────────────
@@ -1310,14 +1310,14 @@ function buildRoiTableHtml(tipo) {
   const header1 = isFoglio1 ? `
     <tr>
       <th colspan="3"></th>
-      <th colspan="2" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
+      <th colspan="3" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
       <th></th>
       <th colspan="2" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Lavallonea</th>
       <th></th><th></th>
     </tr>` : `
     <tr>
       <th colspan="4"></th>
-      <th colspan="3" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
+      <th colspan="4" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
       <th></th>
       <th colspan="4" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Lavallonea</th>
       <th></th><th></th>
@@ -1329,6 +1329,7 @@ function buildRoiTableHtml(tipo) {
       <th style="width:12px"></th>
       <th style="width:170px">ESAMI</th>
       <th style="width:95px;background:rgba(231,76,60,0.04)">Listino conc.</th>
+      <th style="width:65px;background:rgba(231,76,60,0.04)">Sconto%</th>
       <th style="width:95px;background:rgba(231,76,60,0.04)">Prezzo conc.</th>
       <th style="width:12px"></th>
       <th style="width:95px;background:rgba(245,168,0,0.06)">Listino Lav</th>
@@ -1342,6 +1343,7 @@ function buildRoiTableHtml(tipo) {
       <th style="width:170px">ESAMI</th>
       <th style="width:60px">N.</th>
       <th style="width:95px;background:rgba(231,76,60,0.04)">Listino conc.</th>
+      <th style="width:65px;background:rgba(231,76,60,0.04)">Sconto%</th>
       <th style="width:95px;background:rgba(231,76,60,0.04)">Tot. conc.</th>
       <th style="width:95px;background:rgba(231,76,60,0.04)">Scontato conc.</th>
       <th style="width:12px"></th>
@@ -1362,21 +1364,23 @@ function buildRoiTableHtml(tipo) {
     totRow = `<tr class="roi-totals-row">
       <td colspan="3"><strong>TOTALE</strong></td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_listino_conc)}</td>
+      <td style="background:rgba(231,76,60,0.04)"></td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_prezzo_conc)}</td>
       <td></td>
       <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_listino_lav)}</td>
-      <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_prezzo_lav)}</td>
+      <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_prezzo_lav_sc)}</td>
       <td class="roi-calc" style="${tots.differenziale >= 0 ? 'color:#1a7a4a' : 'color:#c0392b'};font-weight:600">${fmtE(tots.differenziale)}</td>
       <td></td>
     </tr>`;
     diffRow = `<tr class="roi-diff-row">
-      <td colspan="8" style="text-align:right;font-size:13px;font-weight:500">Differenziale totale:</td>
+      <td colspan="9" style="text-align:right;font-size:13px;font-weight:500">Differenziale totale:</td>
       <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#1a7a4a' : '#c0392b'}">${fmtE(tots.differenziale)}</td>
     </tr>`;
   } else {
     totRow = `<tr class="roi-totals-row">
       <td colspan="4"><strong>TOTALE</strong></td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_listino_conc)}</td>
+      <td style="background:rgba(231,76,60,0.04)"></td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_conc)}</td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_prezzo_conc)}</td>
       <td></td>
@@ -1388,7 +1392,7 @@ function buildRoiTableHtml(tipo) {
       <td></td>
     </tr>`;
     diffRow = `<tr class="roi-diff-row">
-      <td colspan="12" style="text-align:right;font-size:13px;font-weight:500">Differenziale totale:</td>
+      <td colspan="13" style="text-align:right;font-size:13px;font-weight:500">Differenziale totale:</td>
       <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#1a7a4a' : '#c0392b'}">${fmtE(tots.differenziale)}</td>
     </tr>`;
   }
@@ -1400,26 +1404,33 @@ function buildRoiTableHtml(tipo) {
   </table>`;
 }
 
+function calcPrezConc(lc, sc, n) {
+  const mult = sc > 0 ? (1 - sc / 100) : 1;
+  return parseFloat((lc * mult).toFixed(2));
+}
+
 function buildRoiRigaHtml(r, i, tipo) {
   const isFoglio1 = tipo === 'Foglio 1';
-  const n = r.n_esami || 1;
+  const n  = r.n_esami || 1;
   const lc = parseFloat(r.listino_concorrenza) || 0;
+  const sc = parseFloat(r.sconto_concorrenza)  || 0;
   const ll = parseFloat(r.listino_lav) || 0;
   const pl = parseFloat(r.prezzo_scontato_lav) || 0;
 
   let risp, totConc, prezConc, totLL, totPL;
   if (isFoglio1) {
-    prezConc = parseFloat((lc * 0.9).toFixed(2));
-    risp = prezConc - pl;
+    prezConc = calcPrezConc(lc, sc, 1);
+    risp     = prezConc - pl;
   } else {
     totConc  = lc * n;
-    prezConc = parseFloat((totConc * 0.9).toFixed(2));
+    prezConc = calcPrezConc(totConc, sc, 1);
     totLL    = ll * n;
     totPL    = pl * n;
     risp     = prezConc - totPL;
   }
 
   const rispColor = risp >= 0 ? '#1a7a4a' : '#c0392b';
+  const scPlaceholder = sc > 0 ? String(sc) : '';
 
   const strutturaCell = i === 0
     ? `<td><input class="roi-input roi-struttura-inp" list="roi-strutture-list" value="${escHtml(S.roi.struttura)}" placeholder="Struttura…" autocomplete="off" oninput="S.roi.struttura=this.value" style="width:120px"></td>`
@@ -1431,6 +1442,7 @@ function buildRoiRigaHtml(r, i, tipo) {
       <td></td>
       <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="Esame…" autocomplete="off" style="width:160px"></td>
       <td style="background:rgba(231,76,60,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza}" placeholder="0.00"></td>
+      <td style="background:rgba(231,76,60,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
       <td></td>
       <td style="background:rgba(245,168,0,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav}" placeholder="0.00"></td>
@@ -1445,6 +1457,7 @@ function buildRoiRigaHtml(r, i, tipo) {
       <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="Esame…" autocomplete="off" style="width:160px"></td>
       <td><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
       <td style="background:rgba(231,76,60,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza}" placeholder="0.00"></td>
+      <td style="background:rgba(231,76,60,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)" data-col="tot_conc">${fmtE(totConc)}</td>
       <td class="roi-calc" style="background:rgba(231,76,60,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
       <td></td>
@@ -1473,10 +1486,11 @@ function calcolaRoiTotali(tipo) {
   for (const r of righe) {
     const n  = r.n_esami || 1;
     const lc = parseFloat(r.listino_concorrenza) || 0;
+    const sc = parseFloat(r.sconto_concorrenza)  || 0;
     const ll = parseFloat(r.listino_lav) || 0;
     const pl = parseFloat(r.prezzo_scontato_lav) || 0;
     if (isFoglio1) {
-      const pc = parseFloat((lc * 0.9).toFixed(2));
+      const pc = calcPrezConc(lc, sc, 1);
       t.tot_listino_conc  += lc;
       t.tot_prezzo_conc   += pc;
       t.tot_listino_lav   += ll;
@@ -1484,7 +1498,7 @@ function calcolaRoiTotali(tipo) {
       t.differenziale     += pc - pl;
     } else {
       const tc  = lc * n;
-      const pc  = parseFloat((tc * 0.9).toFixed(2));
+      const pc  = calcPrezConc(tc, sc, 1);
       const tll = ll * n;
       const tpl = pl * n;
       t.tot_listino_conc   += lc;
@@ -1524,25 +1538,27 @@ function aggiornaRigaDOM(tr) {
   // Sync state
   const r = S.roi.righe[tipo][idx];
   if (!r) return;
-  r.esame              = getStr('esame');
-  r.n_esami            = get('n_esami') || 1;
+  r.esame               = getStr('esame');
+  r.n_esami             = get('n_esami') || 1;
   r.listino_concorrenza = get('listino_concorrenza');
-  r.listino_lav        = get('listino_lav');
+  r.sconto_concorrenza  = get('sconto_concorrenza');
+  r.listino_lav         = get('listino_lav');
   r.prezzo_scontato_lav = get('prezzo_scontato_lav');
 
   const n  = r.n_esami;
   const lc = r.listino_concorrenza;
+  const sc = r.sconto_concorrenza;
   const ll = r.listino_lav;
   const pl = r.prezzo_scontato_lav;
 
   let risp;
   if (isFoglio1) {
-    const pc = parseFloat((lc * 0.9).toFixed(2));
+    const pc = calcPrezConc(lc, sc, 1);
     risp = pc - pl;
     setText(tr, 'prezzo_conc', fmtE(pc));
   } else {
     const tc  = lc * n;
-    const pc  = parseFloat((tc * 0.9).toFixed(2));
+    const pc  = calcPrezConc(tc, sc, 1);
     const tll = ll * n;
     const tpl = pl * n;
     risp = pc - tpl;
