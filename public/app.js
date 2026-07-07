@@ -1587,6 +1587,45 @@ function reRenderRoiTable(tipo) {
   initRoiEvents();
 }
 
+async function aggiornaPrezziAutomatici(tr) {
+  const esameInp = tr.querySelector('[data-col="esame"]');
+  const llInp    = tr.querySelector('[data-col="listino_lav"]');
+  const plInp    = tr.querySelector('[data-col="prezzo_scontato_lav"]');
+  if (!esameInp || !llInp || !plInp) return;
+  const esame = esameInp.value.trim();
+  if (!esame) return;
+
+  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`)
+    .then(r => r.json()).catch(() => ({}));
+  if (baseResp.prezzo_base != null && (llInp.value === '' || llInp.dataset.auto === '1')) {
+    llInp.value = baseResp.prezzo_base;
+    llInp.dataset.auto = '1';
+  }
+
+  if (S.roi.pianoId) {
+    const pResp = await fetch(`/api/piani/${S.roi.pianoId}/prezzo?esame=${encodeURIComponent(esame)}`)
+      .then(r => r.json()).catch(() => ({}));
+    plInp.classList.remove('roi-prezzo-nuovo');
+    if (pResp.fonte === 'piano' || pResp.fonte === 'custom' || pResp.fonte === 'base_fallback') {
+      plInp.value = pResp.prezzo;
+      plInp.dataset.auto = '1';
+      plInp.title = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
+        : pResp.fonte === 'custom' ? 'Prezzo personalizzato salvato in precedenza'
+        : 'Prezzo del piano non disponibile per questo esame — mostrato il prezzo base';
+    } else {
+      plInp.dataset.auto = '0';
+      plInp.title = '';
+      if (!plInp.value) plInp.classList.add('roi-prezzo-nuovo');
+    }
+  } else {
+    plInp.dataset.auto = '0';
+    plInp.title = '';
+    plInp.classList.remove('roi-prezzo-nuovo');
+  }
+
+  aggiornaRigaDOM(tr);
+}
+
 function aggiornaRigaDOM(tr) {
   const tipo = tr.dataset.tipo;
   const idx  = parseInt(tr.dataset.idx);
@@ -1694,6 +1733,32 @@ function initRoiEvents() {
       _acTimeout = setTimeout(() => roiAutocomplete(inp), 200);
     }
   });
+
+  wrap.addEventListener('blur', async e => {
+    const inp = e.target;
+    if (!inp.matches || !inp.matches('.roi-input')) return;
+    const tr = inp.closest('tr');
+    if (!tr) return;
+
+    if (inp.dataset.col === 'esame') {
+      await aggiornaPrezziAutomatici(tr);
+    }
+
+    if (inp.dataset.col === 'prezzo_scontato_lav' && S.roi.pianoId && inp.dataset.auto === '0' && inp.value.trim()) {
+      const esameInp = tr.querySelector('[data-col="esame"]');
+      const esame = esameInp ? esameInp.value.trim() : '';
+      if (esame) {
+        await fetch('/api/prezzi-custom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: parseFloat(inp.value) || 0 })
+        });
+        inp.dataset.auto = '1';
+        inp.classList.remove('roi-prezzo-nuovo');
+        inp.title = 'Prezzo personalizzato salvato';
+      }
+    }
+  }, true);
 
   wrap.addEventListener('keydown', e => {
     if (e.key === 'Tab') {
