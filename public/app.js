@@ -1603,15 +1603,22 @@ async function aggiornaPrezziAutomatici(tr) {
   }
 
   if (S.roi.pianoId) {
-    const pResp = await fetch(`/api/piani/${S.roi.pianoId}/prezzo?esame=${encodeURIComponent(esame)}`)
+    const requestedPianoId = S.roi.pianoId;
+    const pResp = await fetch(`/api/piani/${requestedPianoId}/prezzo?esame=${encodeURIComponent(esame)}`)
       .then(r => r.json()).catch(() => ({}));
+    if (S.roi.pianoId !== requestedPianoId) return; // a newer plan selection superseded this in-flight request; discard
     plInp.classList.remove('roi-prezzo-nuovo');
     if (pResp.fonte === 'piano' || pResp.fonte === 'custom' || pResp.fonte === 'base_fallback') {
-      plInp.value = pResp.prezzo;
-      plInp.dataset.auto = '1';
-      plInp.title = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
+      const titolo = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
         : pResp.fonte === 'custom' ? 'Prezzo personalizzato salvato in precedenza'
         : 'Prezzo del piano non disponibile per questo esame — mostrato il prezzo base';
+      if (plInp.value === '' || plInp.dataset.auto === '1') {
+        plInp.value = pResp.prezzo;
+        plInp.dataset.auto = '1';
+        plInp.title = titolo;
+      } else {
+        plInp.title = `${titolo} (non applicato: modifica manuale in corso)`;
+      }
     } else {
       plInp.dataset.auto = '0';
       plInp.title = '';
@@ -1744,7 +1751,7 @@ function initRoiEvents() {
       await aggiornaPrezziAutomatici(tr);
     }
 
-    if (inp.dataset.col === 'prezzo_scontato_lav' && S.roi.pianoId && inp.dataset.auto === '0' && inp.value.trim()) {
+    if (inp.dataset.col === 'prezzo_scontato_lav' && S.roi.pianoId && inp.dataset.auto !== '1' && inp.value.trim()) {
       const esameInp = tr.querySelector('[data-col="esame"]');
       const esame = esameInp ? esameInp.value.trim() : '';
       if (esame) {
