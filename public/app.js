@@ -1771,11 +1771,11 @@ async function mostraConsiglioPiano(esame) {
   const stessoPiano = consiglio.pianoId === S.roi.pianoId;
   const messaggio = stessoPiano
     ? `✓ Stai già usando il piano più conveniente per <strong>${escHtml(esame)}</strong>: <strong>${escHtml(consiglio.pianoNome)}</strong> (${fmtE(consiglio.prezzo)})`
-    : `💡 Per <strong>${escHtml(esame)}</strong> conviene <strong>${escHtml(consiglio.pianoNome)}</strong> — ${fmtE(consiglio.prezzo)}`;
+    : `💡 Per <strong>${escHtml(esame)}</strong> conviene <strong>${escHtml(consiglio.pianoNome)}</strong> — ${fmtE(consiglio.prezzo)}<br><span style="font-size:11px;color:#6b7280">Clicca per selezionare questo piano</span>`;
 
   banner.innerHTML = `
-    <span class="roi-consiglio-close" onclick="this.parentElement.style.display='none'">×</span>
-    ${messaggio}
+    <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
+    <div ${stessoPiano ? '' : `onclick="selezionaPiano(${consiglio.pianoId})" style="cursor:pointer"`}>${messaggio}</div>
   `;
   banner.style.display = 'block';
 }
