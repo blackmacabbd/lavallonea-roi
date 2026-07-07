@@ -9,10 +9,12 @@ const S = {
   expanded:  {},
   vistaMia:  true,
   charts:    {},
+  piani:     [],
   foglio: { dati: null, totali: null, file: null, foglio: null, fileId: null },
   roi: {
     tab: 'Platinum',
     struttura: '',
+    pianoId: null,
     righe: {
       'Foglio 1': [roiRigaVuota()],
       'Platinum': [roiRigaVuota()],
@@ -61,6 +63,10 @@ function setMain(html) {
 // ── Sidebar ────────────────────────────────────────
 async function loadStrutture() {
   S.strutture = await api('/api/strutture');
+}
+
+async function loadPiani() {
+  S.piani = await api('/api/piani');
 }
 
 function buildSidebar() {
@@ -1289,7 +1295,16 @@ function buildRoiSectionHtml() {
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:500;color:#1a1a1a">Calcolatore ROI</div>
-      <div class="roi-tabs-wrap">${tabHtml}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="roi-tabs-wrap">${tabHtml}</div>
+        <div style="position:relative">
+          <button class="btn-outline roi-piano-btn" id="roi-piano-btn"
+                  onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
+            Piano: ${escHtml(pianoSelezionatoNome() || 'Nessuno')} ▾
+          </button>
+          <div id="roi-piano-panel" class="roi-piano-panel" style="display:none"></div>
+        </div>
+      </div>
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml(tab)}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -1301,6 +1316,57 @@ function buildRoiSectionHtml() {
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="roi-ac" class="roi-autocomplete" style="display:none"></div>
   `;
+}
+
+function pianoSelezionatoNome() {
+  const p = S.piani.find(p => p.id === S.roi.pianoId);
+  return p ? p.nome : null;
+}
+
+function togglePianoPanel() {
+  const panel = el('roi-piano-panel');
+  if (!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) renderPianoPanel('');
+}
+
+function renderPianoPanel(filtro) {
+  const panel = el('roi-piano-panel');
+  if (!panel) return;
+  const f = filtro.trim().toLowerCase();
+  const filtrati = S.piani.filter(p => !f || p.nome.toLowerCase().includes(f));
+  const perCategoria = {};
+  filtrati.forEach(p => { (perCategoria[p.categoria] = perCategoria[p.categoria] || []).push(p); });
+
+  let html = `<input class="roi-input" id="roi-piano-search" placeholder="🔍 Cerca piano..."
+    value="${escHtml(filtro)}" oninput="renderPianoPanel(this.value)"
+    style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
+  html += `<div class="roi-piano-item" onclick="selezionaPiano(null)" style="font-style:italic">— Nessun piano —</div>`;
+  for (const [categoria, items] of Object.entries(perCategoria)) {
+    html += `<div class="roi-piano-categoria">${escHtml(categoria)}</div>`;
+    items.forEach(p => {
+      html += `<div class="roi-piano-item" onclick="selezionaPiano(${p.id})">${escHtml(p.nome)}</div>`;
+    });
+  }
+  panel.innerHTML = html;
+  const inp = el('roi-piano-search');
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function selezionaPiano(id) {
+  S.roi.pianoId = id;
+  const panel = el('roi-piano-panel');
+  if (panel) panel.style.display = 'none';
+  const btn = el('roi-piano-btn');
+  if (btn) {
+    btn.textContent = `Piano: ${pianoSelezionatoNome() || 'Nessuno'} ▾`;
+    btn.title = pianoSelezionatoNome() || '';
+  }
+  const tbody = el('roi-tbody');
+  if (tbody) {
+    tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaPrezziAutomatici(tr));
+  }
 }
 
 function buildRoiTableHtml(tipo) {
@@ -1832,6 +1898,7 @@ function roiMsg(msg, tipo) {
 // ── Init ───────────────────────────────────────────
 async function init() {
   await loadStrutture();
+  await loadPiani();
   buildSidebar();
   initDropzone();
   navigate('dashboard');
