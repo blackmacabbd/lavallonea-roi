@@ -1441,6 +1441,7 @@ function buildRoiSectionHtml() {
     </div>
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="roi-ac" class="roi-autocomplete" style="display:none"></div>
+    <div id="roi-consiglio-banner" class="roi-consiglio-banner" style="display:none"></div>
   `;
 }
 
@@ -1757,6 +1758,26 @@ async function aggiornaPrezziAutomatici(tr) {
   }
 
   aggiornaRigaDOM(tr);
+  mostraConsiglioPiano(esame);
+}
+
+async function mostraConsiglioPiano(esame) {
+  const banner = el('roi-consiglio-banner');
+  if (!banner) return;
+  const consiglio = await fetch(`/api/piani/consiglio?esame=${encodeURIComponent(esame)}`)
+    .then(r => r.json()).catch(() => null);
+  if (!consiglio) { banner.style.display = 'none'; return; }
+
+  const stessoPiano = consiglio.pianoId === S.roi.pianoId;
+  const messaggio = stessoPiano
+    ? `✓ Stai già usando il piano più conveniente per <strong>${escHtml(esame)}</strong>: <strong>${escHtml(consiglio.pianoNome)}</strong> (${fmtE(consiglio.prezzo)})`
+    : `💡 Per <strong>${escHtml(esame)}</strong> conviene <strong>${escHtml(consiglio.pianoNome)}</strong> — ${fmtE(consiglio.prezzo)}`;
+
+  banner.innerHTML = `
+    <span class="roi-consiglio-close" onclick="this.parentElement.style.display='none'">×</span>
+    ${messaggio}
+  `;
+  banner.style.display = 'block';
 }
 
 function aggiornaRigaDOM(tr) {

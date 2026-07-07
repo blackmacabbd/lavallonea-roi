@@ -870,6 +870,34 @@ tbody tr.clickable:hover td { background: #edf7f2; color: #1a7a4a; }
 
 .roi-prezzo-nuovo { border-color: #f5a800 !important; background: #fffdf0; }
 
+.roi-consiglio-banner {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  max-width: 320px;
+  background: #fff;
+  border: 1px solid #e8e9eb;
+  border-left: 4px solid #1a7a4a;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  padding: 14px 30px 14px 16px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #1a1a1a;
+  z-index: 500;
+}
+.roi-consiglio-banner strong { color: #1a7a4a; }
+.roi-consiglio-close {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 16px;
+  line-height: 1;
+}
+.roi-consiglio-close:hover { color: #1a1a1a; }
+
 /* ═══════════════════════════════════════════════════
    UTILITY
    ═══════════════════════════════════════════════════ */

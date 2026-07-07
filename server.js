@@ -885,6 +885,14 @@ app.get('/api/piani/:id/prezzo', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/piani/consiglio', (req, res) => {
+  try {
+    const { esame } = req.query;
+    if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
+    res.json(piani.pianoMigliorePerEsame(db, esame));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
   try {
     const { nome } = req.query;
