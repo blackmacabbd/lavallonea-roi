@@ -664,12 +664,12 @@ function buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg) {
   .ftr{padding:16px 28px;font-size:10px;color:#9ca3af;border-top:1px solid #e8e9eb;margin-top:8px}
 </style></head><body>
 <div class="hdr">
-  <h1>Lavallonea</h1>
+  <h1>Mylav</h1>
   <div class="sub">${fileInfo.struttura_nome} &mdash; ${foglio} &mdash; ${new Date().toLocaleDateString('it-IT')}</div>
 </div>
 <div class="kpis">
   <div class="kpi r"><div class="l">Pagheresti con concorrenza</div><div class="v">${euro(t.prezzo_scontato_concorrenza)}</div></div>
-  <div class="kpi y"><div class="l">Paghi con Lavallonea</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
+  <div class="kpi y"><div class="l">Paghi con Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
   <div class="kpi g"><div class="l">Risparmi scegliendo noi</div>
     <div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:13px;font-weight:400">(${t.risparmio_pct}%)</span></div>
   </div>
@@ -680,12 +680,12 @@ ${chartsSection(donutImg, barreImg)}
   <table>
     <thead><tr>
       <th>Esame</th><th>N.</th><th>Prezzo mercato</th>
-      <th>Prezzo Lavallonea</th><th>Risparmi €</th><th>Risparmi %</th>
+      <th>Prezzo Mylav</th><th>Risparmi €</th><th>Risparmi %</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
 </div>
-<div class="ftr">Prezzi validi per il periodo indicato. Documento generato da Lavallonea ROI Dashboard.</div>
+<div class="ftr">Prezzi validi per il periodo indicato. Documento generato da Mylav ROI Dashboard.</div>
 </body></html>`;
 }
 
@@ -732,14 +732,14 @@ function buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg) {
   .ftr{padding:14px 28px;font-size:10px;color:#9ca3af;border-top:1px solid #e8e9eb}
 </style></head><body>
 <div class="hdr">
-  <h1>Lavallonea &mdash; Report Completo <span class="badge">USO INTERNO</span></h1>
+  <h1>Mylav &mdash; Report Completo <span class="badge">USO INTERNO</span></h1>
   <div class="sub">${fileInfo.struttura_nome} &mdash; ${foglio} &mdash; ${new Date().toLocaleDateString('it-IT')}</div>
 </div>
 <div class="kpis">
   <div class="kpi"><div class="l">Listino concorrenza</div><div class="v">${euro(t.totale_concorrenza)}</div></div>
   <div class="kpi r"><div class="l">Scontato concorrenza</div><div class="v">${euro(t.prezzo_scontato_concorrenza)}</div></div>
-  <div class="kpi"><div class="l">Listino Lavallonea</div><div class="v">${euro(t.totale_listino_lav)}</div></div>
-  <div class="kpi y"><div class="l">Scontato Lavallonea</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
+  <div class="kpi"><div class="l">Listino Mylav</div><div class="v">${euro(t.totale_listino_lav)}</div></div>
+  <div class="kpi y"><div class="l">Scontato Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
   <div class="kpi g"><div class="l">Risparmio dottore</div><div class="v">${euro(t.risparmio_totale_dottore)} (${t.risparmio_pct}%)</div></div>
 </div>
 ${chartsSection(donutImg, barreImg)}
@@ -755,7 +755,7 @@ ${chartsSection(donutImg, barreImg)}
     <tbody>${rows}</tbody>
   </table>
 </div>
-<div class="ftr">Documento confidenziale &mdash; uso interno. Lavallonea ROI Dashboard.</div>
+<div class="ftr">Documento confidenziale &mdash; uso interno. Mylav ROI Dashboard.</div>
 </body></html>`;
 }
 
@@ -787,7 +787,7 @@ app.post('/api/pdf/dottore/:fileId/:foglio', express.json({ limit: '15mb' }), as
     if (!fileInfo) return res.status(404).json({ error: 'File non trovato' });
     const t   = calcolaTotali(dati);
     const pdf = await renderPDF(buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg));
-    const fname = `lavallonea_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_dottore.pdf`;
+    const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_dottore.pdf`;
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
     res.send(pdf);
   } catch (err) {
@@ -805,7 +805,7 @@ app.post('/api/pdf/completo/:fileId/:foglio', express.json({ limit: '15mb' }), a
     if (!fileInfo) return res.status(404).json({ error: 'File non trovato' });
     const t   = calcolaTotali(dati);
     const pdf = await renderPDF(buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg));
-    const fname = `lavallonea_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_completo.pdf`;
+    const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_completo.pdf`;
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
     res.send(pdf);
   } catch (err) {
@@ -930,7 +930,7 @@ app.post('/api/export-excel', express.json(), (req, res) => {
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="lavallonea_${(struttura||'export').replace(/\s/g,'_')}_${foglio}.xlsx"`
+      'Content-Disposition': `attachment; filename="mylav_${(struttura||'export').replace(/\s/g,'_')}_${foglio}.xlsx"`
     });
     res.send(buf);
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -948,6 +948,6 @@ app.delete('/api/cronologia/:id', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\n  ✓ Lavallonea ROI Dashboard`);
+  console.log(`\n  ✓ Mylav ROI Dashboard`);
   console.log(`  → http://localhost:${PORT}\n`);
 });

@@ -1,7 +1,7 @@
 {
-  "name": "lavallonea-roi",
+  "name": "mylav-roi",
   "version": "1.0.0",
-  "description": "ROI Dashboard per Lavallonea — uso privato locale",
+  "description": "ROI Dashboard per Mylav — uso privato locale",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js"

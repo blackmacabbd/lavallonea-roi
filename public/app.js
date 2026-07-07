@@ -1,7 +1,7 @@
 'use strict';
 
 /* ════════════════════════════════════════════════════
-   Lavallonea ROI Dashboard — app.js
+   Mylav ROI Dashboard — app.js
    ════════════════════════════════════════════════════ */
 
 const S = {
@@ -292,7 +292,7 @@ async function renderDashboard() {
           labels: per_struttura.map(s => s.nome),
           datasets: [
             { label: 'Concorrenza scontata', data: per_struttura.map(s => s.fatturato), backgroundColor: '#e74c3c', borderRadius: 4 },
-            { label: 'Lavallonea scontata',  data: per_struttura.map(s => s.costo),    backgroundColor: '#f5a800', borderRadius: 4 }
+            { label: 'Mylav scontata',  data: per_struttura.map(s => s.costo),    backgroundColor: '#f5a800', borderRadius: 4 }
           ]
         },
         options: {
@@ -354,9 +354,9 @@ async function renderFoglio(fileId, foglio) {
       <!-- KPI 4 card -->
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card kpi-yellow">
-          <div class="kpi-label">Paghi con Lavallonea</div>
+          <div class="kpi-label">Paghi con Mylav</div>
           <div class="kpi-value">${euro(t.totale_scontato_lav)}</div>
-          <div class="kpi-sub">Prezzo scontato Lavallonea</div>
+          <div class="kpi-sub">Prezzo scontato Mylav</div>
         </div>
         <div class="kpi-card kpi-red">
           <div class="kpi-label">Pagheresti con concorrenza</div>
@@ -524,8 +524,8 @@ function renderDonutMia(t) {
   el('donut-cv').textContent = euro(t.risparmio_totale_dottore);
   el('donut-cl').textContent = 'Risparmio';
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Prezzo Lavallonea al dottore', color: '#f5a800' },
-    { label: 'Sconto Lavallonea applicato',  color: '#ffd166' },
+    { label: 'Prezzo Mylav al dottore', color: '#f5a800' },
+    { label: 'Sconto Mylav applicato',  color: '#ffd166' },
     { label: 'Risparmio dottore vs concorrenza', color: '#1a7a4a' },
     { label: 'Sconto concorrenza applicato', color: '#e74c3c' }
   ]);
@@ -539,8 +539,8 @@ function renderDonutMia(t) {
     plugins: [whiteBgPlugin],
     data: {
       labels: [
-        'Prezzo Lavallonea al dottore',
-        'Sconto Lavallonea applicato',
+        'Prezzo Mylav al dottore',
+        'Sconto Mylav applicato',
         'Risparmio dottore vs concorrenza',
         'Sconto concorrenza applicato'
       ],
@@ -573,7 +573,7 @@ function renderDonutDottore(t) {
   el('donut-cv').textContent = `${pct}%`;
   el('donut-cl').textContent = 'Risparmi';
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Lavallonea', color: '#f5a800' },
+    { label: 'Paghi con Mylav', color: '#f5a800' },
     { label: 'Risparmio vs mercato', color: '#1a7a4a' }
   ]);
 
@@ -587,7 +587,7 @@ function renderDonutDottore(t) {
     type: 'doughnut',
     plugins: [whiteBgPlugin],
     data: {
-      labels: ['Paghi con Lavallonea', 'Risparmio vs mercato'],
+      labels: ['Paghi con Mylav', 'Risparmio vs mercato'],
       datasets: [{
         data: totale > 0 ? [v1, v2] : [1, 1],
         backgroundColor: ['#f5a800', '#1a7a4a'],
@@ -600,7 +600,7 @@ function renderDonutDottore(t) {
       label: ctx => {
         if (totale === 0) return '  Nessun dato';
         if (ctx.dataIndex === 0) return [
-          `  Paghi con Lavallonea: ${euro(ctx.raw)}`,
+          `  Paghi con Mylav: ${euro(ctx.raw)}`,
           `  Invece di: ${euro(concBase)} (concorrenza)`
         ];
         return [
@@ -615,7 +615,7 @@ function renderDonutDottore(t) {
 // ─── BARRE Vista MIA (stacked: giallo=Lav + verde=risparmio = totale concorrenza) ──
 function renderBarreMia(dati) {
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Lavallonea', color: '#f5a800' },
+    { label: 'Paghi con Mylav', color: '#f5a800' },
     { label: 'Risparmio dottore',    color: '#1a7a4a' }
   ]);
 
@@ -633,7 +633,7 @@ function renderBarreMia(dati) {
       labels: dati.map(d => d.esame),
       datasets: [
         {
-          label: 'Paghi con Lavallonea',
+          label: 'Paghi con Mylav',
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
           backgroundColor: '#f5a800',
           borderRadius: 0
@@ -654,7 +654,7 @@ function renderBarreMia(dati) {
       label: ctx => {
         const d = dati[ctx.dataIndex];
         if (!d) return '';
-        if (ctx.datasetIndex === 0) return `  Paghi con Lavallonea: ${euro(d.totale_scontato_lav)}`;
+        if (ctx.datasetIndex === 0) return `  Paghi con Mylav: ${euro(d.totale_scontato_lav)}`;
         const pct = d.prezzo_scontato_concorrenza > 0
           ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
         return `  Risparmio: ${euro(d.risparmio_dottore)} (${pct}%)`;
@@ -671,7 +671,7 @@ function renderBarreMia(dati) {
 // ─── BARRE Vista DOTTORE (stacked: giallo=Lav + verde=risparmio) ──
 function renderBarreDottore(dati) {
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Lavallonea', color: '#f5a800' },
+    { label: 'Paghi con Mylav', color: '#f5a800' },
     { label: 'Risparmio vs mercato', color: '#1a7a4a' }
   ]);
 
@@ -689,7 +689,7 @@ function renderBarreDottore(dati) {
       labels: dati.map(d => d.esame),
       datasets: [
         {
-          label: 'Paghi con Lavallonea',
+          label: 'Paghi con Mylav',
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
           backgroundColor: '#f5a800',
           borderRadius: 0
@@ -707,7 +707,7 @@ function renderBarreDottore(dati) {
       label: ctx => {
         const d = dati[ctx.dataIndex];
         if (!d) return '';
-        if (ctx.datasetIndex === 0) return `  Prezzo Lavallonea: ${euro(d.totale_scontato_lav)}`;
+        if (ctx.datasetIndex === 0) return `  Prezzo Mylav: ${euro(d.totale_scontato_lav)}`;
         const pct = d.prezzo_scontato_concorrenza > 0
           ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
         return `  Risparmi: ${euro(d.risparmio_dottore)} (${pct}%)`;
@@ -790,7 +790,7 @@ function renderFoglioTable(dati) {
   } else {
     head.innerHTML = `<tr>
       <th>Esame</th><th>N.</th>
-      <th>Prezzo mercato</th><th>Prezzo Lavallonea</th>
+      <th>Prezzo mercato</th><th>Prezzo Mylav</th>
       <th>Risparmi €</th><th>Risparmi %</th>
     </tr>`;
     body.innerHTML = dati.map(d => {
@@ -859,7 +859,7 @@ async function renderTotali(strutturaId, nome) {
           <div class="kpi-value">${euro(cum.prezzo_scontato_concorrenza)}</div>
         </div>
         <div class="kpi-card kpi-yellow">
-          <div class="kpi-label">Scontato Lavallonea</div>
+          <div class="kpi-label">Scontato Mylav</div>
           <div class="kpi-value">${euro(cum.totale_scontato_lav)}</div>
         </div>
         <div class="kpi-card kpi-green">
@@ -971,7 +971,7 @@ async function renderCronologia() {
           <table>
             <thead><tr>
               <th>Data</th><th>File</th><th>Struttura</th><th>Fogli</th>
-              <th>Concorrenza scontata</th><th>Lavallonea scontata</th><th>Risparmio</th><th></th>
+              <th>Concorrenza scontata</th><th>Mylav scontata</th><th>Risparmio</th><th></th>
             </tr></thead>
             <tbody id="crono-tbody">
               ${buildCronoRows(rows)}
@@ -1055,7 +1055,7 @@ async function renderConfronto() {
     </div>
     <div class="page-body">
       <div class="section-card">
-        <div class="section-card-title">Concorrenza vs Lavallonea vs Risparmio</div>
+        <div class="section-card-title">Concorrenza vs Mylav vs Risparmio</div>
         <div class="chart-legend" id="conf-legend" style="margin-bottom:12px"></div>
         <canvas id="chart-conf" height="240"></canvas>
       </div>
@@ -1084,7 +1084,7 @@ async function renderConfronto() {
 
   el('conf-legend').innerHTML = legendHtml([
     { label: 'Concorrenza scontata', color: '#e74c3c' },
-    { label: 'Lavallonea scontata',  color: '#f5a800' },
+    { label: 'Mylav scontata',  color: '#f5a800' },
     { label: 'Risparmio dottore',    color: '#1a7a4a' }
   ]);
 
@@ -1094,7 +1094,7 @@ async function renderConfronto() {
       labels: data.map(s => s.nome),
       datasets: [
         { label: 'Concorrenza scontata', data: data.map(s => s.prezzo_scontato_concorrenza), backgroundColor: '#e74c3c', borderRadius: 4 },
-        { label: 'Lavallonea scontata',  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#f5a800', borderRadius: 4 },
+        { label: 'Mylav scontata',  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#f5a800', borderRadius: 4 },
         { label: 'Risparmio dottore',    data: data.map(s => s.risparmio_totale),              backgroundColor: '#1a7a4a', borderRadius: 4 }
       ]
     },
@@ -1192,7 +1192,7 @@ async function downloadPdf(fileId, foglio, tipo) {
   const blob = await res.blob();
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
-  a.href = url; a.download = `lavallonea_${foglio}_${tipo}.pdf`;
+  a.href = url; a.download = `mylav_${foglio}_${tipo}.pdf`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -1312,14 +1312,14 @@ function buildRoiTableHtml(tipo) {
       <th colspan="3"></th>
       <th colspan="3" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
       <th></th>
-      <th colspan="2" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Lavallonea</th>
+      <th colspan="2" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Mylav</th>
       <th></th><th></th>
     </tr>` : `
     <tr>
       <th colspan="4"></th>
       <th colspan="4" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
       <th></th>
-      <th colspan="4" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Lavallonea</th>
+      <th colspan="4" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Mylav</th>
       <th></th><th></th>
     </tr>`;
 
@@ -1802,7 +1802,7 @@ async function esportaExcelRoi() {
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url; a.download = `lavallonea_${tipo}.xlsx`;
+    a.href = url; a.download = `mylav_${tipo}.xlsx`;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
   } catch(e) { roiMsg('Errore export: ' + e.message, 'error'); }
