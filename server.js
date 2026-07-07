@@ -10,10 +10,10 @@ const fs       = require('fs');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-const DB_PATH     = process.env.DB_PATH || path.join(__dirname, 'db', 'database.sqlite');
-const UPLOADS_DIR = path.join(__dirname, 'uploads');
+const DB_PATH     = process.env.DB_PATH     || path.join(__dirname, 'db', 'database.sqlite');
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
 
-fs.mkdirSync(path.join(__dirname, 'db'), { recursive: true });
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 
 // ── Database ───────────────────────────────────────
