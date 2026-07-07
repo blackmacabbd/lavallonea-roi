@@ -903,9 +903,59 @@ app.post('/api/prezzi-custom', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/piani/:id', (req, res) => {
+  try {
+    const piano = db.prepare(`SELECT * FROM piani_sconto WHERE id = ?`).get(req.params.id);
+    if (!piano) return res.status(404).json({ error: 'Piano non trovato' });
+    const prezzi = db.prepare(`
+      SELECT er.id AS esame_id, er.nome AS esame_nome, er.prezzo_base, pp.prezzo
+      FROM esami_riferimento er
+      LEFT JOIN prezzi_piano_esame pp ON pp.esame_id = er.id AND pp.piano_id = ?
+      ORDER BY er.nome
+    `).all(req.params.id);
+    res.json({ piano, prezzi });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/piani/:id/prezzi', express.json({ limit: '2mb' }), (req, res) => {
+  try {
+    const { prezzi } = req.body || {};
+    if (!Array.isArray(prezzi)) return res.status(400).json({ error: 'Formato non valido, atteso { prezzi: [...] }' });
+    const upsert = db.prepare(`
+      INSERT INTO prezzi_piano_esame (piano_id, esame_id, prezzo) VALUES (?, ?, ?)
+      ON CONFLICT(piano_id, esame_id) DO UPDATE SET prezzo = excluded.prezzo
+    `);
+    db.exec('BEGIN');
+    try {
+      for (const r of prezzi) upsert.run(req.params.id, r.esame_id, r.prezzo);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+    res.json({ success: true, aggiornati: prezzi.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.put('/api/piani/:id/attivo', express.json(), (req, res) => {
+  try {
+    const { attivo } = req.body || {};
+    db.prepare(`UPDATE piani_sconto SET attivo = ? WHERE id = ?`).run(attivo ? 1 : 0, req.params.id);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/piani/import', express.json({ limit: '10mb' }), (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || !data.plans || !data.exams_base_price) {
+      return res.status(400).json({ error: 'JSON non nel formato atteso (servono exams_base_price e plans)' });
+    }
+    const result = piani.upsertFromJson(db, data);
+    res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/calcolo/salva', express.json(), (req, res) => {
   try {
-    const { struttura: strutturaNome, foglio, righe, nomeFile } = req.body || {};
+    const { struttura: strutturaNome, foglio, righe, nomeFile, piano_id } = req.body || {};
     if (!strutturaNome || !foglio || !righe?.length)
       return res.status(400).json({ error: 'Dati mancanti' });
 
@@ -927,8 +977,8 @@ app.post('/api/calcolo/salva', express.json(), (req, res) => {
           (file_id, foglio, esame, n_esami,
            listino_concorrenza, totale_concorrenza, prezzo_scontato_concorrenza,
            listino_lav, totale_listino_lav, prezzo_scontato_lav, totale_scontato_lav,
-           risparmio_dottore, sconto_concorrenza, sconto_lav)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           risparmio_dottore, sconto_concorrenza, sconto_lav, piano_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const r of righe) {
@@ -942,7 +992,7 @@ app.post('/api/calcolo/salva', express.json(), (req, res) => {
         const tPLav    = pLav * n;
         ins.run(fileId, foglio, r.esame, n,
           lConc, tConc, pConc, lLav, tLLav, pLav, tPLav,
-          pConc - tPLav, tConc - pConc, tLLav - tPLav);
+          pConc - tPLav, tConc - pConc, tLLav - tPLav, piano_id || null);
       }
       db.exec('COMMIT');
       res.json({ success: true, file_id: fileId, struttura_id: strRow.id, struttura: strutturaNome, fogli: [foglio] });
