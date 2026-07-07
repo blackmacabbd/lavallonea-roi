@@ -129,6 +129,9 @@ function buildSidebar() {
     <div class="nav-item ${isActive('debug')}" onclick="navigate('debug')" style="color:#f5a800">
       <span class="nav-icon">🔍</span> Debug Excel
     </div>
+    <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
+      <span class="nav-icon">💰</span> Gestione piani
+    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -181,6 +184,7 @@ function navigate(view, params = {}) {
     case 'cronologia': renderCronologia();                             break;
     case 'confronto':  renderConfronto();                              break;
     case 'debug':      renderDebug();                                  break;
+    case 'piani':      renderPiani();                                  break;
   }
   buildSidebar();
 }
@@ -1276,6 +1280,114 @@ function renderDebug() {
     }
     out.innerHTML = html || '<div style="color:#6b7280">Nessun foglio trovato</div>';
   });
+}
+
+// ── Gestione piani ──────────────────────────────────
+async function renderPiani() {
+  let elenco;
+  try { elenco = await api('/api/piani?all=1'); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">Gestione piani di scontistica</div>
+        <div class="page-subtitle">${elenco.length} piani (attivi e disattivati)</div>
+      </div>
+      <div class="page-actions">
+        <label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
+        <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Nome</th><th>Categoria</th><th>Anno</th><th>Attivo</th><th></th></tr></thead>
+            <tbody>
+              ${elenco.map(p => `<tr>
+                <td>${escHtml(p.nome)}</td>
+                <td class="td-muted">${escHtml(p.categoria)}</td>
+                <td class="td-muted">${p.anno || '—'}</td>
+                <td>${p.attivo ? '✅' : '❌'}</td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
+                  <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="piano-edit-wrap"></div>
+    </div>
+  `);
+}
+
+async function togglePianoAttivo(id, attivo) {
+  await fetch(`/api/piani/${id}/attivo`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ attivo })
+  });
+  await loadPiani();
+  renderPiani();
+}
+
+async function renderPianoEdit(id) {
+  const data = await api(`/api/piani/${id}`);
+  const wrap = el('piano-edit-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">Prezzi — ${escHtml(data.piano.nome)}</div>
+      <table class="roi-editable-table">
+        <thead><tr><th>Esame</th><th>Prezzo base</th><th>Prezzo per questo piano</th></tr></thead>
+        <tbody>
+          ${data.prezzi.map(p => `<tr>
+            <td>${escHtml(p.esame_nome)}</td>
+            <td class="td-muted">${fmtE(p.prezzo_base)}</td>
+            <td><input class="roi-input roi-num" data-esame-id="${p.esame_id}" value="${p.prezzo != null ? p.prezzo : ''}" placeholder="0.00"></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <button class="btn-primary mt-4" onclick="salvaPianoPrezzi(${id})">Salva prezzi</button>
+    </div>
+  `;
+}
+
+async function salvaPianoPrezzi(id) {
+  const wrap = el('piano-edit-wrap');
+  const inputs = wrap.querySelectorAll('[data-esame-id]');
+  const prezzi = Array.from(inputs)
+    .map(inp => ({ esame_id: Number(inp.dataset.esameId), prezzo: parseFloat(inp.value) }))
+    .filter(p => !isNaN(p.prezzo));
+  await fetch(`/api/piani/${id}/prezzi`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prezzi })
+  });
+  alert('Prezzi salvati.');
+}
+
+async function importaPianiJson(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const text = await file.text();
+  let data;
+  try { data = JSON.parse(text); } catch (e) { alert('File JSON non valido'); return; }
+  try {
+    const resp = await fetch('/api/piani/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    await loadPiani();
+    renderPiani();
+    alert('Import completato.');
+  } catch (e) { alert('Errore import: ' + e.message); }
+  inputEl.value = '';
 }
 
 // ══════════════════════════════════════════════════
