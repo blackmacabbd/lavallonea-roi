@@ -867,8 +867,8 @@ app.get('/api/piani', (req, res) => {
   try {
     const all = req.query.all === '1';
     const rows = all
-      ? db.prepare(`SELECT id, nome, categoria, ordine, attivo FROM piani_sconto ORDER BY ordine`).all()
-      : db.prepare(`SELECT id, nome, categoria, ordine FROM piani_sconto WHERE attivo = 1 ORDER BY ordine`).all();
+      ? db.prepare(`SELECT id, nome, categoria, anno, ordine, attivo FROM piani_sconto ORDER BY ordine`).all()
+      : db.prepare(`SELECT id, nome, categoria, anno, ordine FROM piani_sconto WHERE attivo = 1 ORDER BY ordine`).all();
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
