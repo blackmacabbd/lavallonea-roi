@@ -6,6 +6,7 @@ const XLSX     = require('xlsx');
 const { DatabaseSync } = require('node:sqlite');
 const path     = require('path');
 const fs       = require('fs');
+const piani = require('./lib/piani');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -77,6 +78,21 @@ try {
   )`);
 }
 
+// ── Piani di scontistica ────────────────────────────
+piani.ensureSchema(db);
+try {
+  const seedPath = path.join(__dirname, 'piani_sconto_esami_2026.json');
+  if (fs.existsSync(seedPath)) {
+    const seedData = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const seedResult = piani.seedFromJson(db, seedData);
+    if (seedResult.seeded) {
+      console.log(`  ✓ Seed piani sconto: ${seedResult.piani} piani, ${seedResult.esami} esami`);
+    }
+  }
+} catch (err) {
+  console.error('Seed piani sconto fallito:', err.message);
+}
+
 // ── Multer ─────────────────────────────────────────
 const storage = multer.diskStorage({
   destination: UPLOADS_DIR,
@@ -91,7 +107,7 @@ const upload = multer({
 });
 
 // ── Excel helpers ──────────────────────────────────
-function norm(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+const norm = piani.norm;
 
 function findCol(headers, ...terms) {
   for (const term of terms) {
@@ -820,10 +836,16 @@ app.get('/api/esami/autocomplete', (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 1) return res.json([]);
-    const rows = db.prepare(
-      `SELECT DISTINCT esame FROM dati_foglio WHERE esame LIKE ? ORDER BY esame LIMIT 20`
-    ).all(`%${q}%`);
-    res.json(rows.map(r => r.esame));
+    const like = `%${q}%`;
+    const rows = db.prepare(`
+      SELECT esame AS nome FROM dati_foglio WHERE esame LIKE ?
+      UNION
+      SELECT nome FROM esami_riferimento WHERE nome LIKE ?
+      UNION
+      SELECT esame_nome AS nome FROM prezzi_esami_custom WHERE esame_nome LIKE ?
+      ORDER BY nome LIMIT 20
+    `).all(like, like, like);
+    res.json(rows.map(r => r.nome));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -838,6 +860,46 @@ app.get('/api/esami/prezzi', (req, res) => {
       FROM dati_foglio WHERE LOWER(TRIM(esame)) = LOWER(TRIM(?))
     `).get(nome);
     res.json(row || {});
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/piani', (req, res) => {
+  try {
+    const all = req.query.all === '1';
+    const rows = all
+      ? db.prepare(`SELECT id, nome, categoria, ordine, attivo FROM piani_sconto ORDER BY ordine`).all()
+      : db.prepare(`SELECT id, nome, categoria, ordine FROM piani_sconto WHERE attivo = 1 ORDER BY ordine`).all();
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/piani/:id/prezzo', (req, res) => {
+  try {
+    const { esame } = req.query;
+    if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
+    const result = piani.resolvePrezzo(db, Number(req.params.id), esame);
+    if (result.fonte === 'base_fallback') {
+      console.warn(`Prezzo mancante per piano ${req.params.id}, esame "${esame}" — uso il prezzo base come fallback`);
+    }
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
+  try {
+    const { nome } = req.query;
+    res.json({ prezzo_base: nome ? piani.getPrezzoBase(db, nome) : null });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/prezzi-custom', express.json(), (req, res) => {
+  try {
+    const { esame_nome, piano_id, prezzo } = req.body || {};
+    if (!esame_nome || !piano_id || prezzo == null) {
+      return res.status(400).json({ error: 'Dati mancanti (esame_nome, piano_id, prezzo)' });
+    }
+    piani.salvaPrezzoCustom(db, esame_nome, Number(piano_id), Number(prezzo));
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
