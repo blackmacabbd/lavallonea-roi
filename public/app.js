@@ -1941,8 +1941,9 @@ async function selezionaEsame(itemEl, nome) {
   const tr = inp.closest('tr');
   if (!tr) return;
   aggiornaRigaDOM(tr);
+  await aggiornaPrezziAutomatici(tr);
 
-  // Pre-popola prezzi storici
+  // Pre-popola prezzi storici (solo listino concorrenza, non coperto dal piano)
   const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`).then(r => r.json()).catch(() => ({}));
   if (prezzi.listino_concorrenza) {
     const lcInp = tr.querySelector('[data-col="listino_concorrenza"]');
