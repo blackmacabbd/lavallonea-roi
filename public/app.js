@@ -1930,6 +1930,13 @@ function initRoiEvents() {
       }
     }
     if (e.key === 'Escape') hideAc();
+    if (e.key === 'Enter') {
+      const inp = e.target;
+      if (!inp.matches('.roi-input')) return;
+      e.preventDefault();
+      hideAc();
+      inp.blur(); // Invio non genera blur di suo: lo forziamo per far partire la cascata prezzo
+    }
   });
 
   document.addEventListener('click', e => {
