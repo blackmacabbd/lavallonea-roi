@@ -9,10 +9,12 @@ const S = {
   expanded:  {},
   vistaMia:  true,
   charts:    {},
+  piani:     [],
   foglio: { dati: null, totali: null, file: null, foglio: null, fileId: null },
   roi: {
     tab: 'Platinum',
     struttura: '',
+    pianoId: null,
     righe: {
       'Foglio 1': [roiRigaVuota()],
       'Platinum': [roiRigaVuota()],
@@ -61,6 +63,10 @@ function setMain(html) {
 // ── Sidebar ────────────────────────────────────────
 async function loadStrutture() {
   S.strutture = await api('/api/strutture');
+}
+
+async function loadPiani() {
+  S.piani = await api('/api/piani');
 }
 
 function buildSidebar() {
@@ -123,6 +129,9 @@ function buildSidebar() {
     <div class="nav-item ${isActive('debug')}" onclick="navigate('debug')" style="color:#f5a800">
       <span class="nav-icon">🔍</span> Debug Excel
     </div>
+    <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
+      <span class="nav-icon">💰</span> Gestione piani
+    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -175,6 +184,7 @@ function navigate(view, params = {}) {
     case 'cronologia': renderCronologia();                             break;
     case 'confronto':  renderConfronto();                              break;
     case 'debug':      renderDebug();                                  break;
+    case 'piani':      renderPiani();                                  break;
   }
   buildSidebar();
 }
@@ -1272,6 +1282,128 @@ function renderDebug() {
   });
 }
 
+// ── Gestione piani ──────────────────────────────────
+async function renderPiani() {
+  let elenco;
+  try { elenco = await api('/api/piani?all=1'); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">Gestione piani di scontistica</div>
+        <div class="page-subtitle">${elenco.length} piani (attivi e disattivati)</div>
+      </div>
+      <div class="page-actions">
+        <label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
+        <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Nome</th><th>Categoria</th><th>Anno</th><th>Attivo</th><th></th></tr></thead>
+            <tbody>
+              ${elenco.map(p => `<tr>
+                <td>${escHtml(p.nome)}</td>
+                <td class="td-muted">${escHtml(p.categoria)}</td>
+                <td class="td-muted">${p.anno || '—'}</td>
+                <td>${p.attivo ? '✅' : '❌'}</td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
+                  <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="piano-edit-wrap"></div>
+    </div>
+  `);
+}
+
+async function togglePianoAttivo(id, attivo) {
+  try {
+    await api(`/api/piani/${id}/attivo`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attivo })
+    });
+    await loadPiani();
+    renderPiani();
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  }
+}
+
+async function renderPianoEdit(id) {
+  let data;
+  try {
+    data = await api(`/api/piani/${id}`);
+  } catch (e) {
+    alert('Errore: ' + e.message);
+    return;
+  }
+  const wrap = el('piano-edit-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">Prezzi — ${escHtml(data.piano.nome)}</div>
+      <table class="roi-editable-table">
+        <thead><tr><th>Esame</th><th>Prezzo base</th><th>Prezzo per questo piano</th></tr></thead>
+        <tbody>
+          ${data.prezzi.map(p => `<tr>
+            <td>${escHtml(p.esame_nome)}</td>
+            <td class="td-muted">${fmtE(p.prezzo_base)}</td>
+            <td><input class="roi-input roi-num" data-esame-id="${p.esame_id}" value="${p.prezzo != null ? p.prezzo : ''}" placeholder="0.00"></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+      <button class="btn-primary mt-4" onclick="salvaPianoPrezzi(${id})">Salva prezzi</button>
+    </div>
+  `;
+}
+
+async function salvaPianoPrezzi(id) {
+  const wrap = el('piano-edit-wrap');
+  const inputs = wrap.querySelectorAll('[data-esame-id]');
+  const prezzi = Array.from(inputs)
+    .map(inp => ({ esame_id: Number(inp.dataset.esameId), prezzo: parseFloat(inp.value) }))
+    .filter(p => !isNaN(p.prezzo));
+  try {
+    await api(`/api/piani/${id}/prezzi`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prezzi })
+    });
+    alert('Prezzi salvati.');
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  }
+}
+
+async function importaPianiJson(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const text = await file.text();
+  let data;
+  try { data = JSON.parse(text); } catch (e) { alert('File JSON non valido'); return; }
+  try {
+    const resp = await fetch('/api/piani/import', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    await loadPiani();
+    renderPiani();
+    alert('Import completato.');
+  } catch (e) { alert('Errore import: ' + e.message); }
+  inputEl.value = '';
+}
+
 // ══════════════════════════════════════════════════
 // ROI CALCOLATORE
 // ══════════════════════════════════════════════════
@@ -1289,7 +1421,16 @@ function buildRoiSectionHtml() {
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:500;color:#1a1a1a">Calcolatore ROI</div>
-      <div class="roi-tabs-wrap">${tabHtml}</div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div class="roi-tabs-wrap">${tabHtml}</div>
+        <div style="position:relative">
+          <button class="btn-outline roi-piano-btn" id="roi-piano-btn"
+                  onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
+            Piano: ${escHtml(pianoSelezionatoNome() || 'Nessuno')} ▾
+          </button>
+          <div id="roi-piano-panel" class="roi-piano-panel" style="display:none"></div>
+        </div>
+      </div>
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml(tab)}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
@@ -1301,6 +1442,57 @@ function buildRoiSectionHtml() {
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="roi-ac" class="roi-autocomplete" style="display:none"></div>
   `;
+}
+
+function pianoSelezionatoNome() {
+  const p = S.piani.find(p => p.id === S.roi.pianoId);
+  return p ? p.nome : null;
+}
+
+function togglePianoPanel() {
+  const panel = el('roi-piano-panel');
+  if (!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) renderPianoPanel('');
+}
+
+function renderPianoPanel(filtro) {
+  const panel = el('roi-piano-panel');
+  if (!panel) return;
+  const f = filtro.trim().toLowerCase();
+  const filtrati = S.piani.filter(p => !f || p.nome.toLowerCase().includes(f));
+  const perCategoria = {};
+  filtrati.forEach(p => { (perCategoria[p.categoria] = perCategoria[p.categoria] || []).push(p); });
+
+  let html = `<input class="roi-input" id="roi-piano-search" placeholder="🔍 Cerca piano..."
+    value="${escHtml(filtro)}" oninput="renderPianoPanel(this.value)"
+    style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
+  html += `<div class="roi-piano-item" onclick="selezionaPiano(null)" style="font-style:italic">— Nessun piano —</div>`;
+  for (const [categoria, items] of Object.entries(perCategoria)) {
+    html += `<div class="roi-piano-categoria">${escHtml(categoria)}</div>`;
+    items.forEach(p => {
+      html += `<div class="roi-piano-item" onclick="selezionaPiano(${p.id})">${escHtml(p.nome)}</div>`;
+    });
+  }
+  panel.innerHTML = html;
+  const inp = el('roi-piano-search');
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function selezionaPiano(id) {
+  S.roi.pianoId = id;
+  const panel = el('roi-piano-panel');
+  if (panel) panel.style.display = 'none';
+  const btn = el('roi-piano-btn');
+  if (btn) {
+    btn.textContent = `Piano: ${pianoSelezionatoNome() || 'Nessuno'} ▾`;
+    btn.title = pianoSelezionatoNome() || '';
+  }
+  const tbody = el('roi-tbody');
+  if (tbody) {
+    tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaPrezziAutomatici(tr));
+  }
 }
 
 function buildRoiTableHtml(tipo) {
@@ -1521,6 +1713,52 @@ function reRenderRoiTable(tipo) {
   initRoiEvents();
 }
 
+async function aggiornaPrezziAutomatici(tr) {
+  const esameInp = tr.querySelector('[data-col="esame"]');
+  const llInp    = tr.querySelector('[data-col="listino_lav"]');
+  const plInp    = tr.querySelector('[data-col="prezzo_scontato_lav"]');
+  if (!esameInp || !llInp || !plInp) return;
+  const esame = esameInp.value.trim();
+  if (!esame) return;
+
+  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`)
+    .then(r => r.json()).catch(() => ({}));
+  if (baseResp.prezzo_base != null && (llInp.value === '' || llInp.dataset.auto === '1')) {
+    llInp.value = baseResp.prezzo_base;
+    llInp.dataset.auto = '1';
+  }
+
+  if (S.roi.pianoId) {
+    const requestedPianoId = S.roi.pianoId;
+    const pResp = await fetch(`/api/piani/${requestedPianoId}/prezzo?esame=${encodeURIComponent(esame)}`)
+      .then(r => r.json()).catch(() => ({}));
+    if (S.roi.pianoId !== requestedPianoId) return; // a newer plan selection superseded this in-flight request; discard
+    plInp.classList.remove('roi-prezzo-nuovo');
+    if (pResp.fonte === 'piano' || pResp.fonte === 'custom' || pResp.fonte === 'base_fallback') {
+      const titolo = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
+        : pResp.fonte === 'custom' ? 'Prezzo personalizzato salvato in precedenza'
+        : 'Prezzo del piano non disponibile per questo esame — mostrato il prezzo base';
+      if (plInp.value === '' || plInp.dataset.auto === '1') {
+        plInp.value = pResp.prezzo;
+        plInp.dataset.auto = '1';
+        plInp.title = titolo;
+      } else {
+        plInp.title = `${titolo} (non applicato: modifica manuale in corso)`;
+      }
+    } else {
+      plInp.dataset.auto = '0';
+      plInp.title = '';
+      if (!plInp.value) plInp.classList.add('roi-prezzo-nuovo');
+    }
+  } else {
+    plInp.dataset.auto = '0';
+    plInp.title = '';
+    plInp.classList.remove('roi-prezzo-nuovo');
+  }
+
+  aggiornaRigaDOM(tr);
+}
+
 function aggiornaRigaDOM(tr) {
   const tipo = tr.dataset.tipo;
   const idx  = parseInt(tr.dataset.idx);
@@ -1628,6 +1866,32 @@ function initRoiEvents() {
       _acTimeout = setTimeout(() => roiAutocomplete(inp), 200);
     }
   });
+
+  wrap.addEventListener('blur', async e => {
+    const inp = e.target;
+    if (!inp.matches || !inp.matches('.roi-input')) return;
+    const tr = inp.closest('tr');
+    if (!tr) return;
+
+    if (inp.dataset.col === 'esame') {
+      await aggiornaPrezziAutomatici(tr);
+    }
+
+    if (inp.dataset.col === 'prezzo_scontato_lav' && S.roi.pianoId && inp.dataset.auto !== '1' && inp.value.trim()) {
+      const esameInp = tr.querySelector('[data-col="esame"]');
+      const esame = esameInp ? esameInp.value.trim() : '';
+      if (esame) {
+        await fetch('/api/prezzi-custom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: parseFloat(inp.value) || 0 })
+        });
+        inp.dataset.auto = '1';
+        inp.classList.remove('roi-prezzo-nuovo');
+        inp.title = 'Prezzo personalizzato salvato';
+      }
+    }
+  }, true);
 
   wrap.addEventListener('keydown', e => {
     if (e.key === 'Tab') {
@@ -1775,7 +2039,7 @@ async function salvaCalcolo() {
     const resp = await api('/api/calcolo/salva', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ struttura, foglio: tipo, righe, nomeFile })
+      body: JSON.stringify({ struttura, foglio: tipo, righe, nomeFile, piano_id: S.roi.pianoId })
     });
     roiMsg('✓ Salvato! Trovi il file nella Cronologia.', 'ok');
     await loadStrutture();
@@ -1832,6 +2096,7 @@ function roiMsg(msg, tipo) {
 // ── Init ───────────────────────────────────────────
 async function init() {
   await loadStrutture();
+  await loadPiani();
   buildSidebar();
   initDropzone();
   navigate('dashboard');

@@ -833,6 +833,43 @@ tbody tr.clickable:hover td { background: #edf7f2; color: #1a7a4a; }
 .roi-ac-item:last-child { border-bottom: none; }
 .roi-ac-item:hover { background: #fff9e6; }
 
+.roi-piano-btn { white-space: nowrap; border-radius: 20px; }
+
+.roi-piano-panel {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  width: 280px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #e8e9eb;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 10px;
+  z-index: 300;
+}
+
+.roi-piano-categoria {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: #6b7280;
+  margin: 10px 0 4px;
+}
+.roi-piano-categoria:first-of-type { margin-top: 4px; }
+
+.roi-piano-item {
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.roi-piano-item:hover { background: #fff9e6; }
+
+.roi-prezzo-nuovo { border-color: #f5a800 !important; background: #fffdf0; }
+
 /* ═══════════════════════════════════════════════════
    UTILITY
    ═══════════════════════════════════════════════════ */
