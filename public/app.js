@@ -1328,16 +1328,26 @@ async function renderPiani() {
 }
 
 async function togglePianoAttivo(id, attivo) {
-  await fetch(`/api/piani/${id}/attivo`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ attivo })
-  });
-  await loadPiani();
-  renderPiani();
+  try {
+    await api(`/api/piani/${id}/attivo`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ attivo })
+    });
+    await loadPiani();
+    renderPiani();
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  }
 }
 
 async function renderPianoEdit(id) {
-  const data = await api(`/api/piani/${id}`);
+  let data;
+  try {
+    data = await api(`/api/piani/${id}`);
+  } catch (e) {
+    alert('Errore: ' + e.message);
+    return;
+  }
   const wrap = el('piano-edit-wrap');
   if (!wrap) return;
   wrap.innerHTML = `
@@ -1364,11 +1374,15 @@ async function salvaPianoPrezzi(id) {
   const prezzi = Array.from(inputs)
     .map(inp => ({ esame_id: Number(inp.dataset.esameId), prezzo: parseFloat(inp.value) }))
     .filter(p => !isNaN(p.prezzo));
-  await fetch(`/api/piani/${id}/prezzi`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prezzi })
-  });
-  alert('Prezzi salvati.');
+  try {
+    await api(`/api/piani/${id}/prezzi`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prezzi })
+    });
+    alert('Prezzi salvati.');
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  }
 }
 
 async function importaPianiJson(inputEl) {
@@ -2025,7 +2039,7 @@ async function salvaCalcolo() {
     const resp = await api('/api/calcolo/salva', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ struttura, foglio: tipo, righe, nomeFile })
+      body: JSON.stringify({ struttura, foglio: tipo, righe, nomeFile, piano_id: S.roi.pianoId })
     });
     roiMsg('✓ Salvato! Trovi il file nella Cronologia.', 'ok');
     await loadStrutture();
