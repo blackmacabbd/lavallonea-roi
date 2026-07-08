@@ -1442,6 +1442,7 @@ function buildRoiSectionHtml() {
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="roi-ac" class="roi-autocomplete" style="display:none"></div>
     <div id="roi-consiglio-banner" class="roi-consiglio-banner" style="display:none"></div>
+    <div id="roi-match-banner" class="roi-consiglio-banner roi-match-banner" style="display:none"></div>
   `;
 }
 
