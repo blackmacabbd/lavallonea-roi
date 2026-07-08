@@ -1583,7 +1583,7 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
   const esameMylavNome = inp ? inp.value.trim() : '';
   if (!esameMylavNome) return alert('Scrivi il nome esame Mylav corrispondente');
   try {
-    await fetch(`/api/concorrenti/${concorrenteId}/conferma-match`, {
+    await api(`/api/concorrenti/${concorrenteId}/conferma-match`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esameConcorrenteId, esameMylavNome })
     });
@@ -1593,7 +1593,7 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
 
 async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
   try {
-    await fetch(`/api/concorrenti/${concorrenteId}/rimuovi-match`, {
+    await api(`/api/concorrenti/${concorrenteId}/rimuovi-match`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esameConcorrenteId })
     });
