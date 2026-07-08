@@ -127,7 +127,7 @@ function buildSidebar() {
     <div class="nav-item ${isActive('cronologia')}" onclick="navigate('cronologia')">
       <span class="nav-icon">📋</span> Cronologia file
     </div>
-    <div class="nav-item ${isActive('debug')}" onclick="navigate('debug')" style="color:#f5a800">
+    <div class="nav-item ${isActive('debug')}" onclick="navigate('debug')" style="color:#0f76bc">
       <span class="nav-icon">🔍</span> Debug Excel
     </div>
     <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
@@ -306,8 +306,8 @@ async function renderDashboard() {
         data: {
           labels: per_struttura.map(s => s.nome),
           datasets: [
-            { label: 'Concorrenza scontata', data: per_struttura.map(s => s.fatturato), backgroundColor: '#e74c3c', borderRadius: 4 },
-            { label: 'Mylav scontata',  data: per_struttura.map(s => s.costo),    backgroundColor: '#f5a800', borderRadius: 4 }
+            { label: 'Concorrenza scontata', data: per_struttura.map(s => s.fatturato), backgroundColor: '#ce181e', borderRadius: 4 },
+            { label: 'Mylav scontata',  data: per_struttura.map(s => s.costo),    backgroundColor: '#0f76bc', borderRadius: 4 }
           ]
         },
         options: {
@@ -539,10 +539,10 @@ function renderDonutMia(t) {
   el('donut-cv').textContent = euro(t.risparmio_totale_dottore);
   el('donut-cl').textContent = 'Risparmio';
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Prezzo Mylav al dottore', color: '#f5a800' },
-    { label: 'Sconto Mylav applicato',  color: '#ffd166' },
-    { label: 'Risparmio dottore vs concorrenza', color: '#1a7a4a' },
-    { label: 'Sconto concorrenza applicato', color: '#e74c3c' }
+    { label: 'Prezzo Mylav al dottore', color: '#5fa8db' },
+    { label: 'Sconto Mylav applicato',  color: '#a9d0ec' },
+    { label: 'Risparmio dottore vs concorrenza', color: '#0f76bc' },
+    { label: 'Sconto concorrenza applicato', color: '#ce181e' }
   ]);
 
   const canvas = el('chart-donut');
@@ -561,7 +561,7 @@ function renderDonutMia(t) {
       ],
       datasets: [{
         data: totale > 0 ? [v1, v2, v3, v4] : [1, 1, 1, 1],
-        backgroundColor: ['#f5a800', '#ffd166', '#1a7a4a', '#e74c3c'],
+        backgroundColor: ['#5fa8db', '#a9d0ec', '#0f76bc', '#ce181e'],
         borderWidth: 2,
         borderColor: '#fff'
       }]
@@ -588,8 +588,8 @@ function renderDonutDottore(t) {
   el('donut-cv').textContent = `${pct}%`;
   el('donut-cl').textContent = 'Risparmi';
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Mylav', color: '#f5a800' },
-    { label: 'Risparmio vs mercato', color: '#1a7a4a' }
+    { label: 'Paghi con Mylav', color: '#0f76bc' },
+    { label: 'Risparmio vs mercato', color: '#0f76bc' }
   ]);
 
   const canvas = el('chart-donut');
@@ -605,7 +605,7 @@ function renderDonutDottore(t) {
       labels: ['Paghi con Mylav', 'Risparmio vs mercato'],
       datasets: [{
         data: totale > 0 ? [v1, v2] : [1, 1],
-        backgroundColor: ['#f5a800', '#1a7a4a'],
+        backgroundColor: ['#0f76bc', '#0f76bc'],
         borderWidth: 2,
         borderColor: '#fff'
       }]
@@ -630,8 +630,8 @@ function renderDonutDottore(t) {
 // ─── BARRE Vista MIA (stacked: giallo=Lav + verde=risparmio = totale concorrenza) ──
 function renderBarreMia(dati) {
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Mylav', color: '#f5a800' },
-    { label: 'Risparmio dottore',    color: '#1a7a4a' }
+    { label: 'Paghi con Mylav', color: '#0f76bc' },
+    { label: 'Risparmio dottore',    color: '#0f76bc' }
   ]);
 
   const canvas = el('chart-barre');
@@ -650,13 +650,13 @@ function renderBarreMia(dati) {
         {
           label: 'Paghi con Mylav',
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
-          backgroundColor: '#f5a800',
+          backgroundColor: '#0f76bc',
           borderRadius: 0
         },
         {
           label: 'Risparmio dottore',
           data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
-          backgroundColor: '#1a7a4a',
+          backgroundColor: '#0f76bc',
           borderRadius: { topRight: 4, bottomRight: 4 }
         }
       ]
@@ -686,8 +686,8 @@ function renderBarreMia(dati) {
 // ─── BARRE Vista DOTTORE (stacked: giallo=Lav + verde=risparmio) ──
 function renderBarreDottore(dati) {
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Mylav', color: '#f5a800' },
-    { label: 'Risparmio vs mercato', color: '#1a7a4a' }
+    { label: 'Paghi con Mylav', color: '#0f76bc' },
+    { label: 'Risparmio vs mercato', color: '#0f76bc' }
   ]);
 
   const canvas = el('chart-barre');
@@ -706,13 +706,13 @@ function renderBarreDottore(dati) {
         {
           label: 'Paghi con Mylav',
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
-          backgroundColor: '#f5a800',
+          backgroundColor: '#0f76bc',
           borderRadius: 0
         },
         {
           label: 'Risparmio vs mercato',
           data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
-          backgroundColor: '#1a7a4a',
+          backgroundColor: '#0f76bc',
           borderRadius: { topRight: 4, bottomRight: 4 }
         }
       ]
@@ -795,7 +795,7 @@ function renderFoglioTable(dati) {
         <td>${d.esame}</td>
         <td class="text-center">${d.n_esami}</td>
         <td class="td-muted">${euro(d.listino_concorrenza)}</td>
-        <td style="color:#c0392b">${euro(d.prezzo_scontato_concorrenza)}</td>
+        <td style="color:#ce181e">${euro(d.prezzo_scontato_concorrenza)}</td>
         <td class="td-muted">${euro(d.listino_lav)}</td>
         <td class="td-yellow">${euro(d.totale_scontato_lav)}</td>
         <td class="td-green">${euro(risp)}</td>
@@ -815,7 +815,7 @@ function renderFoglioTable(dati) {
       return `<tr>
         <td>${d.esame}</td>
         <td class="text-center">${d.n_esami}</td>
-        <td style="color:#c0392b">${euro(d.prezzo_scontato_concorrenza)}</td>
+        <td style="color:#ce181e">${euro(d.prezzo_scontato_concorrenza)}</td>
         <td class="td-yellow">${euro(d.totale_scontato_lav)}</td>
         <td class="td-green">${euro(risp)}</td>
         <td class="td-green">${pct}%</td>
@@ -854,7 +854,7 @@ async function renderTotali(strutturaId, nome) {
 
   const labels       = files.map(f => fmtDate(f.file.data_carico));
   const foglioSet    = ['Foglio 1', 'Platinum', 'Gold'];
-  const foglioColors = { 'Foglio 1': '#6b7280', 'Platinum': '#1a7a4a', 'Gold': '#f5a800' };
+  const foglioColors = { 'Foglio 1': '#6b7280', 'Platinum': '#0f76bc', 'Gold': '#0f76bc' };
 
   setMain(`
     <div class="page-header">
@@ -1010,7 +1010,7 @@ function buildCronoRows(rows) {
       <td>${r.nome_file}</td>
       <td>${r.struttura_nome}</td>
       <td>${(r.fogli || '').split(',').map(f => `<span class="badge badge-gray">${f}</span>`).join(' ')}</td>
-      <td style="color:#c0392b">${euro(r.totale_dottore)}</td>
+      <td style="color:#ce181e">${euro(r.totale_dottore)}</td>
       <td class="td-yellow">${euro(r.totale_costo)}</td>
       <td class="td-green">${euro(r.differenziale)}</td>
       <td onclick="event.stopPropagation()">
@@ -1086,7 +1086,7 @@ async function renderConfronto() {
               ${data.map(s => `<tr>
                 <td><strong>${s.nome}</strong></td>
                 <td class="td-muted">${euro(s.totale_concorrenza)}</td>
-                <td style="color:#c0392b">${euro(s.prezzo_scontato_concorrenza)}</td>
+                <td style="color:#ce181e">${euro(s.prezzo_scontato_concorrenza)}</td>
                 <td class="td-yellow">${euro(s.totale_scontato_lav)}</td>
                 <td class="td-green">${euro(s.risparmio_totale)}</td>
               </tr>`).join('')}
@@ -1098,9 +1098,9 @@ async function renderConfronto() {
   `);
 
   el('conf-legend').innerHTML = legendHtml([
-    { label: 'Concorrenza scontata', color: '#e74c3c' },
-    { label: 'Mylav scontata',  color: '#f5a800' },
-    { label: 'Risparmio dottore',    color: '#1a7a4a' }
+    { label: 'Concorrenza scontata', color: '#ce181e' },
+    { label: 'Mylav scontata',  color: '#5fa8db' },
+    { label: 'Risparmio dottore',    color: '#0f76bc' }
   ]);
 
   S.charts.conf = new Chart(el('chart-conf'), {
@@ -1108,9 +1108,9 @@ async function renderConfronto() {
     data: {
       labels: data.map(s => s.nome),
       datasets: [
-        { label: 'Concorrenza scontata', data: data.map(s => s.prezzo_scontato_concorrenza), backgroundColor: '#e74c3c', borderRadius: 4 },
-        { label: 'Mylav scontata',  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#f5a800', borderRadius: 4 },
-        { label: 'Risparmio dottore',    data: data.map(s => s.risparmio_totale),              backgroundColor: '#1a7a4a', borderRadius: 4 }
+        { label: 'Concorrenza scontata', data: data.map(s => s.prezzo_scontato_concorrenza), backgroundColor: '#ce181e', borderRadius: 4 },
+        { label: 'Mylav scontata',  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#5fa8db', borderRadius: 4 },
+        { label: 'Risparmio dottore',    data: data.map(s => s.risparmio_totale),              backgroundColor: '#0f76bc', borderRadius: 4 }
       ]
     },
     options: {
@@ -1271,7 +1271,7 @@ function renderDebug() {
     let html = '';
     for (const [sheet, info] of Object.entries(data)) {
       html += `<div style="margin-bottom:24px">
-        <div style="font-weight:500;font-size:14px;margin-bottom:8px;color:#1a7a4a">
+        <div style="font-weight:500;font-size:14px;margin-bottom:8px;color:#0f76bc">
           Foglio: <strong>${sheet}</strong> — riga header: ${info.hRow}
         </div>
         <div style="font-family:monospace;font-size:12px;background:#f5f6f8;
@@ -1632,7 +1632,7 @@ function buildRoiSectionHtml() {
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn-outline" onclick="addRigaRoi()" style="font-size:12px">+ Aggiungi esame</button>
-      <button class="btn-outline" onclick="salvaCalcolo()" style="font-size:12px;color:#1a7a4a;border-color:#1a7a4a">💾 Salva come file</button>
+      <button class="btn-outline" onclick="salvaCalcolo()" style="font-size:12px;color:#0f76bc;border-color:#0f76bc">💾 Salva come file</button>
       <button class="btn-outline" onclick="esportaExcelRoi()" style="font-size:12px">📥 Esporta Excel</button>
     </div>
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
@@ -1812,9 +1812,9 @@ function buildRoiTableHtml() {
   const header1 = `
     <tr>
       <th colspan="4"></th>
-      <th colspan="4" style="background:rgba(231,76,60,0.07);color:#c0392b;text-align:center">Concorrenza</th>
+      <th colspan="4" style="background:rgba(206,24,30,0.07);color:#ce181e;text-align:center">Concorrenza</th>
       <th></th>
-      <th colspan="4" style="background:rgba(245,168,0,0.09);color:#b37a00;text-align:center">Mylav</th>
+      <th colspan="4" style="background:rgba(15,118,188,0.09);color:#0b5c95;text-align:center">Mylav</th>
       <th></th><th></th>
     </tr>`;
 
@@ -1824,15 +1824,15 @@ function buildRoiTableHtml() {
       <th style="width:12px"></th>
       <th style="width:170px">ESAMI</th>
       <th style="width:60px">N.</th>
-      <th style="width:95px;background:rgba(231,76,60,0.04)">Listino conc.</th>
-      <th style="width:65px;background:rgba(231,76,60,0.04)">Sconto%</th>
-      <th style="width:95px;background:rgba(231,76,60,0.04)">Tot. conc.</th>
-      <th style="width:95px;background:rgba(231,76,60,0.04)">Scontato conc.</th>
+      <th style="width:95px;background:rgba(206,24,30,0.04)">Listino conc.</th>
+      <th style="width:65px;background:rgba(206,24,30,0.04)">Sconto%</th>
+      <th style="width:95px;background:rgba(206,24,30,0.04)">Tot. conc.</th>
+      <th style="width:95px;background:rgba(206,24,30,0.04)">Scontato conc.</th>
       <th style="width:12px"></th>
-      <th style="width:95px;background:rgba(245,168,0,0.06)">Listino Lav</th>
-      <th style="width:95px;background:rgba(245,168,0,0.06)">Tot. Lav</th>
-      <th style="width:95px;background:rgba(245,168,0,0.06)">Prezzo Lav</th>
-      <th style="width:95px;background:rgba(245,168,0,0.06)">Tot. sc. Lav</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Listino Lav</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. Lav</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Prezzo Lav</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. sc. Lav</th>
       <th style="width:95px">Risparmio</th>
       <th style="width:28px"></th>
     </tr>`;
@@ -1842,21 +1842,21 @@ function buildRoiTableHtml() {
   const tots = calcolaRoiTotali();
   const totRow = `<tr class="roi-totals-row">
     <td colspan="4"><strong>TOTALE</strong></td>
-    <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_listino_conc)}</td>
-    <td style="background:rgba(231,76,60,0.04)"></td>
-    <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_conc)}</td>
-    <td class="roi-calc" style="background:rgba(231,76,60,0.04)">${fmtE(tots.tot_prezzo_conc)}</td>
+    <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_listino_conc)}</td>
+    <td style="background:rgba(206,24,30,0.04)"></td>
+    <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_conc)}</td>
+    <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_prezzo_conc)}</td>
     <td></td>
-    <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_listino_lav)}</td>
-    <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_tot_lav)}</td>
-    <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_prezzo_lav_sc)}</td>
-    <td class="roi-calc" style="background:rgba(245,168,0,0.06)">${fmtE(tots.tot_tot_prezzo_lav)}</td>
-    <td class="roi-calc" style="${tots.differenziale >= 0 ? 'color:#1a7a4a' : 'color:#c0392b'};font-weight:600">${fmtE(tots.differenziale)}</td>
+    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_listino_lav)}</td>
+    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_tot_lav)}</td>
+    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_prezzo_lav_sc)}</td>
+    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_tot_prezzo_lav)}</td>
+    <td class="roi-calc" style="${tots.differenziale >= 0 ? 'color:#0f76bc' : 'color:#ce181e'};font-weight:600">${fmtE(tots.differenziale)}</td>
     <td></td>
   </tr>`;
   const diffRow = `<tr class="roi-diff-row">
     <td colspan="13" style="text-align:right;font-size:13px;font-weight:500">Differenziale totale:</td>
-    <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#1a7a4a' : '#c0392b'}">${fmtE(tots.differenziale)}</td>
+    <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'}">${fmtE(tots.differenziale)}</td>
   </tr>`;
 
   return `<table class="roi-editable-table">
@@ -1884,7 +1884,7 @@ function buildRoiRigaHtml(r, i) {
   const totPL    = pl * n;
   const risp     = prezConc - totPL;
 
-  const rispColor = risp >= 0 ? '#1a7a4a' : '#c0392b';
+  const rispColor = risp >= 0 ? '#0f76bc' : '#ce181e';
   const scPlaceholder = sc > 0 ? String(sc) : '';
 
   const strutturaCell = i === 0
@@ -1896,15 +1896,15 @@ function buildRoiRigaHtml(r, i) {
     <td></td>
     <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="Esame…" autocomplete="off" style="width:160px"></td>
     <td><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
-    <td style="background:rgba(231,76,60,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza}" placeholder="0.00"></td>
-    <td style="background:rgba(231,76,60,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
-    <td class="roi-calc" style="background:rgba(231,76,60,0.04)" data-col="tot_conc">${fmtE(totConc)}</td>
-    <td class="roi-calc" style="background:rgba(231,76,60,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
+    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza}" placeholder="0.00"></td>
+    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
+    <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="tot_conc">${fmtE(totConc)}</td>
+    <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
     <td></td>
-    <td style="background:rgba(245,168,0,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav}" placeholder="0.00"></td>
-    <td class="roi-calc" style="background:rgba(245,168,0,0.06)" data-col="tot_listino_lav">${fmtE(totLL)}</td>
-    <td style="background:rgba(245,168,0,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav}" placeholder="0.00"></td>
-    <td class="roi-calc" style="background:rgba(245,168,0,0.06)" data-col="tot_prezzo_lav">${fmtE(totPL)}</td>
+    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav}" placeholder="0.00"></td>
+    <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_listino_lav">${fmtE(totLL)}</td>
+    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav}" placeholder="0.00"></td>
+    <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_prezzo_lav">${fmtE(totPL)}</td>
     <td class="roi-calc" data-col="risparmio" style="color:${rispColor};font-weight:500">${fmtE(risp)}</td>
     <td><button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="Rimuovi">×</button></td>
   </tr>`;
@@ -2058,7 +2058,7 @@ function aggiornaRigaDOM(tr) {
   const rispEl = tr.querySelector('[data-col="risparmio"]');
   if (rispEl) {
     rispEl.textContent = fmtE(risp);
-    rispEl.style.color = risp >= 0 ? '#1a7a4a' : '#c0392b';
+    rispEl.style.color = risp >= 0 ? '#0f76bc' : '#ce181e';
   }
 
   aggiornaTotaliDOM();
@@ -2081,12 +2081,12 @@ function aggiornaTotaliDOM() {
   const vals = [tots.tot_listino_conc, tots.tot_conc, tots.tot_prezzo_conc, tots.tot_listino_lav, tots.tot_tot_lav, tots.tot_prezzo_lav_sc, tots.tot_tot_prezzo_lav, tots.differenziale];
   tds.forEach((td, i) => {
     td.textContent = fmtE(vals[i]);
-    if (i === vals.length - 1) td.style.color = tots.differenziale >= 0 ? '#1a7a4a' : '#c0392b';
+    if (i === vals.length - 1) td.style.color = tots.differenziale >= 0 ? '#0f76bc' : '#ce181e';
   });
 
   const diffVal = diffRow.querySelectorAll('td');
   const lastTd = diffVal[diffVal.length - 1];
-  if (lastTd) { lastTd.textContent = fmtE(tots.differenziale); lastTd.style.color = tots.differenziale >= 0 ? '#1a7a4a' : '#c0392b'; }
+  if (lastTd) { lastTd.textContent = fmtE(tots.differenziale); lastTd.style.color = tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'; }
 }
 
 let _acTimeout = null;
@@ -2293,7 +2293,7 @@ function roiMsg(msg, tipo) {
   const d = el('roi-msg');
   if (!d) return;
   d.textContent = msg;
-  d.style.color = tipo === 'error' ? '#c0392b' : '#1a7a4a';
+  d.style.color = tipo === 'error' ? '#ce181e' : '#0f76bc';
   setTimeout(() => { if (d) d.textContent = ''; }, 4000);
 }
 
