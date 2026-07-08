@@ -1036,6 +1036,34 @@ app.get('/api/concorrenti/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/api/concorrenti/:id/match', (req, res) => {
+  try {
+    const { esame } = req.query;
+    if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
+    res.json(concorrenti.trovaMatch(db, Number(req.params.id), esame));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/concorrenti/:id/conferma-match', express.json(), (req, res) => {
+  try {
+    const { esameConcorrenteId, esameMylavNome } = req.body || {};
+    if (!esameConcorrenteId || !esameMylavNome) {
+      return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId, esameMylavNome)' });
+    }
+    concorrenti.confermaMatch(db, Number(esameConcorrenteId), esameMylavNome);
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/concorrenti/:id/rimuovi-match', express.json(), (req, res) => {
+  try {
+    const { esameConcorrenteId } = req.body || {};
+    if (!esameConcorrenteId) return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId)' });
+    concorrenti.rimuoviMatch(db, Number(esameConcorrenteId));
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/calcolo/salva', express.json(), (req, res) => {
   try {
     const { struttura: strutturaNome, foglio, righe, nomeFile, piano_id } = req.body || {};
