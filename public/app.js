@@ -7,6 +7,7 @@
 const S = {
   strutture: [],
   expanded:  {},
+  gestioneOpen: false,
   vistaMia:  true,
   charts:    {},
   piani:     [],
@@ -123,13 +124,7 @@ function buildSidebar() {
   }
 
   html += `
-    <div class="nav-divider" style="margin-top:8px">Storico</div>
-    <div class="nav-item ${isActive('cronologia')}" onclick="navigate('cronologia')">
-      <span class="nav-icon">📋</span> Cronologia file
-    </div>
-    <div class="nav-item ${isActive('debug')}" onclick="navigate('debug')" style="color:#0f76bc">
-      <span class="nav-icon">🔍</span> Debug Excel
-    </div>
+    <div class="nav-divider" style="margin-top:8px">Gestione</div>
     <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
       <span class="nav-icon">💰</span> Gestione piani
     </div>
@@ -146,7 +141,28 @@ function buildSidebar() {
     `;
   }
 
+  // Gruppo a scomparsa "Altro": voci usate raramente / tecniche
+  const altroOpen = S.gestioneOpen ? 'open' : '';
+  html += `
+    <div class="nav-divider" style="margin-top:8px">Altro</div>
+    <div class="struttura-group">
+      <div class="struttura-header ${altroOpen}" onclick="toggleGestione()">
+        <span class="sname">Cronologia e strumenti</span>
+        <span class="struttura-chevron">›</span>
+      </div>
+      <div class="struttura-children ${altroOpen}">
+        <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">Cronologia file</div>
+        <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">Debug Excel</div>
+      </div>
+    </div>
+  `;
+
   nav.innerHTML = html;
+}
+
+function toggleGestione() {
+  S.gestioneOpen = !S.gestioneOpen;
+  buildSidebar();
 }
 
 function isActive(view, extra) {
@@ -232,70 +248,27 @@ async function renderDashboard() {
   }
 
   setMain(`
-    <div class="page-header">
-      <div>
-        <div class="page-title">Dashboard</div>
-        <div class="page-subtitle">Panoramica generale</div>
-      </div>
-      <div class="page-actions">
-        <button class="btn-outline" onclick="openUploadModal()">+ Carica file</button>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="kpi-grid kpi-grid-3">
-        <div class="kpi-card">
-          <div class="kpi-label">Strutture attive</div>
-          <div class="kpi-value">${strutture_count}</div>
-          <div class="kpi-sub">Nel database</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-label">File caricati</div>
-          <div class="kpi-value">${file_count}</div>
-          <div class="kpi-sub">Totale upload</div>
-        </div>
-        <div class="kpi-card kpi-green">
+    <div class="page-body" style="padding-top:24px">
+      <div class="section-card" id="roi-hero"></div>
+      <div class="riepilogo-band">
+        <div class="kpi-card kpi-risparmio">
           <div class="kpi-label">Risparmio totale dottori</div>
           <div class="kpi-value">${euro(differenziale_totale)}</div>
           <div class="kpi-sub">vs concorrenza</div>
         </div>
-      </div>
-
-      ${per_struttura.length >= 2 ? `
-      <div class="section-card">
-        <div class="section-card-title">Riepilogo per struttura</div>
-        <div class="chart-canvas-wrap">
-          <canvas id="chart-confronto-dash" height="180"></canvas>
-        </div>
-      </div>` : ''}
-
-      <div class="table-card">
-        <div class="table-header">
-          <div class="table-title">Ultimi file caricati</div>
-        </div>
-        <div class="table-scroll">
-          <table>
-            <thead><tr>
-              <th>Data</th><th>File</th><th>Struttura</th>
-            </tr></thead>
-            <tbody>
-              ${ultimi_file.map(f => `<tr>
-                <td class="td-muted">${fmtDate(f.data_carico)}</td>
-                <td>${f.nome_file}</td>
-                <td>${f.struttura_nome}</td>
-              </tr>`).join('') || '<tr><td colspan="3" class="td-muted text-center">Nessun file</td></tr>'}
-            </tbody>
-          </table>
-        </div>
+        ${per_struttura.length >= 2 ? `
+        <div class="section-card">
+          <div class="section-card-title">Riepilogo per struttura</div>
+          <div class="chart-canvas-wrap">
+            <canvas id="chart-confronto-dash" height="180"></canvas>
+          </div>
+        </div>` : ''}
       </div>
     </div>
   `);
 
-  // Calcolatore ROI — sempre visibile in fondo alla dashboard
-  const roiSection = document.createElement('div');
-  roiSection.className = 'section-card';
-  roiSection.style.marginTop = '24px';
-  roiSection.innerHTML = buildRoiSectionHtml();
-  el('main-content').querySelector('.page-body').appendChild(roiSection);
+  // Calcolatore ROI — eroe in cima alla dashboard
+  el('roi-hero').innerHTML = buildRoiSectionHtml();
   initRoiEvents();
 
   if (per_struttura.length >= 2) {
@@ -1610,9 +1583,12 @@ function buildRoiSectionHtml() {
 
   return `
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-      <div style="font-size:13px;font-weight:500;color:#1a1a1a">Calcolatore ROI</div>
-      <div style="display:flex;gap:8px">
+    <div class="roi-toolbar">
+      <div>
+        <div class="roi-toolbar-title">Calcolatore ROI</div>
+        <div class="roi-toolbar-sub">Confronto risparmio Mylav vs concorrenza</div>
+      </div>
+      <div class="roi-toolbar-controls">
         <div style="position:relative">
           <button class="btn-outline roi-piano-btn" id="roi-piano-btn"
                   onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
@@ -1627,6 +1603,7 @@ function buildRoiSectionHtml() {
           </button>
           <div id="roi-concorrente-panel" class="roi-piano-panel" style="display:none"></div>
         </div>
+        <button class="btn-outline" onclick="openUploadModal()" style="font-size:12px">+ Carica file</button>
       </div>
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml()}</div>
