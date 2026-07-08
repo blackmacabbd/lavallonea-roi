@@ -133,6 +133,9 @@ function buildSidebar() {
     <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
       <span class="nav-icon">💰</span> Gestione piani
     </div>
+    <div class="nav-item ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
+      <span class="nav-icon">🏷️</span> Gestione concorrenti
+    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -186,6 +189,7 @@ function navigate(view, params = {}) {
     case 'confronto':  renderConfronto();                              break;
     case 'debug':      renderDebug();                                  break;
     case 'piani':      renderPiani();                                  break;
+    case 'concorrenti': renderConcorrentiAdmin();                      break;
   }
   buildSidebar();
 }
@@ -1403,6 +1407,198 @@ async function importaPianiJson(inputEl) {
     alert('Import completato.');
   } catch (e) { alert('Errore import: ' + e.message); }
   inputEl.value = '';
+}
+
+// ══════════════════════════════════════════════════
+// GESTIONE CONCORRENTI
+// ══════════════════════════════════════════════════
+
+async function renderConcorrentiAdmin() {
+  let elenco;
+  try { elenco = await api('/api/concorrenti'); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">Gestione concorrenti</div>
+        <div class="page-subtitle">${elenco.length} concorrenti importati</div>
+      </div>
+      <div class="page-actions">
+        <label class="btn-outline" for="concorrenti-import-input">📥 Importa listino Excel</label>
+        <input type="file" id="concorrenti-import-input" accept=".xlsx,.xls" style="display:none" onchange="avviaImportConcorrente(this)">
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Nome</th><th>Data import</th><th>Esami</th><th>Mappati</th><th></th></tr></thead>
+            <tbody>
+              ${elenco.map(c => `<tr>
+                <td>${escHtml(c.nome)}</td>
+                <td class="td-muted">${fmtDate(c.data_import)}</td>
+                <td class="td-muted">${c.n_esami}</td>
+                <td class="td-muted">${c.n_mappati} / ${c.n_esami}</td>
+                <td><button class="btn-outline" onclick="renderConcorrenteDettaglio(${c.id})">Vedi esami</button></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="concorrente-import-wrap"></div>
+      <div id="concorrente-dettaglio-wrap"></div>
+    </div>
+  `);
+}
+
+async function avviaImportConcorrente(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let parsed;
+  try {
+    const resp = await fetch('/api/concorrenti/import', { method: 'POST', body: formData });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    parsed = await resp.json();
+  } catch (e) {
+    alert('Errore lettura file: ' + e.message);
+    inputEl.value = '';
+    return;
+  }
+  inputEl.value = '';
+
+  if (!parsed.headers.length || !parsed.rows.length) {
+    alert('Non sono riuscito a trovare una riga di intestazione con almeno 2 colonne in questo file.');
+    return;
+  }
+
+  window._importConcorrenteRows = parsed.rows;
+  renderImportConcorrenteForm(parsed);
+}
+
+function renderImportConcorrenteForm(parsed) {
+  const wrap = el('concorrente-import-wrap');
+  if (!wrap) return;
+  const opts = parsed.headers.map((h, i) => `<option value="${i}">[${i}] ${escHtml(h || '(vuota)')}</option>`).join('');
+  const optsConSconto = `<option value="-1">— nessuna colonna sconto —</option>` + opts;
+
+  const anteprima = parsed.rows.slice(0, 5).map(r =>
+    `<tr>${parsed.headers.map((_, i) => `<td>${escHtml(r[i])}</td>`).join('')}</tr>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">Conferma colonne — ${parsed.rows.length} righe trovate</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <label>Nome concorrente<br>
+          <input class="roi-input" id="import-nome-concorrente" placeholder="Es. IDEXX 2026" style="width:200px">
+        </label>
+        <label>Colonna nome esame<br>
+          <select class="roi-input" id="import-col-esame" style="width:200px">${opts}</select>
+        </label>
+        <label>Colonna prezzo<br>
+          <select class="roi-input" id="import-col-prezzo" style="width:200px">${opts}</select>
+        </label>
+        <label>Colonna sconto<br>
+          <select class="roi-input" id="import-col-sconto" style="width:200px">${optsConSconto}</select>
+        </label>
+      </div>
+      <div class="table-scroll" style="margin-bottom:12px">
+        <table><thead><tr>${parsed.headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
+        <tbody>${anteprima}</tbody></table>
+      </div>
+      <button class="btn-primary" onclick="confermaImportConcorrente()">Conferma import</button>
+    </div>
+  `;
+  const selEsame = el('import-col-esame');
+  const selPrezzo = el('import-col-prezzo');
+  const selSconto = el('import-col-sconto');
+  if (selEsame && parsed.colEsame >= 0) selEsame.value = String(parsed.colEsame);
+  if (selPrezzo && parsed.colPrezzo >= 0) selPrezzo.value = String(parsed.colPrezzo);
+  if (selSconto) selSconto.value = String(parsed.colSconto);
+}
+
+async function confermaImportConcorrente() {
+  const nomeConcorrente = el('import-nome-concorrente')?.value.trim();
+  const colEsame  = Number(el('import-col-esame')?.value);
+  const colPrezzo = Number(el('import-col-prezzo')?.value);
+  const colSconto = Number(el('import-col-sconto')?.value);
+  const rows = window._importConcorrenteRows || [];
+
+  if (!nomeConcorrente) return alert('Inserisci il nome del concorrente');
+  if (!rows.length) return alert('Nessuna riga da importare');
+
+  try {
+    await api('/api/concorrenti/import/conferma', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nomeConcorrente, colEsame, colPrezzo, colSconto, rows })
+    });
+    await loadConcorrenti();
+    renderConcorrentiAdmin();
+    alert('Import completato.');
+  } catch (e) {
+    alert('Errore import: ' + e.message);
+  }
+}
+
+async function renderConcorrenteDettaglio(id) {
+  let dettaglio;
+  try { dettaglio = await api(`/api/concorrenti/${id}`); }
+  catch (e) { alert('Errore: ' + e.message); return; }
+
+  const wrap = el('concorrente-dettaglio-wrap');
+  if (!wrap) return;
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
+      <table class="roi-editable-table">
+        <thead><tr><th>Nome originale</th><th>Prezzo</th><th>Sconto</th><th>Stato</th><th>Nome Mylav</th><th></th></tr></thead>
+        <tbody>
+          ${dettaglio.esami.map(e => `<tr>
+            <td>${escHtml(e.nome_originale)}</td>
+            <td class="td-muted">${fmtE(e.prezzo)}</td>
+            <td class="td-muted">${e.sconto != null ? e.sconto + '%' : '—'}</td>
+            <td>${e.esame_mylav_nome ? (e.confermato ? '✅ confermato' : '🔎 auto') : '— non mappato'}</td>
+            <td><input class="roi-input" data-esame-concorrente-id="${e.id}" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="nome esame Mylav" style="width:180px"></td>
+            <td style="display:flex;gap:6px">
+              <button class="btn-outline" onclick="salvaMappaturaManuale(${id}, ${e.id})">Salva</button>
+              ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${id}, ${e.id})">Rimuovi</button>` : ''}
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
+  const inp = document.querySelector(`[data-esame-concorrente-id="${esameConcorrenteId}"]`);
+  const esameMylavNome = inp ? inp.value.trim() : '';
+  if (!esameMylavNome) return alert('Scrivi il nome esame Mylav corrispondente');
+  try {
+    await fetch(`/api/concorrenti/${concorrenteId}/conferma-match`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esameConcorrenteId, esameMylavNome })
+    });
+    alert('Mappatura salvata.');
+  } catch (e) { alert('Errore: ' + e.message); }
+}
+
+async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
+  try {
+    await fetch(`/api/concorrenti/${concorrenteId}/rimuovi-match`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esameConcorrenteId })
+    });
+    renderConcorrenteDettaglio(concorrenteId);
+  } catch (e) { alert('Errore: ' + e.message); }
 }
 
 // ══════════════════════════════════════════════════
