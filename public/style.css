@@ -481,6 +481,7 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 24px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 22px rgba(0,0,0,0.04);
 }
 .table-header {
   padding: 14px 18px;
@@ -518,6 +519,7 @@ tbody td {
   border-bottom: 1px solid #f3f4f6;
   color: #374151;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: #fafafa; }
@@ -870,6 +872,44 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   background: #fff;
   font-size: 13px;
 }
+
+/* ── Tabella confronto ROI: due pannelli (rosso vs blu) ── */
+#roi-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 12px 30px rgba(0,0,0,0.05);
+  background: var(--surface);
+}
+.roi-compare th {
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  background: var(--bg-subtle);
+}
+/* Intestazioni di gruppo: pannello colorato + sottolineatura brand (l'"alone" rosso/blu) */
+.roi-compare .roi-grp {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 8px;
+}
+.roi-compare .roi-grp-conc {
+  color: var(--red);
+  background: var(--red-tint);
+  box-shadow: inset 0 -3px 0 var(--red);
+}
+.roi-compare .roi-grp-myl {
+  color: var(--blue-dark);
+  background: var(--blue-tint);
+  box-shadow: inset 0 -3px 0 var(--blue);
+}
+/* Cifre piu' nette e allineate */
+.roi-compare .roi-calc { color: var(--ink); font-weight: 500; }
+.roi-compare .roi-input.roi-num { font-variant-numeric: tabular-nums; }
+.roi-compare .roi-totals-row td { background: var(--bg-subtle); border-top: 2px solid var(--line); font-weight: 600; }
+.roi-compare [data-col="risparmio"] { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 .roi-del-btn {
   width: 22px;

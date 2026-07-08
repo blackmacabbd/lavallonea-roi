@@ -1789,9 +1789,9 @@ function buildRoiTableHtml() {
   const header1 = `
     <tr>
       <th colspan="4"></th>
-      <th colspan="4" style="background:rgba(206,24,30,0.07);color:#ce181e;text-align:center">Concorrenza</th>
+      <th colspan="4" class="roi-grp roi-grp-conc">Concorrenza</th>
       <th></th>
-      <th colspan="4" style="background:rgba(15,118,188,0.09);color:#0b5c95;text-align:center">Mylav</th>
+      <th colspan="4" class="roi-grp roi-grp-myl">Mylav</th>
       <th></th><th></th>
     </tr>`;
 
@@ -1836,7 +1836,7 @@ function buildRoiTableHtml() {
     <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'}">${fmtE(tots.differenziale)}</td>
   </tr>`;
 
-  return `<table class="roi-editable-table">
+  return `<table class="roi-editable-table roi-compare">
     <thead>${header1}${header2}</thead>
     <tbody id="roi-tbody">${bodyRows}</tbody>
     <tfoot>${totRow}${diffRow}</tfoot>
