@@ -1829,10 +1829,10 @@ function buildRoiTableHtml() {
       <th style="width:95px;background:rgba(206,24,30,0.04)">Tot. conc.</th>
       <th style="width:95px;background:rgba(206,24,30,0.04)">Scontato conc.</th>
       <th style="width:12px"></th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Listino Lav</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. Lav</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Prezzo Lav</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. sc. Lav</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Listino MYL</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. MYL</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Piano MYL</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. sc. MYL</th>
       <th style="width:95px">Risparmio</th>
       <th style="width:28px"></th>
     </tr>`;
