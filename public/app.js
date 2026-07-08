@@ -1543,7 +1543,72 @@ function selezionaConcorrente(id) {
   }
 }
 
-function aggiornaMatchConcorrente(tr) { /* implementata nel Task 7 */ }
+async function aggiornaMatchConcorrente(tr) {
+  const banner = el('roi-match-banner');
+  const esameInp = tr.querySelector('[data-col="esame"]');
+  const lcInp = tr.querySelector('[data-col="listino_concorrenza"]');
+  const scInp = tr.querySelector('[data-col="sconto_concorrenza"]');
+  if (!esameInp || !lcInp || !scInp) return;
+  const esame = esameInp.value.trim();
+
+  if (!S.roi.concorrenteId || !esame) {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+
+  const requestedConcorrenteId = S.roi.concorrenteId;
+  const m = await fetch(`/api/concorrenti/${requestedConcorrenteId}/match?esame=${encodeURIComponent(esame)}`)
+    .then(r => r.json()).catch(() => ({ trovato: false }));
+  if (S.roi.concorrenteId !== requestedConcorrenteId) return; // selezione concorrente cambiata nel frattempo
+
+  if (m.trovato && m.sicuro) {
+    if (banner) banner.style.display = 'none';
+    if (lcInp.value === '' || lcInp.dataset.auto === '1') {
+      lcInp.value = m.prezzo;
+      lcInp.dataset.auto = '1';
+    }
+    if (m.sconto != null && (scInp.value === '' || scInp.dataset.auto === '1')) {
+      scInp.value = m.sconto;
+      scInp.dataset.auto = '1';
+    }
+    aggiornaRigaDOM(tr);
+  } else if (m.trovato && !m.sicuro) {
+    mostraBannerMatch(tr, m);
+  } else if (banner) {
+    banner.style.display = 'none';
+  }
+}
+
+function mostraBannerMatch(tr, m) {
+  const banner = el('roi-match-banner');
+  if (!banner) return;
+  banner.innerHTML = `
+    <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
+    <div onclick="confermaMatchBanner(${tr.dataset.idx}, ${m.esameConcorrenteId})" style="cursor:pointer">
+      💡 Forse corrisponde a <strong>${escHtml(m.nomeOriginale)}</strong> nel listino concorrente — ${fmtE(m.prezzo)}<br>
+      <span style="font-size:11px;color:#6b7280">Clicca per confermare</span>
+    </div>
+  `;
+  banner.style.display = 'block';
+}
+
+async function confermaMatchBanner(idx, esameConcorrenteId) {
+  const tbody = el('roi-tbody');
+  const tr = tbody?.querySelector(`tr[data-idx="${idx}"]`);
+  if (!tr || !S.roi.concorrenteId) return;
+  const esameInp = tr.querySelector('[data-col="esame"]');
+  const esame = esameInp ? esameInp.value.trim() : '';
+  if (!esame) return;
+
+  await fetch(`/api/concorrenti/${S.roi.concorrenteId}/conferma-match`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ esameConcorrenteId, esameMylavNome: esame })
+  });
+  const banner = el('roi-match-banner');
+  if (banner) banner.style.display = 'none';
+  await aggiornaMatchConcorrente(tr);
+}
 
 function buildRoiTableHtml() {
   const righe = S.roi.righe;
@@ -1734,6 +1799,7 @@ async function aggiornaPrezziAutomatici(tr) {
 
   aggiornaRigaDOM(tr);
   mostraConsiglioPiano(esame);
+  aggiornaMatchConcorrente(tr);
 }
 
 async function mostraConsiglioPiano(esame) {
