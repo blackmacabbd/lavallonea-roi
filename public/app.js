@@ -10,10 +10,12 @@ const S = {
   vistaMia:  true,
   charts:    {},
   piani:     [],
+  concorrenti: [],
   foglio: { dati: null, totali: null, file: null, foglio: null, fileId: null },
   roi: {
     struttura: '',
     pianoId: null,
+    concorrenteId: null,
     righe: [roiRigaVuota()]
   }
 };
@@ -62,6 +64,10 @@ async function loadStrutture() {
 
 async function loadPiani() {
   S.piani = await api('/api/piani');
+}
+
+async function loadConcorrenti() {
+  S.concorrenti = await api('/api/concorrenti');
 }
 
 function buildSidebar() {
@@ -1410,12 +1416,21 @@ function buildRoiSectionHtml() {
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
       <div style="font-size:13px;font-weight:500;color:#1a1a1a">Calcolatore ROI</div>
-      <div style="position:relative">
-        <button class="btn-outline roi-piano-btn" id="roi-piano-btn"
-                onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
-          Piano: ${escHtml(pianoSelezionatoNome() || 'Nessuno')} ▾
-        </button>
-        <div id="roi-piano-panel" class="roi-piano-panel" style="display:none"></div>
+      <div style="display:flex;gap:8px">
+        <div style="position:relative">
+          <button class="btn-outline roi-piano-btn" id="roi-piano-btn"
+                  onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
+            Piano: ${escHtml(pianoSelezionatoNome() || 'Nessuno')} ▾
+          </button>
+          <div id="roi-piano-panel" class="roi-piano-panel" style="display:none"></div>
+        </div>
+        <div style="position:relative">
+          <button class="btn-outline roi-piano-btn" id="roi-concorrente-btn"
+                  onclick="toggleConcorrentePanel()" title="${escHtml(concorrenteSelezionatoNome() || '')}">
+            Concorrente: ${escHtml(concorrenteSelezionatoNome() || 'Nessuno')} ▾
+          </button>
+          <div id="roi-concorrente-panel" class="roi-piano-panel" style="display:none"></div>
+        </div>
       </div>
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml()}</div>
@@ -1480,6 +1495,54 @@ function selezionaPiano(id) {
     tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaPrezziAutomatici(tr));
   }
 }
+
+function concorrenteSelezionatoNome() {
+  const c = S.concorrenti.find(c => c.id === S.roi.concorrenteId);
+  return c ? c.nome : null;
+}
+
+function toggleConcorrentePanel() {
+  const panel = el('roi-concorrente-panel');
+  if (!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) renderConcorrentePanel('');
+}
+
+function renderConcorrentePanel(filtro) {
+  const panel = el('roi-concorrente-panel');
+  if (!panel) return;
+  const f = filtro.trim().toLowerCase();
+  const filtrati = S.concorrenti.filter(c => !f || c.nome.toLowerCase().includes(f));
+
+  let html = `<input class="roi-input" id="roi-concorrente-search" placeholder="🔍 Cerca concorrente..."
+    value="${escHtml(filtro)}" oninput="renderConcorrentePanel(this.value)"
+    style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
+  html += `<div class="roi-piano-item" onclick="selezionaConcorrente(null)" style="font-style:italic">— Nessun concorrente —</div>`;
+  filtrati.forEach(c => {
+    html += `<div class="roi-piano-item" onclick="selezionaConcorrente(${c.id})">${escHtml(c.nome)}</div>`;
+  });
+  panel.innerHTML = html;
+  const inp = el('roi-concorrente-search');
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function selezionaConcorrente(id) {
+  S.roi.concorrenteId = id;
+  const panel = el('roi-concorrente-panel');
+  if (panel) panel.style.display = 'none';
+  const btn = el('roi-concorrente-btn');
+  if (btn) {
+    btn.textContent = `Concorrente: ${concorrenteSelezionatoNome() || 'Nessuno'} ▾`;
+    btn.title = concorrenteSelezionatoNome() || '';
+  }
+  const tbody = el('roi-tbody');
+  if (tbody) {
+    tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaMatchConcorrente(tr));
+  }
+}
+
+function aggiornaMatchConcorrente(tr) { /* implementata nel Task 7 */ }
 
 function buildRoiTableHtml() {
   const righe = S.roi.righe;
@@ -1975,6 +2038,7 @@ function roiMsg(msg, tipo) {
 async function init() {
   await loadStrutture();
   await loadPiani();
+  await loadConcorrenti();
   buildSidebar();
   initDropzone();
   navigate('dashboard');
