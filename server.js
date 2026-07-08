@@ -7,6 +7,7 @@ const { DatabaseSync } = require('node:sqlite');
 const path     = require('path');
 const fs       = require('fs');
 const piani = require('./lib/piani');
+const concorrenti = require('./lib/concorrenti');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -92,6 +93,9 @@ try {
 } catch (err) {
   console.error('Seed piani sconto fallito:', err.message);
 }
+
+// ── Concorrenza ─────────────────────────────────────
+concorrenti.ensureSchema(db);
 
 // ── Multer ─────────────────────────────────────────
 const storage = multer.diskStorage({
@@ -277,6 +281,32 @@ function parsePlatinumGold(sheet, tipoFoglio) {
   }
 
   return { struttura, rows: result };
+}
+
+/**
+ * Parsing generico di un listino concorrente: trova la prima riga con almeno
+ * 2 celle non vuote come header, poi rileva per keyword le colonne
+ * nome esame / prezzo / sconto (sconto puo' mancare del tutto).
+ */
+function parseConcorrenteExcel(filePath) {
+  const wb = XLSX.readFile(filePath);
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+  if (allRows.length < 2) return { headers: [], rows: [], colEsame: -1, colPrezzo: -1, colSconto: -1 };
+
+  let hRow = -1;
+  for (let i = 0; i < Math.min(8, allRows.length); i++) {
+    if (allRows[i].filter(c => String(c).trim() !== '').length >= 2) { hRow = i; break; }
+  }
+  if (hRow === -1) return { headers: [], rows: [], colEsame: -1, colPrezzo: -1, colSconto: -1 };
+
+  const headers = allRows[hRow].map(h => String(h || ''));
+  const colEsame  = findCol(headers, 'esame', 'test', 'nome', 'descrizione');
+  const colPrezzo = findCol(headers, 'prezzo', 'listino', 'price');
+  const colSconto = findCol(headers, 'sconto', 'discount', '%');
+
+  const rows = allRows.slice(hRow + 1).filter(r => r.some(c => String(c).trim() !== ''));
+  return { headers, rows, colEsame, colPrezzo, colSconto };
 }
 
 function calcolaTotali(dati) {
@@ -958,6 +988,51 @@ app.post('/api/piani/import', express.json({ limit: '10mb' }), (req, res) => {
     }
     const result = piani.upsertFromJson(db, data);
     res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/concorrenti/import', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nessun file' });
+  try {
+    const parsed = parseConcorrenteExcel(req.file.path);
+    fs.unlinkSync(req.file.path);
+    res.json(parsed);
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/concorrenti/import/conferma', express.json({ limit: '5mb' }), (req, res) => {
+  try {
+    const { nomeConcorrente, colEsame, colPrezzo, colSconto, rows } = req.body || {};
+    if (!nomeConcorrente || colEsame == null || colPrezzo == null || !Array.isArray(rows)) {
+      return res.status(400).json({ error: 'Dati mancanti (nomeConcorrente, colEsame, colPrezzo, rows)' });
+    }
+    const righe = rows
+      .map(r => ({
+        nome_originale: r[colEsame],
+        prezzo: parseFloat(String(r[colPrezzo]).replace(',', '.')) || 0,
+        sconto: (colSconto != null && colSconto >= 0 && r[colSconto] !== '')
+          ? (parseFloat(String(r[colSconto]).replace(',', '.')) || 0)
+          : null
+      }))
+      .filter(r => r.nome_originale && String(r.nome_originale).trim());
+    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, righe);
+    res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/concorrenti', (req, res) => {
+  try { res.json(concorrenti.listaConcorrenti(db)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/concorrenti/:id', (req, res) => {
+  try {
+    const dettaglio = concorrenti.dettaglioConcorrente(db, req.params.id);
+    if (!dettaglio) return res.status(404).json({ error: 'Concorrente non trovato' });
+    res.json(dettaglio);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
