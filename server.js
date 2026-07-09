@@ -1139,7 +1139,7 @@ app.post('/api/piani/import', express.json({ limit: '10mb' }), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/concorrenti/import', upload.single('file'), (req, res) => {
+app.post('/api/concorrenti/import', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nessun file' });
   try {
     const parsed = parseConcorrenteExcel(req.file.path);
@@ -1151,7 +1151,7 @@ app.post('/api/concorrenti/import', upload.single('file'), (req, res) => {
   }
 });
 
-app.post('/api/concorrenti/import/conferma', express.json({ limit: '5mb' }), (req, res) => {
+app.post('/api/concorrenti/import/conferma', requireAuth, express.json({ limit: '5mb' }), (req, res) => {
   try {
     const { nomeConcorrente, colEsame, colPrezzo, colSconto, rows } = req.body || {};
     if (!nomeConcorrente || colEsame == null || colPrezzo == null || !Array.isArray(rows)) {
@@ -1166,61 +1166,67 @@ app.post('/api/concorrenti/import/conferma', express.json({ limit: '5mb' }), (re
           : null
       }))
       .filter(r => r.nome_originale && String(r.nome_originale).trim());
-    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, righe);
+    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, righe, req.user.id);
     res.json({ success: true, ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/concorrenti', (req, res) => {
-  try { res.json(concorrenti.listaConcorrenti(db)); }
+app.get('/api/concorrenti', requireAuth, (req, res) => {
+  try { res.json(concorrenti.listaConcorrenti(db, req.user.id)); }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/concorrenti/:id', (req, res) => {
+app.get('/api/concorrenti/:id', requireAuth, (req, res) => {
   try {
-    const dettaglio = concorrenti.dettaglioConcorrente(db, req.params.id);
+    const dettaglio = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
     if (!dettaglio) return res.status(404).json({ error: 'Concorrente non trovato' });
     res.json(dettaglio);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/concorrenti/:id/match', (req, res) => {
+app.get('/api/concorrenti/:id/match', requireAuth, (req, res) => {
   try {
     const { esame } = req.query;
     if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
+    const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
     res.json(concorrenti.trovaMatch(db, Number(req.params.id), esame));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/concorrenti/:id/conferma-match', express.json(), (req, res) => {
+app.post('/api/concorrenti/:id/conferma-match', requireAuth, express.json(), (req, res) => {
   try {
     const { esameConcorrenteId, esameMylavNome } = req.body || {};
     if (!esameConcorrenteId || !esameMylavNome) {
       return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId, esameMylavNome)' });
     }
+    const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
     concorrenti.confermaMatch(db, Number(esameConcorrenteId), esameMylavNome);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/concorrenti/:id/rimuovi-match', express.json(), (req, res) => {
+app.post('/api/concorrenti/:id/rimuovi-match', requireAuth, express.json(), (req, res) => {
   try {
     const { esameConcorrenteId } = req.body || {};
     if (!esameConcorrenteId) return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId)' });
+    const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
     concorrenti.rimuoviMatch(db, Number(esameConcorrenteId));
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/concorrenti/:id', (req, res) => {
+app.delete('/api/concorrenti/:id', requireAuth, (req, res) => {
   try {
-    const ok = concorrenti.eliminaConcorrente(db, req.params.id);
+    const ok = concorrenti.eliminaConcorrente(db, req.params.id, req.user.id);
     if (!ok) return res.status(404).json({ error: 'Concorrente non trovato' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/concorrenti/import-pdf', uploadPdf.single('file'), async (req, res) => {
+app.post('/api/concorrenti/import-pdf', requireAuth, uploadPdf.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nessun file' });
   try {
     const buf = fs.readFileSync(req.file.path);
@@ -1234,7 +1240,7 @@ app.post('/api/concorrenti/import-pdf', uploadPdf.single('file'), async (req, re
   }
 });
 
-app.post('/api/concorrenti/import-pdf/conferma', express.json({ limit: '5mb' }), (req, res) => {
+app.post('/api/concorrenti/import-pdf/conferma', requireAuth, express.json({ limit: '5mb' }), (req, res) => {
   try {
     const { nomeConcorrente, righe } = req.body || {};
     if (!nomeConcorrente || !Array.isArray(righe)) {
@@ -1243,7 +1249,7 @@ app.post('/api/concorrenti/import-pdf/conferma', express.json({ limit: '5mb' }),
     const pulite = righe
       .map(r => ({ nome_originale: r.nome_originale, prezzo: Number(r.prezzo) || 0, sconto: null }))
       .filter(r => r.nome_originale && String(r.nome_originale).trim() && r.prezzo > 0);
-    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, pulite);
+    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, pulite, req.user.id);
     res.json({ success: true, ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
