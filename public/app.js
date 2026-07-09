@@ -1403,6 +1403,8 @@ async function renderConcorrentiAdmin() {
       <div class="page-actions">
         <label class="btn-outline" for="concorrenti-import-input">📥 Importa listino Excel</label>
         <input type="file" id="concorrenti-import-input" accept=".xlsx,.xls" style="display:none" onchange="avviaImportConcorrente(this)">
+        <label class="btn-outline" for="concorrenti-import-pdf">📄 Importa listino PDF</label>
+        <input type="file" id="concorrenti-import-pdf" accept=".pdf" style="display:none" onchange="avviaImportPdf(this)">
       </div>
     </div>
     <div class="page-body">
@@ -1515,6 +1517,93 @@ async function confermaImportConcorrente() {
     await loadConcorrenti();
     renderConcorrentiAdmin();
     alert('Import completato.');
+  } catch (e) {
+    alert('Errore import: ' + e.message);
+  }
+}
+
+// ── Import PDF (best-effort + revisione) ──
+async function avviaImportPdf(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const nomeDefault = file.name.replace(/\.pdf$/i, '');
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let parsed;
+  try {
+    const resp = await fetch('/api/concorrenti/import-pdf', { method: 'POST', body: formData });
+    if (!resp.ok) throw new Error((await resp.json()).error);
+    parsed = await resp.json();
+  } catch (e) {
+    alert('Errore lettura PDF: ' + e.message);
+    inputEl.value = '';
+    return;
+  }
+  inputEl.value = '';
+
+  if (!parsed.righe.length) {
+    alert('Nessuna riga con prezzo riconosciuta in questo PDF.');
+    return;
+  }
+  window._importPdfRows = parsed.righe;
+  renderImportPdfForm(parsed, nomeDefault);
+}
+
+function renderImportPdfForm(parsed, nomeDefault) {
+  const wrap = el('concorrente-import-wrap');
+  if (!wrap) return;
+  const righe = parsed.righe.map((r, i) => `
+    <tr>
+      <td style="text-align:center"><input type="checkbox" data-pdf-incl="${i}" checked></td>
+      <td><input class="roi-input" data-pdf-nome="${i}" value="${escHtml(r.nome_originale)}" style="width:320px"></td>
+      <td><input class="roi-input roi-num" data-pdf-prezzo="${i}" value="${r.prezzo}" style="width:90px"></td>
+      <td class="td-muted">${escHtml(r.code || '')}</td>
+    </tr>`).join('');
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">Revisione import PDF — ${parsed.righe.length} esami rilevati · ${parsed.scartate} righe scartate</div>
+      <div style="margin-bottom:12px">
+        <label>Nome concorrente<br>
+          <input class="roi-input" id="import-pdf-nome" value="${escHtml(nomeDefault || '')}" placeholder="Es. IDEXX 2026" style="width:260px">
+        </label>
+      </div>
+      <div class="table-scroll" style="max-height:420px;overflow-y:auto;margin-bottom:12px">
+        <table class="roi-editable-table">
+          <thead><tr><th style="width:40px">Incl.</th><th>Nome esame</th><th>Prezzo</th><th>Code</th></tr></thead>
+          <tbody>${righe}</tbody>
+        </table>
+      </div>
+      <button class="btn-primary" onclick="confermaImportPdf()">Conferma import</button>
+    </div>
+  `;
+}
+
+async function confermaImportPdf() {
+  const nomeConcorrente = el('import-pdf-nome')?.value.trim();
+  if (!nomeConcorrente) return alert('Inserisci il nome del concorrente');
+  const wrap = el('concorrente-import-wrap');
+  const rows = window._importPdfRows || [];
+  const righe = rows
+    .map((r, i) => ({
+      incl: wrap.querySelector(`[data-pdf-incl="${i}"]`)?.checked,
+      nome_originale: wrap.querySelector(`[data-pdf-nome="${i}"]`)?.value.trim(),
+      prezzo: parseFloat(wrap.querySelector(`[data-pdf-prezzo="${i}"]`)?.value)
+    }))
+    .filter(r => r.incl && r.nome_originale && !isNaN(r.prezzo) && r.prezzo > 0)
+    .map(r => ({ nome_originale: r.nome_originale, prezzo: r.prezzo, sconto: null }));
+
+  if (!righe.length) return alert('Nessuna riga selezionata valida');
+
+  try {
+    await api('/api/concorrenti/import-pdf/conferma', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nomeConcorrente, righe })
+    });
+    await loadConcorrenti();
+    renderConcorrentiAdmin();
+    alert('Import PDF completato.');
   } catch (e) {
     alert('Errore import: ' + e.message);
   }
