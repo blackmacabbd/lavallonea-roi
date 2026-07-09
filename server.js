@@ -8,6 +8,7 @@ const path     = require('path');
 const fs       = require('fs');
 const piani = require('./lib/piani');
 const concorrenti = require('./lib/concorrenti');
+const pdfimport = require('./lib/pdfimport');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -107,6 +108,13 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     if (/\.xlsx?$/i.test(file.originalname)) cb(null, true);
     else cb(new Error('Solo file Excel (.xlsx, .xls)'));
+  }
+});
+const uploadPdf = multer({
+  storage,
+  fileFilter: (req, file, cb) => {
+    if (/\.pdf$/i.test(file.originalname)) cb(null, true);
+    else cb(new Error('Solo file PDF'));
   }
 });
 
@@ -1061,6 +1069,34 @@ app.post('/api/concorrenti/:id/rimuovi-match', express.json(), (req, res) => {
     if (!esameConcorrenteId) return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId)' });
     concorrenti.rimuoviMatch(db, Number(esameConcorrenteId));
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/concorrenti/import-pdf', uploadPdf.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nessun file' });
+  try {
+    const buf = fs.readFileSync(req.file.path);
+    const testo = await pdfimport.estraiTestoPdf(buf);
+    const parsed = pdfimport.parseRigheDaTesto(testo);
+    fs.unlinkSync(req.file.path);
+    res.json(parsed);
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/concorrenti/import-pdf/conferma', express.json({ limit: '5mb' }), (req, res) => {
+  try {
+    const { nomeConcorrente, righe } = req.body || {};
+    if (!nomeConcorrente || !Array.isArray(righe)) {
+      return res.status(400).json({ error: 'Dati mancanti (nomeConcorrente, righe)' });
+    }
+    const pulite = righe
+      .map(r => ({ nome_originale: r.nome_originale, prezzo: Number(r.prezzo) || 0, sconto: null }))
+      .filter(r => r.nome_originale && String(r.nome_originale).trim() && r.prezzo > 0);
+    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, pulite);
+    res.json({ success: true, ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
