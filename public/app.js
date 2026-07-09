@@ -1670,13 +1670,16 @@ async function renderConcorrenteDettaglio(id) {
   // Stato locale della vista (ricerca + ordinamento) — il body si ri-renderizza senza ricaricare.
   S.concDett = { id, esami: dettaglio.esami, nome: dettaglio.concorrente.nome, filtro: '', dir: 1 };
 
-  const hint = S.mappingDaRoi;   // eventuale esame Mylav in mappatura, arrivato dal Calcolatore ROI
+  const hint = S.mappingDaRoi;   // lista di esami Mylav da mappare, arrivata dal Calcolatore ROI
   S.mappingDaRoi = null;         // consuma (una volta sola)
+  const hintHtml = (Array.isArray(hint) && hint.length)
+    ? `<div class="dett-maphint">Esami Mylav da mappare (${hint.length}): ${hint.map(h => `<strong>${escHtml(h)}</strong>`).join(' · ')}</div>`
+    : '';
 
   wrap.innerHTML = `
     <div class="section-card" data-concorrente-id="${id}">
       <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
-      ${hint ? `<div class="dett-maphint">Stai mappando l'esame Mylav <strong>«${escHtml(hint)}»</strong></div>` : ''}
+      ${hintHtml}
       <div class="dett-maplabel">Inserisci il nome dell'esame della concorrenza che vuoi mappare</div>
       <div class="dett-toolbar">
         <input class="roi-input dett-search" id="conc-search" placeholder="🔍 Nome esame concorrenza…"
@@ -1954,19 +1957,27 @@ function mostraBannerNoMatch(esame, concorrenteId) {
   if (!banner) return;
   banner.innerHTML = `
     <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
-    <div onclick="mappaturaManualeDaRoi(${concorrenteId}, decodeURIComponent('${encodeURIComponent(esame)}'))" style="cursor:pointer">
-      🔗 Nessuna corrispondenza per <strong>${escHtml(esame)}</strong> nel listino concorrente.<br>
-      <span style="font-size:11px;color:#6b7280">Clicca per mapparlo a mano nel listino</span>
+    <div onclick="mappaturaManualeDaRoi(${concorrenteId})" style="cursor:pointer">
+      🔗 <strong>${escHtml(esame)}</strong> non ha corrispondenza nel listino concorrente.<br>
+      <span style="font-size:11px;color:#6b7280">Clicca per mappare a mano tutti gli esami mancanti</span>
     </div>
   `;
   banner.style.display = 'block';
 }
 
-async function mappaturaManualeDaRoi(concorrenteId, esameMyl) {
+async function mappaturaManualeDaRoi(concorrenteId) {
   const banner = el('roi-match-banner');
   if (banner) banner.style.display = 'none';
+
+  // Raccogli TUTTI gli esami in tabella che NON hanno un match sicuro per questo concorrente
+  const nomi = getRoiRigheValide().map(r => r.esame);
+  const stati = await Promise.all(nomi.map(n =>
+    fetch(`/api/concorrenti/${concorrenteId}/match?esame=${encodeURIComponent(n)}`)
+      .then(r => r.json()).then(m => ({ n, ok: !!(m.trovato && m.sicuro) })).catch(() => ({ n, ok: false }))
+  ));
+  S.mappingDaRoi = stati.filter(s => !s.ok).map(s => s.n);   // array di nomi Mylav da mappare
+
   window._currentView = 'concorrenti';
-  S.mappingDaRoi = esameMyl;   // mostrato come contesto nel dettaglio; l'utente cerca il nome CONCORRENTE
   await renderConcorrentiAdmin();
   await renderConcorrenteDettaglio(concorrenteId);
   el('concorrente-dettaglio-wrap')?.scrollIntoView({ behavior: 'smooth' });
