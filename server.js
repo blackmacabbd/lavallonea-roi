@@ -9,6 +9,8 @@ const fs       = require('fs');
 const piani = require('./lib/piani');
 const concorrenti = require('./lib/concorrenti');
 const pdfimport = require('./lib/pdfimport');
+const auth = require('./lib/auth');
+const mailer = require('./lib/mailer');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -56,29 +58,12 @@ db.exec(`
   );
 `);
 
-// Migra vecchio schema se necessario
-try {
-  db.prepare('SELECT listino_concorrenza FROM dati_foglio LIMIT 1').get();
-} catch (_) {
-  db.exec('DROP TABLE IF EXISTS dati_foglio');
-  db.exec(`CREATE TABLE dati_foglio (
-    id                          INTEGER PRIMARY KEY AUTOINCREMENT,
-    file_id                     INTEGER REFERENCES file_caricati(id),
-    foglio                      TEXT,
-    esame                       TEXT,
-    n_esami                     INTEGER DEFAULT 1,
-    listino_concorrenza         REAL,
-    totale_concorrenza          REAL,
-    prezzo_scontato_concorrenza REAL,
-    listino_lav                 REAL,
-    totale_listino_lav          REAL,
-    prezzo_scontato_lav         REAL,
-    totale_scontato_lav         REAL,
-    risparmio_dottore           REAL,
-    sconto_concorrenza          REAL,
-    sconto_lav                  REAL
-  )`);
+// Migrazione additiva: aggiunge user_id alle tabelle dati se manca. Mai distruttiva.
+function addColIfMissing(table, col, decl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
+addColIfMissing('strutture', 'user_id', 'INTEGER');
 
 // ── Piani di scontistica ────────────────────────────
 piani.ensureSchema(db);
@@ -97,6 +82,25 @@ try {
 
 // ── Concorrenza ─────────────────────────────────────
 concorrenti.ensureSchema(db);
+addColIfMissing('concorrenti', 'user_id', 'INTEGER');
+
+// ── Autenticazione ──────────────────────────────────
+auth.ensureSchema(db);
+addColIfMissing('prezzi_esami_custom', 'user_id', 'INTEGER');
+
+// I dati creati prima degli account non hanno proprietario: rimuovili una sola volta.
+try {
+  const orfane = db.prepare(`SELECT id FROM strutture WHERE user_id IS NULL`).all().map(r => r.id);
+  if (orfane.length) {
+    const fileIds = db.prepare(`SELECT id FROM file_caricati WHERE struttura_id IN (${orfane.map(()=>'?').join(',')})`).all(...orfane).map(r => r.id);
+    if (fileIds.length) db.exec(`DELETE FROM dati_foglio WHERE file_id IN (${fileIds.join(',')})`);
+    db.exec(`DELETE FROM file_caricati WHERE struttura_id IN (${orfane.join(',')})`);
+    db.exec(`DELETE FROM strutture WHERE user_id IS NULL`);
+  }
+  db.exec(`DELETE FROM esami_concorrente WHERE concorrente_id IN (SELECT id FROM concorrenti WHERE user_id IS NULL)`);
+  db.exec(`DELETE FROM concorrenti WHERE user_id IS NULL`);
+  db.exec(`DELETE FROM prezzi_esami_custom WHERE user_id IS NULL`);
+} catch (e) { console.error('Pulizia legacy:', e.message); }
 
 // ── Multer ─────────────────────────────────────────
 const storage = multer.diskStorage({
@@ -117,6 +121,23 @@ const uploadPdf = multer({
     else cb(new Error('Solo file PDF'));
   }
 });
+
+// ── Auth middleware ────────────────────────────────
+function userFromToken(req) {
+  const h = req.headers['authorization'] || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : (req.headers['x-auth-token'] || '');
+  if (!token) return null;
+  const row = db.prepare(`
+    SELECT u.id, u.email FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ?
+  `).get(token);
+  return row || null;
+}
+function requireAuth(req, res, next) {
+  const u = userFromToken(req);
+  if (!u) return res.status(401).json({ error: 'Autenticazione richiesta' });
+  req.user = u; next();
+}
+function optionalAuth(req, res, next) { req.user = userFromToken(req); next(); }
 
 // ── Excel helpers ──────────────────────────────────
 const norm = piani.norm;
