@@ -489,9 +489,9 @@ app.post('/api/debug', upload.single('file'), (req, res) => {
 
 // ── API ────────────────────────────────────────────
 
-app.get('/api/strutture', (req, res) => {
+app.get('/api/strutture', requireAuth, (req, res) => {
   try {
-    const strutture = db.prepare('SELECT * FROM strutture ORDER BY nome').all();
+    const strutture = db.prepare('SELECT * FROM strutture WHERE user_id = ? ORDER BY nome').all(req.user.id);
     const result = strutture.map(s => {
       const fileCnt = db.prepare('SELECT COUNT(*) as cnt FROM file_caricati WHERE struttura_id = ?').get(s.id).cnt;
       const fogli = db.prepare(`
@@ -510,8 +510,11 @@ app.get('/api/strutture', (req, res) => {
   }
 });
 
-app.get('/api/strutture/:id/file', (req, res) => {
+app.get('/api/strutture/:id/file', requireAuth, (req, res) => {
   try {
+    const owned = db.prepare('SELECT 1 FROM strutture WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'Struttura non trovata' });
+
     const files = db.prepare(`
       SELECT fc.*,
         GROUP_CONCAT(DISTINCT df.foglio) as fogli
@@ -527,10 +530,17 @@ app.get('/api/strutture/:id/file', (req, res) => {
   }
 });
 
-app.get('/api/file/:id/dati', (req, res) => {
+app.get('/api/file/:id/dati', requireAuth, (req, res) => {
   try {
     const { foglio } = req.query;
     if (!foglio) return res.status(400).json({ error: 'Parametro foglio mancante' });
+
+    const owned = db.prepare(`
+      SELECT 1 FROM file_caricati fc
+      JOIN strutture s ON s.id = fc.struttura_id
+      WHERE fc.id = ? AND s.user_id = ?
+    `).get(req.params.id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'File non trovato' });
 
     const dati = db.prepare(
       'SELECT * FROM dati_foglio WHERE file_id = ? AND foglio = ? ORDER BY id'
@@ -551,9 +561,9 @@ app.get('/api/file/:id/dati', (req, res) => {
   }
 });
 
-app.get('/api/strutture/:id/aggregato', (req, res) => {
+app.get('/api/strutture/:id/aggregato', requireAuth, (req, res) => {
   try {
-    const struttura = db.prepare('SELECT * FROM strutture WHERE id = ?').get(req.params.id);
+    const struttura = db.prepare('SELECT * FROM strutture WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
     if (!struttura) return res.status(404).json({ error: 'Struttura non trovata' });
 
     const files = db.prepare('SELECT * FROM file_caricati WHERE struttura_id = ? ORDER BY data_carico').all(req.params.id);
@@ -573,20 +583,31 @@ app.get('/api/strutture/:id/aggregato', (req, res) => {
   }
 });
 
-app.get('/api/dashboard', (req, res) => {
+app.get('/api/dashboard', requireAuth, (req, res) => {
   try {
-    const strutture_count = db.prepare('SELECT COUNT(*) as cnt FROM strutture').get().cnt;
-    const file_count      = db.prepare('SELECT COUNT(*) as cnt FROM file_caricati').get().cnt;
+    const strutture_count = db.prepare('SELECT COUNT(*) as cnt FROM strutture WHERE user_id = ?').get(req.user.id).cnt;
+    const file_count      = db.prepare(`
+      SELECT COUNT(*) as cnt FROM file_caricati fc
+      JOIN strutture s ON s.id = fc.struttura_id
+      WHERE s.user_id = ?
+    `).get(req.user.id).cnt;
 
-    const diffRow = db.prepare('SELECT SUM(risparmio_dottore) as totale FROM dati_foglio').get();
+    const diffRow = db.prepare(`
+      SELECT SUM(df.risparmio_dottore) as totale
+      FROM dati_foglio df
+      JOIN file_caricati fc ON df.file_id = fc.id
+      JOIN strutture s ON s.id = fc.struttura_id
+      WHERE s.user_id = ?
+    `).get(req.user.id);
     const differenziale_totale = diffRow.totale || 0;
 
     const ultimi_file = db.prepare(`
       SELECT fc.*, s.nome as struttura_nome
       FROM file_caricati fc
       JOIN strutture s ON fc.struttura_id = s.id
+      WHERE s.user_id = ?
       ORDER BY fc.data_carico DESC LIMIT 5
-    `).all();
+    `).all(req.user.id);
 
     const per_struttura = db.prepare(`
       SELECT s.nome,
@@ -595,9 +616,10 @@ app.get('/api/dashboard', (req, res) => {
       FROM dati_foglio df
       JOIN file_caricati fc ON df.file_id = fc.id
       JOIN strutture s ON fc.struttura_id = s.id
+      WHERE s.user_id = ?
       GROUP BY s.id
       ORDER BY s.nome
-    `).all();
+    `).all(req.user.id);
 
     res.json({ strutture_count, file_count, differenziale_totale, ultimi_file, per_struttura });
   } catch (err) {
@@ -605,11 +627,11 @@ app.get('/api/dashboard', (req, res) => {
   }
 });
 
-app.get('/api/cronologia', (req, res) => {
+app.get('/api/cronologia', requireAuth, (req, res) => {
   try {
     const { struttura_id } = req.query;
-    const where  = struttura_id ? 'WHERE fc.struttura_id = ?' : '';
-    const params = struttura_id ? [struttura_id] : [];
+    const where  = struttura_id ? 'AND fc.struttura_id = ?' : '';
+    const params = struttura_id ? [req.user.id, struttura_id] : [req.user.id];
 
     const rows = db.prepare(`
       SELECT
@@ -623,7 +645,7 @@ app.get('/api/cronologia', (req, res) => {
       FROM file_caricati fc
       JOIN strutture s ON fc.struttura_id = s.id
       LEFT JOIN dati_foglio df ON df.file_id = fc.id
-      ${where}
+      WHERE s.user_id = ? ${where}
       GROUP BY fc.id
       ORDER BY fc.data_carico DESC
     `).all(...params);
@@ -634,7 +656,7 @@ app.get('/api/cronologia', (req, res) => {
   }
 });
 
-app.get('/api/confronto', (req, res) => {
+app.get('/api/confronto', requireAuth, (req, res) => {
   try {
     const rows = db.prepare(`
       SELECT
@@ -647,9 +669,10 @@ app.get('/api/confronto', (req, res) => {
       FROM strutture s
       JOIN file_caricati fc ON fc.struttura_id = s.id
       JOIN dati_foglio df   ON df.file_id = fc.id
+      WHERE s.user_id = ?
       GROUP BY s.id
       ORDER BY s.nome
-    `).all();
+    `).all(req.user.id);
     res.json(rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -657,7 +680,7 @@ app.get('/api/confronto', (req, res) => {
 });
 
 // ── Upload ─────────────────────────────────────────
-app.post('/api/upload', upload.single('file'), (req, res) => {
+app.post('/api/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nessun file caricato' });
 
   try {
@@ -696,8 +719,8 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     const dup = db.prepare(`
       SELECT fc.id FROM file_caricati fc
       JOIN strutture s ON fc.struttura_id = s.id
-      WHERE fc.nome_file = ? AND s.nome = ?
-    `).get(req.file.originalname, strutturaNome);
+      WHERE fc.nome_file = ? AND s.nome = ? AND s.user_id = ?
+    `).get(req.file.originalname, strutturaNome, req.user.id);
 
     if (dup && !req.body.force) {
       return res.status(409).json({
@@ -710,9 +733,9 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
     let result;
     db.exec('BEGIN');
     try {
-      let strutturaRow = db.prepare('SELECT id FROM strutture WHERE nome = ?').get(strutturaNome);
+      let strutturaRow = db.prepare('SELECT id FROM strutture WHERE nome = ? AND user_id = ?').get(strutturaNome, req.user.id);
       if (!strutturaRow) {
-        const r = db.prepare('INSERT INTO strutture (nome) VALUES (?)').run(strutturaNome);
+        const r = db.prepare('INSERT INTO strutture (nome, user_id) VALUES (?, ?)').run(strutturaNome, req.user.id);
         strutturaRow = { id: Number(r.lastInsertRowid) };
       }
 
@@ -928,13 +951,13 @@ async function renderPDF(html) {
   }
 }
 
-app.post('/api/pdf/dottore/:fileId/:foglio', express.json({ limit: '15mb' }), async (req, res) => {
+app.post('/api/pdf/dottore/:fileId/:foglio', requireAuth, express.json({ limit: '15mb' }), async (req, res) => {
   try {
     const { fileId, foglio } = req.params;
     const { donutImg, barreImg, donutLegend, barreLegend } = req.body || {};
-    const dati     = db.prepare('SELECT * FROM dati_foglio WHERE file_id = ? AND foglio = ? ORDER BY id').all(fileId, foglio);
-    const fileInfo = db.prepare('SELECT fc.*, s.nome as struttura_nome FROM file_caricati fc JOIN strutture s ON fc.struttura_id = s.id WHERE fc.id = ?').get(fileId);
+    const fileInfo = db.prepare('SELECT fc.*, s.nome as struttura_nome FROM file_caricati fc JOIN strutture s ON fc.struttura_id = s.id WHERE fc.id = ? AND s.user_id = ?').get(fileId, req.user.id);
     if (!fileInfo) return res.status(404).json({ error: 'File non trovato' });
+    const dati     = db.prepare('SELECT * FROM dati_foglio WHERE file_id = ? AND foglio = ? ORDER BY id').all(fileId, foglio);
     const t   = calcolaTotali(dati);
     const pdf = await renderPDF(buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend));
     const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_dottore.pdf`;
@@ -1225,7 +1248,7 @@ app.post('/api/concorrenti/import-pdf/conferma', express.json({ limit: '5mb' }),
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/calcolo/salva', express.json(), (req, res) => {
+app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
   try {
     const { struttura: strutturaNome, foglio, righe, nomeFile, piano_id } = req.body || {};
     if (!strutturaNome || !foglio || !righe?.length)
@@ -1233,9 +1256,9 @@ app.post('/api/calcolo/salva', express.json(), (req, res) => {
 
     db.exec('BEGIN');
     try {
-      let strRow = db.prepare('SELECT id FROM strutture WHERE nome = ?').get(strutturaNome);
+      let strRow = db.prepare('SELECT id FROM strutture WHERE nome = ? AND user_id = ?').get(strutturaNome, req.user.id);
       if (!strRow) {
-        const r = db.prepare('INSERT INTO strutture (nome) VALUES (?)').run(strutturaNome);
+        const r = db.prepare('INSERT INTO strutture (nome, user_id) VALUES (?, ?)').run(strutturaNome, req.user.id);
         strRow = { id: Number(r.lastInsertRowid) };
       }
       const nomef = nomeFile || `Calcolo_${foglio}_${new Date().toISOString().split('T')[0]}`;
@@ -1272,7 +1295,7 @@ app.post('/api/calcolo/salva', express.json(), (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/export-excel', express.json(), (req, res) => {
+app.post('/api/export-excel', requireAuth, express.json(), (req, res) => {
   try {
     const { foglio, struttura, righe } = req.body || {};
     if (!righe?.length) return res.status(400).json({ error: 'Nessuna riga' });
@@ -1320,9 +1343,15 @@ app.post('/api/export-excel', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.delete('/api/cronologia/:id', (req, res) => {
+app.delete('/api/cronologia/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
+    const owned = db.prepare(`
+      SELECT 1 FROM file_caricati fc
+      JOIN strutture s ON s.id = fc.struttura_id
+      WHERE fc.id = ? AND s.user_id = ?
+    `).get(id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'File non trovato' });
     db.prepare('DELETE FROM dati_foglio WHERE file_id = ?').run(id);
     db.prepare('DELETE FROM file_caricati WHERE id = ?').run(id);
     res.json({ ok: true });
@@ -1331,10 +1360,10 @@ app.delete('/api/cronologia/:id', (req, res) => {
   }
 });
 
-app.delete('/api/strutture/:id', (req, res) => {
+app.delete('/api/strutture/:id', requireAuth, (req, res) => {
   try {
     const id = req.params.id;
-    const esiste = db.prepare('SELECT 1 FROM strutture WHERE id = ?').get(id);
+    const esiste = db.prepare('SELECT 1 FROM strutture WHERE id = ? AND user_id = ?').get(id, req.user.id);
     if (!esiste) return res.status(404).json({ error: 'Struttura non trovata' });
 
     const files = db.prepare('SELECT id, path_file FROM file_caricati WHERE struttura_id = ?').all(id);
