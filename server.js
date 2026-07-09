@@ -370,6 +370,98 @@ app.get('/vendor/chart.min.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/chart.js/dist/chart.umd.min.js'));
 });
 
+// ── Auth ────────────────────────────────────────────
+app.post('/api/auth/register', express.json(), async (req, res) => {
+  try {
+    const email = auth.normEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Email non valida' });
+    const pv = auth.validaPassword(password);
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo });
+    if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return res.status(409).json({ error: 'Email già registrata' });
+
+    const recoveryCode = auth.genRecoveryCode();
+    const info = db.prepare(`INSERT INTO users (email, pass_hash, recovery_hash, recovery_lookup) VALUES (?, ?, ?, ?)`)
+      .run(email, auth.hashPassword(password), auth.hashPassword(recoveryCode), auth.lookupHash(recoveryCode));
+    const userId = Number(info.lastInsertRowid);
+    const token = auth.genToken();
+    db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, userId);
+
+    const tpl = mailer.templateRecovery(recoveryCode);
+    mailer.sendMail({ to: email, subject: tpl.subject, html: tpl.html }).catch(() => {});
+    res.json({ token, email, recoveryCode });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/auth/login', express.json(), (req, res) => {
+  try {
+    const email = auth.normEmail(req.body?.email);
+    const password = String(req.body?.password || '');
+    const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
+    if (!u || !auth.verifyPassword(password, u.pass_hash)) return res.status(401).json({ error: 'Email o password errati' });
+    const token = auth.genToken();
+    db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, u.id);
+    res.json({ token, email: u.email });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const h = req.headers['authorization'] || '';
+  const token = h.startsWith('Bearer ') ? h.slice(7) : (req.headers['x-auth-token'] || '');
+  if (token) db.prepare(`DELETE FROM sessions WHERE token = ?`).run(token);
+  res.json({ ok: true });
+});
+
+app.get('/api/auth/me', requireAuth, (req, res) => res.json({ email: req.user.email }));
+
+app.post('/api/auth/request-reset', express.json(), async (req, res) => {
+  try {
+    const email = auth.normEmail(req.body?.email);
+    const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
+    if (u) {
+      const code = auth.genResetCode();
+      db.prepare(`INSERT INTO reset_codes (user_id, code, expires_at) VALUES (?, ?, ?)`)
+        .run(u.id, code, Date.now() + 30 * 60 * 1000);
+      const tpl = mailer.templateReset(code);
+      mailer.sendMail({ to: email, subject: tpl.subject, html: tpl.html }).catch(() => {});
+    }
+    res.json({ ok: true }); // risposta generica: niente user-enumeration
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/auth/reset-password', express.json(), (req, res) => {
+  try {
+    const email = auth.normEmail(req.body?.email);
+    const code = String(req.body?.code || '').trim();
+    const pv = auth.validaPassword(String(req.body?.newPassword || ''));
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo });
+    const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
+    if (!u) return res.status(400).json({ error: 'Codice non valido' });
+    const rc = db.prepare(`SELECT * FROM reset_codes WHERE user_id = ? AND code = ? AND used = 0 AND expires_at > ? ORDER BY id DESC`)
+      .get(u.id, code, Date.now());
+    if (!rc) return res.status(400).json({ error: 'Codice non valido o scaduto' });
+    db.prepare(`UPDATE users SET pass_hash = ? WHERE id = ?`).run(auth.hashPassword(req.body.newPassword), u.id);
+    db.prepare(`UPDATE reset_codes SET used = 1 WHERE id = ?`).run(rc.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/auth/recover-full', express.json(), (req, res) => {
+  try {
+    const recoveryCode = String(req.body?.recoveryCode || '');
+    const newEmail = auth.normEmail(req.body?.newEmail);
+    const pv = auth.validaPassword(String(req.body?.newPassword || ''));
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo });
+    if (!newEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) return res.status(400).json({ error: 'Email non valida' });
+    const u = db.prepare(`SELECT * FROM users WHERE recovery_lookup = ?`).get(auth.lookupHash(recoveryCode));
+    if (!u || !auth.verifyPassword(recoveryCode, u.recovery_hash)) return res.status(400).json({ error: 'Codice di recupero non valido' });
+    const other = db.prepare(`SELECT 1 FROM users WHERE email = ? AND id <> ?`).get(newEmail, u.id);
+    if (other) return res.status(409).json({ error: 'Email già in uso da un altro account' });
+    db.prepare(`UPDATE users SET email = ?, pass_hash = ? WHERE id = ?`).run(newEmail, auth.hashPassword(req.body.newPassword), u.id);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── DEBUG ──────────────────────────────────────────
 app.post('/api/debug', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nessun file' });
