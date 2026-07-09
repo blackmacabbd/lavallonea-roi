@@ -303,6 +303,29 @@ async function renderDashboard() {
 }
 
 // ── Vista Foglio ───────────────────────────────────
+// Riapre il file corrente (S.foglio) nel Calcolatore ROI, precaricandone le righe.
+function modificaNelCalcolatore() {
+  const f = S.foglio;
+  if (!f || !Array.isArray(f.dati) || !f.dati.length) return;
+  S.roi.struttura = f.file?.struttura_nome || '';
+  const pid = f.dati.find(d => d.piano_id != null)?.piano_id;
+  S.roi.pianoId = pid != null ? pid : null;
+  S.roi.righe = f.dati.map(d => {
+    const tc = d.totale_concorrenza || 0;
+    const scRaw = tc > 0 ? Math.round((1 - (d.prezzo_scontato_concorrenza || 0) / tc) * 1000) / 10 : 0;
+    return {
+      esame: d.esame || '',
+      n_esami: d.n_esami || 1,
+      listino_concorrenza: d.listino_concorrenza || '',
+      sconto_concorrenza: scRaw > 0 ? scRaw : '',
+      listino_lav: d.listino_lav || '',
+      prezzo_scontato_lav: d.prezzo_scontato_lav || ''
+    };
+  });
+  if (!S.roi.righe.length) S.roi.righe = [roiRigaVuota()];
+  navigate('dashboard');
+}
+
 async function renderFoglio(fileId, foglio) {
   let resp;
   try {
@@ -365,6 +388,16 @@ async function renderFoglio(fileId, foglio) {
           <div class="kpi-value">${rispPct}%</div>
           <div class="kpi-sub">Sul prezzo di mercato</div>
         </div>
+      </div>
+
+      <!-- Banner: riapri nel calcolatore -->
+      <div class="roi-edit-banner" onclick="modificaNelCalcolatore()" title="Riapri questo file nel Calcolatore ROI">
+        <span class="roi-edit-ico">✏️</span>
+        <div class="roi-edit-txt">
+          <div class="roi-edit-title">Modifica nel Calcolatore ROI</div>
+          <div class="roi-edit-sub">Riapri questo file nel calcolatore per aggiornare esami, prezzi o piano</div>
+        </div>
+        <span class="roi-edit-arrow">→</span>
       </div>
 
       <!-- Vista toggle -->

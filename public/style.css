@@ -1173,3 +1173,34 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   background: var(--blue-tint);
   border-radius: 8px;
 }
+
+/* ── Banner "Modifica nel Calcolatore ROI" (vista foglio) ─────────── */
+.roi-edit-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 4px 0 18px;
+  padding: 14px 18px;
+  background: var(--blue-tint);
+  border: 1px solid var(--blue-line);
+  border-left: 4px solid var(--blue);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .12s, box-shadow .12s, transform .12s;
+}
+.roi-edit-banner:hover {
+  background: #ddecfa;
+  box-shadow: 0 2px 10px rgba(15,118,188,.15);
+}
+.roi-edit-ico { font-size: 20px; flex: 0 0 auto; }
+.roi-edit-txt { flex: 1; min-width: 0; }
+.roi-edit-title { font-size: 14px; font-weight: 600; color: var(--blue-dark); }
+.roi-edit-sub { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+.roi-edit-arrow {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--blue);
+  flex: 0 0 auto;
+  transition: transform .12s;
+}
+.roi-edit-banner:hover .roi-edit-arrow { transform: translateX(4px); }
