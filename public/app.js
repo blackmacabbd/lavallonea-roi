@@ -1961,11 +1961,11 @@ async function aggiornaMatchConcorrente(tr) {
 
   if (m.trovato && m.sicuro) {
     if (banner) banner.style.display = 'none';
-    if (lcInp.value === '' || lcInp.dataset.auto === '1') {
+    if (campoFillabile(lcInp)) {
       lcInp.value = m.prezzo;
       lcInp.dataset.auto = '1';
     }
-    if (m.sconto != null && (scInp.value === '' || scInp.dataset.auto === '1')) {
+    if (m.sconto != null && campoFillabile(scInp)) {
       scInp.value = m.sconto;
       scInp.dataset.auto = '1';
     }
@@ -2133,14 +2133,14 @@ function buildRoiRigaHtml(r, i) {
     <td></td>
     <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="Esame…" autocomplete="off" style="width:160px"></td>
     <td><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
-    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza}" placeholder="0.00"></td>
+    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza || ''}" placeholder="0.00"></td>
     <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="tot_conc">${fmtE(totConc)}</td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
     <td></td>
-    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav}" placeholder="0.00"></td>
+    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav || ''}" placeholder="0.00"></td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_listino_lav">${fmtE(totLL)}</td>
-    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav}" placeholder="0.00"></td>
+    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav || ''}" placeholder="0.00"></td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_prezzo_lav">${fmtE(totPL)}</td>
     <td class="roi-calc" data-col="risparmio" style="color:${rispColor};font-weight:500">${fmtE(risp)}</td>
     <td><button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="Rimuovi">×</button></td>
@@ -2187,6 +2187,13 @@ function reRenderRoiTable() {
   initRoiEvents();
 }
 
+// Un campo prezzo e' sovrascrivibile dall'autofill se e' vuoto, 0, o gia' automatico.
+// (aggiornaRigaDOM forza i campi vuoti a 0 in stato: senza questo, dopo un re-render
+//  un "0" verrebbe scambiato per valore inserito a mano e bloccherebbe l'autofill.)
+function campoFillabile(inp) {
+  return !parseFloat(inp.value) || inp.dataset.auto === '1';
+}
+
 async function aggiornaPrezziAutomatici(tr, force = false) {
   // force=true: la cascata è stata innescata da una scelta ESPLICITA del piano
   // → il prezzo Mylav va ricalcolato per il nuovo piano anche se un valore è già
@@ -2200,7 +2207,7 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
 
   const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`)
     .then(r => r.json()).catch(() => ({}));
-  if (baseResp.prezzo_base != null && (llInp.value === '' || llInp.dataset.auto === '1')) {
+  if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
     llInp.value = baseResp.prezzo_base;
     llInp.dataset.auto = '1';
   }
@@ -2215,7 +2222,7 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
       const titolo = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
         : pResp.fonte === 'custom' ? 'Prezzo personalizzato salvato in precedenza'
         : 'Prezzo del piano non disponibile per questo esame — mostrato il prezzo base';
-      if (force || plInp.value === '' || plInp.dataset.auto === '1') {
+      if (force || campoFillabile(plInp)) {
         plInp.value = pResp.prezzo;
         plInp.dataset.auto = '1';
         plInp.title = titolo;
