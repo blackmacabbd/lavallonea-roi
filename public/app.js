@@ -1862,7 +1862,7 @@ function selezionaPiano(id) {
   }
   const tbody = el('roi-tbody');
   if (tbody) {
-    tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaPrezziAutomatici(tr));
+    tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaPrezziAutomatici(tr, true));
   }
 }
 
@@ -2150,7 +2150,10 @@ function reRenderRoiTable() {
   initRoiEvents();
 }
 
-async function aggiornaPrezziAutomatici(tr) {
+async function aggiornaPrezziAutomatici(tr, force = false) {
+  // force=true: la cascata è stata innescata da una scelta ESPLICITA del piano
+  // → il prezzo Mylav va ricalcolato per il nuovo piano anche se un valore è già
+  //   presente (altrimenti cambiando piano il prezzo resterebbe quello vecchio).
   const esameInp = tr.querySelector('[data-col="esame"]');
   const llInp    = tr.querySelector('[data-col="listino_lav"]');
   const plInp    = tr.querySelector('[data-col="prezzo_scontato_lav"]');
@@ -2175,7 +2178,7 @@ async function aggiornaPrezziAutomatici(tr) {
       const titolo = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
         : pResp.fonte === 'custom' ? 'Prezzo personalizzato salvato in precedenza'
         : 'Prezzo del piano non disponibile per questo esame — mostrato il prezzo base';
-      if (plInp.value === '' || plInp.dataset.auto === '1') {
+      if (force || plInp.value === '' || plInp.dataset.auto === '1') {
         plInp.value = pResp.prezzo;
         plInp.dataset.auto = '1';
         plInp.title = titolo;
