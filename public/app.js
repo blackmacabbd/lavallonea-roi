@@ -1757,7 +1757,18 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esameConcorrenteId, esameMylavNome })
     });
-    alert('Mappatura salvata.');
+    // aggiornamento istantaneo: sposta la riga in "Mappati" senza refresh, preservando la ricerca
+    if (S.concDett && S.concDett.id === concorrenteId) {
+      const row = S.concDett.esami.find(e => e.id === esameConcorrenteId);
+      if (row) { row.esame_mylav_nome = esameMylavNome; row.confermato = 1; }
+      renderDettaglioBody();
+    }
+    // il nuovo nome Mylav diventa disponibile in autocomplete calcolatore e datalist
+    if (Array.isArray(S.esamiMylavNomi) && !S.esamiMylavNomi.includes(esameMylavNome)) {
+      S.esamiMylavNomi.push(esameMylavNome);
+      const dl = el('mylav-esami-list');
+      if (dl) { const opt = document.createElement('option'); opt.value = esameMylavNome; dl.appendChild(opt); }
+    }
   } catch (e) { alert('Errore: ' + e.message); }
 }
 
@@ -1767,7 +1778,11 @@ async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esameConcorrenteId })
     });
-    renderConcorrenteDettaglio(concorrenteId);
+    if (S.concDett && S.concDett.id === concorrenteId) {
+      const row = S.concDett.esami.find(e => e.id === esameConcorrenteId);
+      if (row) { row.esame_mylav_nome = null; row.confermato = 0; }
+      renderDettaglioBody();
+    }
   } catch (e) { alert('Errore: ' + e.message); }
 }
 

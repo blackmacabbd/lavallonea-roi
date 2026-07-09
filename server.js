@@ -881,8 +881,10 @@ app.get('/api/esami/autocomplete', (req, res) => {
       SELECT nome FROM esami_riferimento WHERE nome LIKE ?
       UNION
       SELECT esame_nome AS nome FROM prezzi_esami_custom WHERE esame_nome LIKE ?
+      UNION
+      SELECT esame_mylav_nome AS nome FROM esami_concorrente WHERE esame_mylav_nome IS NOT NULL AND esame_mylav_nome LIKE ?
       ORDER BY nome LIMIT 20
-    `).all(like, like, like);
+    `).all(like, like, like, like);
     res.json(rows.map(r => r.nome));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -954,7 +956,14 @@ app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
 // Tutti i nomi del catalogo esami Mylav (per autocomplete/datalist)
 app.get('/api/esami-riferimento/nomi', (req, res) => {
   try {
-    const nomi = db.prepare('SELECT nome FROM esami_riferimento ORDER BY nome').all().map(r => r.nome);
+    // Tutti i nomi esame Mylav "conosciuti": catalogo + storico + custom + gia' mappati.
+    const nomi = db.prepare(`
+      SELECT nome FROM esami_riferimento
+      UNION SELECT esame FROM dati_foglio WHERE esame IS NOT NULL AND esame != ''
+      UNION SELECT esame_nome FROM prezzi_esami_custom
+      UNION SELECT esame_mylav_nome FROM esami_concorrente WHERE esame_mylav_nome IS NOT NULL
+      ORDER BY nome
+    `).all().map(r => r.nome);
     res.json(nomi);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
