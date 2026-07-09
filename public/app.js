@@ -95,38 +95,19 @@ function buildSidebar() {
   }
 
   for (const s of S.strutture) {
-    const open = S.expanded[s.id] ? 'open' : '';
+    const primoFoglio = s.fogli && s.fogli.length ? s.fogli[0] : null;
+    const attiva = (window._currentStrutturaId === s.id) ? 'active' : '';
+    const onclick = primoFoglio
+      ? `navigateToStruttura(${s.id}, '${primoFoglio}')`
+      : `navigate('dashboard')`;
     html += `
       <div class="struttura-group">
-        <div class="struttura-header ${open}" onclick="toggleStruttura(${s.id})">
-          <span class="sname">▼ ${s.nome}</span>
+        <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
+          <span class="sname">${s.nome}</span>
           <span class="struttura-del" title="Elimina struttura" onclick="event.stopPropagation(); eliminaStrutturaUI(${s.id})">×</span>
-          <span class="struttura-chevron">›</span>
         </div>
-        <div class="struttura-children ${open}" id="sc-${s.id}">
+      </div>
     `;
-
-    const fogliOrder = ['Foglio 1', 'Platinum', 'Gold'];
-    for (const foglio of fogliOrder) {
-      if (s.fogli.includes(foglio)) {
-        html += `
-          <div class="struttura-child ${isActiveFoglio(s.id, foglio)}"
-               onclick="navigateToStruttura(${s.id}, '${foglio}')">
-            ${foglio}
-          </div>
-        `;
-      }
-    }
-
-    if (s.file_count >= 2) {
-      html += `<div class="struttura-sep"></div>
-        <div class="struttura-child ${isActive('totali', s.id)}"
-             onclick="navigate('totali', { strutturaId: ${s.id}, nome: '${s.nome.replace(/'/g,"\\'")}' })">
-          Totali struttura
-        </div>`;
-    }
-
-    html += `</div></div>`;
   }
 
   html += `
@@ -535,9 +516,9 @@ function renderDonutMia(t) {
   el('donut-cv').textContent = euro(t.risparmio_totale_dottore);
   el('donut-cl').textContent = 'Risparmio';
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Prezzo Mylav al dottore', color: '#5fa8db' },
-    { label: 'Sconto Mylav applicato',  color: '#a9d0ec' },
-    { label: 'Risparmio dottore vs concorrenza', color: '#0f76bc' },
+    { label: 'Prezzo Mylav al dottore', color: '#0f76bc' },
+    { label: 'Sconto Mylav applicato',  color: '#9cc8e8' },
+    { label: 'Risparmio dottore vs concorrenza', color: '#26262a' },
     { label: 'Sconto concorrenza applicato', color: '#ce181e' }
   ]);
 
@@ -557,7 +538,7 @@ function renderDonutMia(t) {
       ],
       datasets: [{
         data: totale > 0 ? [v1, v2, v3, v4] : [1, 1, 1, 1],
-        backgroundColor: ['#5fa8db', '#a9d0ec', '#0f76bc', '#ce181e'],
+        backgroundColor: ['#0f76bc', '#9cc8e8', '#26262a', '#ce181e'],
         borderWidth: 2,
         borderColor: '#fff'
       }]
@@ -585,7 +566,7 @@ function renderDonutDottore(t) {
   el('donut-cl').textContent = 'Risparmi';
   el('donut-legend').innerHTML = legendHtml([
     { label: 'Paghi con Mylav', color: '#0f76bc' },
-    { label: 'Risparmio vs mercato', color: '#0f76bc' }
+    { label: 'Risparmio vs mercato', color: '#26262a' }
   ]);
 
   const canvas = el('chart-donut');
@@ -601,7 +582,7 @@ function renderDonutDottore(t) {
       labels: ['Paghi con Mylav', 'Risparmio vs mercato'],
       datasets: [{
         data: totale > 0 ? [v1, v2] : [1, 1],
-        backgroundColor: ['#0f76bc', '#0f76bc'],
+        backgroundColor: ['#0f76bc', '#26262a'],
         borderWidth: 2,
         borderColor: '#fff'
       }]
@@ -627,7 +608,7 @@ function renderDonutDottore(t) {
 function renderBarreMia(dati) {
   el('barre-legend').innerHTML = legendHtml([
     { label: 'Paghi con Mylav', color: '#0f76bc' },
-    { label: 'Risparmio dottore',    color: '#0f76bc' }
+    { label: 'Risparmio dottore',    color: '#26262a' }
   ]);
 
   const canvas = el('chart-barre');
@@ -652,7 +633,7 @@ function renderBarreMia(dati) {
         {
           label: 'Risparmio dottore',
           data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
-          backgroundColor: '#0f76bc',
+          backgroundColor: '#26262a',
           borderRadius: { topRight: 4, bottomRight: 4 }
         }
       ]
@@ -683,7 +664,7 @@ function renderBarreMia(dati) {
 function renderBarreDottore(dati) {
   el('barre-legend').innerHTML = legendHtml([
     { label: 'Paghi con Mylav', color: '#0f76bc' },
-    { label: 'Risparmio vs mercato', color: '#0f76bc' }
+    { label: 'Risparmio vs mercato', color: '#26262a' }
   ]);
 
   const canvas = el('chart-barre');
@@ -708,7 +689,7 @@ function renderBarreDottore(dati) {
         {
           label: 'Risparmio vs mercato',
           data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
-          backgroundColor: '#0f76bc',
+          backgroundColor: '#26262a',
           borderRadius: { topRight: 4, bottomRight: 4 }
         }
       ]

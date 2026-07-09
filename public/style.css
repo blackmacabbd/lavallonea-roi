@@ -167,6 +167,9 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
   transition: background 120ms, color 120ms;
 }
 .struttura-header:hover { background: #f3f4f6; }
+.struttura-header.struttura-flat:hover { background: var(--blue-tint); color: var(--blue); }
+.struttura-header.struttura-flat.active { background: var(--blue-tint); color: var(--blue); }
+.struttura-header.struttura-flat.active .sname { font-weight: 600; }
 .struttura-header .sname {
   flex: 1;
   overflow: hidden;
