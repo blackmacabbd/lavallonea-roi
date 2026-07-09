@@ -399,10 +399,7 @@ async function renderFoglio(fileId, foglio) {
       </div>
       <div class="page-actions export-bar">
         <button class="btn-outline" onclick="downloadPdf(${fileId},'${foglio}','dottore')">
-          📄 PDF dottore
-        </button>
-        <button class="btn-outline" onclick="downloadPdf(${fileId},'${foglio}','completo')">
-          📄 PDF completo
+          📄 Resoconto struttura
         </button>
       </div>
     </div>

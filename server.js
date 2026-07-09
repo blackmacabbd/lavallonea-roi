@@ -796,51 +796,6 @@ ${chartsSection(donutImg, barreImg, donutLegend, barreLegend)}
 </body></html>`;
 }
 
-// Vista COMPLETA (interna)
-function buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend) {
-  const rows = dati.map(d => {
-    const risp    = d.risparmio_dottore || 0;
-    const rispPct = d.prezzo_scontato_concorrenza > 0
-      ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
-    return `<tr>
-      <td>${d.esame}</td>
-      <td style="text-align:center">${d.n_esami}</td>
-      <td class="muted">${euro(d.listino_concorrenza)}</td>
-      <td class="c-conc">${euro(d.prezzo_scontato_concorrenza)}</td>
-      <td class="muted">${euro(d.listino_lav)}</td>
-      <td class="c-lav">${euro(d.totale_scontato_lav)}</td>
-      <td class="c-risp">${euro(risp)}</td>
-      <td class="c-risp">${rispPct}%</td>
-    </tr>`;
-  }).join('');
-
-  return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
-<style>${PDF_BRAND_STYLE}</style></head><body>
-${brandHeader(fileInfo, foglio, 'Report completo', 'Uso interno')}
-<div class="kpis">
-  <div class="kpi"><div class="l">Listino concorrenza</div><div class="v">${euro(t.totale_concorrenza)}</div></div>
-  <div class="kpi r"><div class="l">Scontato concorrenza</div><div class="v">${euro(t.prezzo_scontato_concorrenza)}</div></div>
-  <div class="kpi"><div class="l">Listino Mylav</div><div class="v">${euro(t.totale_listino_lav)}</div></div>
-  <div class="kpi b"><div class="l">Scontato Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
-  <div class="kpi k"><div class="l">Risparmio dottore</div><div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:12px;font-weight:600;color:#6b7280">(${t.risparmio_pct}%)</span></div></div>
-</div>
-${chartsSection(donutImg, barreImg, donutLegend, barreLegend)}
-<div class="sec">
-  <h2>Dettaglio completo</h2>
-  <table>
-    <thead><tr>
-      <th>Esame</th><th>N.</th>
-      <th>Listino conc.</th><th>Scontato conc.</th>
-      <th>Listino Lav</th><th>Scontato Lav</th>
-      <th>Risparmio &euro;</th><th>%</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>
-</div>
-<div class="ftr">Documento confidenziale &mdash; uso interno. Mylav ROI Dashboard.</div>
-</body></html>`;
-}
-
 async function renderPDF(html) {
   const puppeteer = require('puppeteer');
   const browser = await puppeteer.launch({
@@ -870,24 +825,6 @@ app.post('/api/pdf/dottore/:fileId/:foglio', express.json({ limit: '15mb' }), as
     const t   = calcolaTotali(dati);
     const pdf = await renderPDF(buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend));
     const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_dottore.pdf`;
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
-    res.send(pdf);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.post('/api/pdf/completo/:fileId/:foglio', express.json({ limit: '15mb' }), async (req, res) => {
-  try {
-    const { fileId, foglio } = req.params;
-    const { donutImg, barreImg, donutLegend, barreLegend } = req.body || {};
-    const dati     = db.prepare('SELECT * FROM dati_foglio WHERE file_id = ? AND foglio = ? ORDER BY id').all(fileId, foglio);
-    const fileInfo = db.prepare('SELECT fc.*, s.nome as struttura_nome FROM file_caricati fc JOIN strutture s ON fc.struttura_id = s.id WHERE fc.id = ?').get(fileId);
-    if (!fileInfo) return res.status(404).json({ error: 'File non trovato' });
-    const t   = calcolaTotali(dati);
-    const pdf = await renderPDF(buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend));
-    const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_completo.pdf`;
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
     res.send(pdf);
   } catch (err) {
