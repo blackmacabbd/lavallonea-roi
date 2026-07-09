@@ -1116,3 +1116,57 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 .text-center { text-align: center; }
 .mt-4 { margin-top: 16px; }
 .mt-6 { margin-top: 24px; }
+
+/* ── Tabella classifica piani convenienti ─────────────────────────── */
+.roi-classifica-card { margin-top: 16px; }
+.roi-classifica-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.roi-classifica-table thead th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  border-bottom: 2px solid var(--blue-line);
+}
+.roi-classifica-table thead th:not(:first-child) { text-align: right; }
+.roi-classifica-table tbody tr {
+  cursor: pointer;
+  border-bottom: 1px solid var(--line);
+  transition: background .12s;
+}
+.roi-classifica-table tbody tr:hover { background: var(--blue-tint); }
+.roi-classifica-table td {
+  padding: 10px 12px;
+  color: var(--ink);
+}
+.roi-classifica-tot, .roi-classifica-risp { text-align: right; font-variant-numeric: tabular-nums; }
+.roi-classifica-tot { font-weight: 600; color: var(--blue); }
+.roi-classifica-risp { color: var(--blue-dark); }
+.roi-classifica-table tbody tr.riga-attiva {
+  background: var(--blue-tint);
+  box-shadow: inset 3px 0 0 var(--blue);
+}
+.roi-classifica-table tbody tr.riga-attiva td:first-child { font-weight: 600; color: var(--blue); }
+.roi-classifica-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--blue);
+  border-radius: 999px;
+  padding: 1px 8px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.roi-classifica-empty {
+  margin-top: 12px;
+  padding: 14px;
+  color: var(--ink-soft);
+  font-size: 14px;
+  background: var(--blue-tint);
+  border-radius: 8px;
+}

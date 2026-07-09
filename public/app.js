@@ -1841,7 +1841,8 @@ function buildRoiActionsHtml() {
       <button class="btn-outline" onclick="esportaExcelRoi()">📥 Esporta Excel</button>
       <button class="btn-outline" onclick="navigate('piani')" style="color:var(--blue);border-color:var(--blue)">+ Aggiungi piano MYL</button>
       <button class="btn-outline" onclick="navigate('concorrenti')" style="color:var(--red);border-color:var(--red)">+ Aggiungi piano concorrenza</button>
-    </div>`;
+    </div>
+    <div id="roi-classifica"></div>`;
 }
 
 function pianoSelezionatoNome() {
@@ -2248,7 +2249,51 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
 
   aggiornaRigaDOM(tr);
   mostraConsiglioTotale();
+  mostraClassificaPiani();
   aggiornaMatchConcorrente(tr);
+}
+
+// Elenca tutti i piani MYLAV convenienti per gli esami inseriti, dal piu' economico
+// al meno. Con un totale concorrenza disponibile mostra solo i piani sotto la
+// concorrenza + il risparmio; senza, mostra tutti i piani ordinati. Click = seleziona.
+async function mostraClassificaPiani() {
+  const box = el('roi-classifica');
+  if (!box) return;
+  const esami = getRoiRigheValide().map(r => ({ nome: r.esame, n: r.n_esami || 1 }));
+  if (!esami.length) { box.innerHTML = ''; return; }
+
+  const piani = await fetch('/api/piani/classifica', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ esami })
+  }).then(r => r.json()).catch(() => null);
+  if (!Array.isArray(piani) || !piani.length) { box.innerHTML = ''; return; }
+
+  const totConc = calcolaRoiTotali().tot_prezzo_conc;
+  const conConc = totConc > 0;
+  const mostrati = conConc ? piani.filter(p => p.totale < totConc) : piani;
+
+  const titolo = `<div class="section-card-title">Piani più convenienti per questi esami</div>`;
+
+  if (conConc && !mostrati.length) {
+    box.innerHTML = `<div class="section-card roi-classifica-card">${titolo}
+      <div class="roi-classifica-empty">Nessun piano batte la concorrenza per questi esami</div></div>`;
+    return;
+  }
+
+  const righe = mostrati.map(p => {
+    const attivo = p.pianoId === S.roi.pianoId;
+    const risp = conConc
+      ? `<td class="roi-classifica-risp">${fmtE(totConc - p.totale)}</td>` : '';
+    return `<tr class="${attivo ? 'riga-attiva' : ''}" onclick="selezionaPiano(${p.pianoId})">
+      <td>${escHtml(p.pianoNome)}${attivo ? ' <span class="roi-classifica-badge">selezionato</span>' : ''}</td>
+      <td class="roi-classifica-tot">${fmtE(p.totale)}</td>${risp}</tr>`;
+  }).join('');
+
+  box.innerHTML = `<div class="section-card roi-classifica-card">${titolo}
+    <table class="roi-classifica-table">
+      <thead><tr><th>Piano</th><th>Totale MYLAV</th>${conConc ? '<th>Risparmio vs concorrenza</th>' : ''}</tr></thead>
+      <tbody>${righe}</tbody>
+    </table></div>`;
 }
 
 // Suggerisce il piano MYLAV piu conveniente sul TOTALE di tutti gli esami in tabella.
@@ -2525,6 +2570,8 @@ function removeRigaRoi(idx) {
     S.roi.righe = [roiRigaVuota()];
   }
   reRenderRoiTable();
+  mostraConsiglioTotale();
+  mostraClassificaPiani();
 }
 
 function getRoiRigheValide() {

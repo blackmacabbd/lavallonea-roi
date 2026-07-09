@@ -946,6 +946,15 @@ app.post('/api/piani/consiglio-totale', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Classifica di tutti i piani attivi per gli esami dati (dal piu' conveniente al meno)
+app.post('/api/piani/classifica', express.json(), (req, res) => {
+  try {
+    const { esami } = req.body || {};
+    if (!Array.isArray(esami)) return res.status(400).json({ error: 'Parametro esami mancante' });
+    res.json(piani.pianiClassifica(db, esami));
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
   try {
     const { nome } = req.query;
