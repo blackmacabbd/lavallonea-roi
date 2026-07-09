@@ -931,6 +931,19 @@ app.get('/api/piani/consiglio', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.post('/api/piani/consiglio-totale', express.json(), (req, res) => {
+  try {
+    const { esami, pianoIdAttuale } = req.body || {};
+    if (!Array.isArray(esami)) return res.status(400).json({ error: 'Parametro esami mancante' });
+    const migliore = piani.pianoMiglioreTotale(db, esami);
+    let totaleAttuale = null;
+    if (migliore && pianoIdAttuale) {
+      totaleAttuale = piani.totalePiano(db, Number(pianoIdAttuale), esami.filter(e => e && e.nome)).totale;
+    }
+    res.json(migliore ? { ...migliore, totaleAttuale } : null);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
   try {
     const { nome } = req.query;

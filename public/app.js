@@ -2197,8 +2197,40 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
   }
 
   aggiornaRigaDOM(tr);
-  mostraConsiglioPiano(esame);
+  mostraConsiglioTotale();
   aggiornaMatchConcorrente(tr);
+}
+
+// Suggerisce il piano MYLAV piu conveniente sul TOTALE di tutti gli esami in tabella.
+async function mostraConsiglioTotale() {
+  const banner = el('roi-consiglio-banner');
+  if (!banner) return;
+  const esami = getRoiRigheValide().map(r => ({ nome: r.esame, n: r.n_esami || 1 }));
+  if (!esami.length) { banner.style.display = 'none'; return; }
+
+  const resp = await fetch('/api/piani/consiglio-totale', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ esami, pianoIdAttuale: S.roi.pianoId })
+  }).then(r => r.json()).catch(() => null);
+  if (!resp) { banner.style.display = 'none'; return; }
+
+  const stesso = resp.pianoId === S.roi.pianoId;
+  const saltati = resp.nSaltati > 0
+    ? `<br><span style="font-size:11px;color:#6b7280">${resp.nSaltati} esami non a listino esclusi</span>` : '';
+  let messaggio;
+  if (stesso) {
+    messaggio = `✓ Stai già usando il piano più conveniente per questi ${resp.nEsami} esami: <strong>${escHtml(resp.pianoNome)}</strong> (${fmtE(resp.totale)})${saltati}`;
+  } else {
+    const risparmio = (resp.totaleAttuale != null && resp.totaleAttuale > resp.totale)
+      ? `<br><span style="font-size:11px;color:#6b7280">Risparmi ${fmtE(resp.totaleAttuale - resp.totale)} rispetto al piano attuale</span>` : '';
+    messaggio = `💡 Per questi ${resp.nEsami} esami conviene <strong>${escHtml(resp.pianoNome)}</strong> — ${fmtE(resp.totale)}${risparmio}<br><span style="font-size:11px;color:#6b7280">Clicca per selezionare questo piano</span>${saltati}`;
+  }
+
+  banner.innerHTML = `
+    <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
+    <div ${stesso ? '' : `onclick="selezionaPiano(${resp.pianoId})" style="cursor:pointer"`}>${messaggio}</div>
+  `;
+  banner.style.display = 'block';
 }
 
 async function mostraConsiglioPiano(esame) {
