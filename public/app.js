@@ -2522,12 +2522,10 @@ async function selezionaEsame(itemEl, nome) {
   aggiornaRigaDOM(tr);
   await aggiornaPrezziAutomatici(tr);
 
-  // Pre-popola prezzi storici (solo listino concorrenza, non coperto dal piano)
+  // Pre-popola solo i prezzi Mylav storici. Il listino concorrenza NON si prende
+  // mai dallo storico: l'esame ha un prezzo concorrenza solo se esiste una
+  // mappatura col concorrente selezionato (gestita da aggiornaMatchConcorrente).
   const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`).then(r => r.json()).catch(() => ({}));
-  if (prezzi.listino_concorrenza) {
-    const lcInp = tr.querySelector('[data-col="listino_concorrenza"]');
-    if (lcInp && !lcInp.value) lcInp.value = prezzi.listino_concorrenza;
-  }
   if (prezzi.listino_lav) {
     const llInp = tr.querySelector('[data-col="listino_lav"]');
     if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
