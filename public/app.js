@@ -2274,7 +2274,28 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
   const plInp    = tr.querySelector('[data-col="prezzo_scontato_lav"]');
   if (!esameInp || !llInp || !plInp) return;
   const esame = esameInp.value.trim();
-  if (!esame) return;
+
+  // Se l'identità dell'esame è cambiata (nome diverso o svuotato), azzera i prezzi
+  // della riga — concorrenza E Mylav, anche i valori inseriti a mano — così la
+  // cascata riparte pulita e riflette il nuovo esame.
+  const prevEsame = esameInp.dataset.lastEsame || '';
+  if (esame !== prevEsame) {
+    ['listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav'].forEach(col => {
+      const inp = tr.querySelector(`[data-col="${col}"]`);
+      if (inp) { inp.value = ''; inp.dataset.auto = '0'; inp.classList.remove('roi-prezzo-nuovo'); inp.title = ''; }
+    });
+    esameInp.dataset.lastEsame = esame;
+    aggiornaRigaDOM(tr);
+  }
+
+  if (!esame) {
+    // Riga svuotata: nessuna cascata, ma aggiorna totali/consiglio/classifica e nascondi banner match.
+    const mb = el('roi-match-banner'); if (mb) mb.style.display = 'none';
+    aggiornaRigaDOM(tr);
+    mostraConsiglioTotale();
+    mostraClassificaPiani();
+    return;
+  }
 
   const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`)
     .then(r => r.json()).catch(() => ({}));
@@ -2491,6 +2512,11 @@ let _acTimeout = null;
 function initRoiEvents() {
   const wrap = el('roi-table-wrap');
   if (!wrap) return;
+
+  // Snapshot del nome esame renderizzato: serve a capire quando l'identità cambia.
+  wrap.querySelectorAll('[data-col="esame"]').forEach(inp => {
+    inp.dataset.lastEsame = (inp.value || '').trim();
+  });
 
   wrap.addEventListener('input', e => {
     const inp = e.target;
