@@ -18,6 +18,11 @@ const S = {
     pianoId: null,
     concorrenteId: null,
     righe: [roiRigaVuota()]
+  },
+  auth: {
+    token: localStorage.getItem('authToken') || null,
+    email: localStorage.getItem('authEmail') || null,
+    guest: false
   }
 };
 
@@ -40,8 +45,23 @@ function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
+function authHeaders(extra = {}) {
+  const h = { ...extra };
+  if (S.auth && S.auth.token) h['Authorization'] = 'Bearer ' + S.auth.token;
+  return h;
+}
 async function api(path, opts = {}) {
-  const res = await fetch(path, opts);
+  const merged = { ...opts, headers: authHeaders(opts.headers || {}) };
+  const res = await fetch(path, merged);
+  if (res.status === 401) {
+    // Se avevamo un token era una sessione scaduta/invalida: torna al login.
+    // Se non c'era token (ospite su una rotta privata) è un 401 atteso: non forzare il logout.
+    if (S.auth && S.auth.token) {
+      authLogout(true);
+      throw new Error('Sessione scaduta, effettua di nuovo l\'accesso');
+    }
+    throw new Error('Accedi o registrati per vedere questi dati');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error || res.statusText);
@@ -1079,7 +1099,7 @@ async function filterCronologia() {
 async function deleteCrono(id) {
   if (!confirm('Eliminare questo file dalla cronologia? Verranno rimossi tutti i dati associati.')) return;
   try {
-    await fetch(`/api/cronologia/${id}`, { method: 'DELETE' });
+    await fetch(`/api/cronologia/${id}`, { method: 'DELETE', headers: authHeaders() });
     await loadStrutture();
     buildSidebar();
     renderCronologia();
@@ -1202,7 +1222,7 @@ async function doUpload(file, force = false) {
 
   let resp;
   try {
-    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    const res = await fetch('/api/upload', { method: 'POST', headers: authHeaders(), body: fd });
     resp = await res.json();
 
     if (res.status === 409 && resp.conflict) {
@@ -1247,7 +1267,7 @@ async function downloadPdf(fileId, foglio, tipo) {
   try {
     res = await fetch(`/api/pdf/${tipo}/${fileId}/${encodeURIComponent(foglio)}`, {
       method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body:    JSON.stringify({ donutImg, barreImg, donutLegend, barreLegend })
     });
   } catch (e) {
@@ -1323,7 +1343,7 @@ function renderDebug() {
     out.innerHTML = '<div class="spinner" style="width:20px;height:20px"></div>';
     const fd = new FormData();
     fd.append('file', file);
-    const res  = await fetch('/api/debug', { method: 'POST', body: fd });
+    const res  = await fetch('/api/debug', { method: 'POST', headers: authHeaders(), body: fd });
     const data = await res.json();
     let html = '';
     for (const [sheet, info] of Object.entries(data)) {
@@ -1473,7 +1493,7 @@ async function importaPianiJson(inputEl) {
   try { data = JSON.parse(text); } catch (e) { alert('File JSON non valido'); return; }
   try {
     const resp = await fetch('/api/piani/import', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(data)
     });
     if (!resp.ok) throw new Error((await resp.json()).error);
@@ -1543,7 +1563,7 @@ async function avviaImportConcorrente(inputEl) {
 
   let parsed;
   try {
-    const resp = await fetch('/api/concorrenti/import', { method: 'POST', body: formData });
+    const resp = await fetch('/api/concorrenti/import', { method: 'POST', headers: authHeaders(), body: formData });
     if (!resp.ok) throw new Error((await resp.json()).error);
     parsed = await resp.json();
   } catch (e) {
@@ -1648,7 +1668,7 @@ async function avviaImportPdf(inputEl) {
 
   let parsed;
   try {
-    const resp = await fetch('/api/concorrenti/import-pdf', { method: 'POST', body: formData });
+    const resp = await fetch('/api/concorrenti/import-pdf', { method: 'POST', headers: authHeaders(), body: formData });
     if (!resp.ok) throw new Error((await resp.json()).error);
     parsed = await resp.json();
   } catch (e) {
@@ -2017,7 +2037,7 @@ async function aggiornaMatchConcorrente(tr) {
   }
 
   const requestedConcorrenteId = S.roi.concorrenteId;
-  const m = await fetch(`/api/concorrenti/${requestedConcorrenteId}/match?esame=${encodeURIComponent(esame)}`)
+  const m = await fetch(`/api/concorrenti/${requestedConcorrenteId}/match?esame=${encodeURIComponent(esame)}`, { headers: authHeaders() })
     .then(r => r.json()).catch(() => ({ trovato: false }));
   if (S.roi.concorrenteId !== requestedConcorrenteId) return; // selezione concorrente cambiata nel frattempo
 
@@ -2060,7 +2080,7 @@ async function mappaturaManualeDaRoi(concorrenteId) {
   // Raccogli TUTTI gli esami in tabella che NON hanno un match sicuro per questo concorrente
   const nomi = getRoiRigheValide().map(r => r.esame);
   const stati = await Promise.all(nomi.map(n =>
-    fetch(`/api/concorrenti/${concorrenteId}/match?esame=${encodeURIComponent(n)}`)
+    fetch(`/api/concorrenti/${concorrenteId}/match?esame=${encodeURIComponent(n)}`, { headers: authHeaders() })
       .then(r => r.json()).then(m => ({ n, ok: !!(m.trovato && m.sicuro) })).catch(() => ({ n, ok: false }))
   ));
   S.mappingDaRoi = stati.filter(s => !s.ok).map(s => s.n);   // array di nomi Mylav da mappare
@@ -2097,7 +2117,7 @@ async function confermaMatchBanner(idx, esameConcorrenteId) {
 
   await fetch(`/api/concorrenti/${S.roi.concorrenteId}/conferma-match`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ esameConcorrenteId, esameMylavNome: esame })
   });
   const banner = el('roi-match-banner');
@@ -2294,7 +2314,7 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
     return;
   }
 
-  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`)
+  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`, { headers: authHeaders() })
     .then(r => r.json()).catch(() => ({}));
   if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
     llInp.value = baseResp.prezzo_base;
@@ -2303,7 +2323,7 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
 
   if (S.roi.pianoId) {
     const requestedPianoId = S.roi.pianoId;
-    const pResp = await fetch(`/api/piani/${requestedPianoId}/prezzo?esame=${encodeURIComponent(esame)}`)
+    const pResp = await fetch(`/api/piani/${requestedPianoId}/prezzo?esame=${encodeURIComponent(esame)}`, { headers: authHeaders() })
       .then(r => r.json()).catch(() => ({}));
     if (S.roi.pianoId !== requestedPianoId) return; // a newer plan selection superseded this in-flight request; discard
     plInp.classList.remove('roi-prezzo-nuovo');
@@ -2345,7 +2365,7 @@ async function mostraClassificaPiani() {
   if (!esami.length) { box.innerHTML = ''; return; }
 
   const piani = await fetch('/api/piani/classifica', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ esami })
   }).then(r => r.json()).catch(() => null);
   if (!Array.isArray(piani) || !piani.length) { box.innerHTML = ''; return; }
@@ -2386,7 +2406,7 @@ async function mostraConsiglioTotale() {
   if (!esami.length) { banner.style.display = 'none'; return; }
 
   const resp = await fetch('/api/piani/consiglio-totale', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ esami, pianoIdAttuale: S.roi.pianoId })
   }).then(r => r.json()).catch(() => null);
   if (!resp) { banner.style.display = 'none'; return; }
@@ -2413,7 +2433,7 @@ async function mostraConsiglioTotale() {
 async function mostraConsiglioPiano(esame) {
   const banner = el('roi-consiglio-banner');
   if (!banner) return;
-  const consiglio = await fetch(`/api/piani/consiglio?esame=${encodeURIComponent(esame)}`)
+  const consiglio = await fetch(`/api/piani/consiglio?esame=${encodeURIComponent(esame)}`, { headers: authHeaders() })
     .then(r => r.json()).catch(() => null);
   if (!consiglio) { banner.style.display = 'none'; return; }
 
@@ -2543,7 +2563,7 @@ function initRoiEvents() {
       if (esame) {
         await fetch('/api/prezzi-custom', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: parseFloat(inp.value) || 0 })
         });
         inp.dataset.auto = '1';
@@ -2586,7 +2606,7 @@ function initRoiEvents() {
 async function roiAutocomplete(inp) {
   const q = inp.value.trim();
   if (q.length < 1) return hideAc();
-  const items = await fetch(`/api/esami/autocomplete?q=${encodeURIComponent(q)}`).then(r => r.json()).catch(() => []);
+  const items = await fetch(`/api/esami/autocomplete?q=${encodeURIComponent(q)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => []);
   const ac = el('roi-ac');
   if (!items.length || !ac) return hideAc();
   const rect = inp.getBoundingClientRect();
@@ -2613,7 +2633,7 @@ async function selezionaEsame(itemEl, nome) {
   // Pre-popola solo i prezzi Mylav storici. Il listino concorrenza NON si prende
   // mai dallo storico: l'esame ha un prezzo concorrenza solo se esiste una
   // mappatura col concorrente selezionato (gestita da aggiornaMatchConcorrente).
-  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`).then(r => r.json()).catch(() => ({}));
+  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
   if (prezzi.listino_lav) {
     const llInp = tr.querySelector('[data-col="listino_lav"]');
     if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
@@ -2696,9 +2716,13 @@ async function esportaExcelRoi() {
   try {
     const res = await fetch('/api/export-excel', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ foglio: 'Platinum', struttura: struttura || 'Struttura', righe })
     });
+    if (res.status === 401) {
+      if (S.auth && S.auth.token) authLogout(true);
+      throw new Error('Sessione scaduta');
+    }
     if (!res.ok) throw new Error((await res.json()).error);
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
@@ -2718,13 +2742,312 @@ function roiMsg(msg, tipo) {
 }
 
 // ── Init ───────────────────────────────────────────
-async function init() {
-  await loadStrutture();
-  await loadPiani();
-  await loadConcorrenti();
+async function avviaApp() {
+  // loadStrutture/loadConcorrenti richiedono un account (dati privati per utente):
+  // in modalita' ospite falliscono con 401, atteso. Non deve bloccare il boot.
+  await loadStrutture().catch(() => { S.strutture = []; });
+  await loadPiani().catch(() => { S.piani = []; });
+  await loadConcorrenti().catch(() => { S.concorrenti = []; });
   buildSidebar();
   initDropzone();
   navigate('dashboard');
 }
 
-document.addEventListener('DOMContentLoaded', init);
+async function boot() {
+  if (S.auth.token) {
+    try {
+      const me = await fetch('/api/auth/me', { headers: authHeaders() }).then(r => r.ok ? r.json() : null);
+      if (me) { S.auth.email = me.email; nascondiAuthScreen(); return avviaApp(); }
+    } catch (_) {}
+  }
+  mostraAuthScreen();
+}
+
+document.addEventListener('DOMContentLoaded', boot);
+
+// ── Autenticazione ─────────────────────────────────
+function salvaSessione(token, email) {
+  S.auth.token = token; S.auth.email = email; S.auth.guest = false;
+  localStorage.setItem('authToken', token); localStorage.setItem('authEmail', email);
+}
+
+async function authLogin(email, password) {
+  const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Login fallito');
+  salvaSessione(d.token, d.email); nascondiAuthScreen(); avviaApp();
+}
+
+async function authRegister(email, password) {
+  const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Registrazione fallita');
+  salvaSessione(d.token, d.email);
+  return d.recoveryCode; // il chiamante mostra la schermata "salva il codice"
+}
+
+function authGuest() {
+  S.auth = { token: null, email: null, guest: true };
+  nascondiAuthScreen(); avviaApp();
+}
+
+async function authLogout(silent) {
+  if (S.auth.token) { try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (_) {} }
+  S.auth = { token: null, email: null, guest: false };
+  localStorage.removeItem('authToken'); localStorage.removeItem('authEmail');
+  mostraAuthScreen();
+}
+
+async function authRequestReset(email) {
+  const r = await fetch('/api/auth/request-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Richiesta fallita');
+  return d;
+}
+
+async function authResetPassword(email, code, newPassword) {
+  const r = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code, newPassword }) });
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Reset fallito');
+  return d;
+}
+
+async function authRecoverFull(recoveryCode, newEmail, newPassword) {
+  const r = await fetch('/api/auth/recover-full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recoveryCode, newEmail, newPassword }) });
+  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Recupero fallito');
+  return d;
+}
+
+function validaPasswordClient(pw) {
+  const s = String(pw || '');
+  return {
+    lunghezza: s.length >= 8,
+    cifra: /[0-9]/.test(s),
+    speciale: /[^A-Za-z0-9]/.test(s)
+  };
+}
+function passwordOk(pw) {
+  const v = validaPasswordClient(pw);
+  return v.lunghezza && v.cifra && v.speciale;
+}
+
+function authErr(msg) {
+  const d = el('auth-err');
+  if (!d) return;
+  d.textContent = msg || '';
+  d.style.display = msg ? 'block' : 'none';
+}
+
+function mostraAuthScreen(vista = 'login') {
+  const ov = el('auth-overlay');
+  ov.innerHTML = `
+    <div class="auth-card">
+      <div class="auth-logo">MYL<svg viewBox="0 0 100 100" width="26" height="30">
+        <polygon points="6,94 40,10 52,10 22,94" fill="#ce181e"/>
+        <polygon points="94,94 60,10 48,10 78,94" fill="#0f76bc"/></svg>V<span class="auth-reg">®</span></div>
+      <div class="auth-rule"></div>
+      <div class="auth-tabs" id="auth-tabs">
+        <button class="auth-tab ${vista === 'login' ? 'active' : ''}" onclick="mostraAuthScreen('login')">Accedi</button>
+        <button class="auth-tab ${vista === 'register' ? 'active' : ''}" onclick="mostraAuthScreen('register')">Registrati</button>
+      </div>
+      <div id="auth-err" class="auth-err" style="display:none"></div>
+      <div id="auth-body"></div>
+      <div class="auth-links">
+        <a onclick="authGuest()">Entra come ospite</a>
+        <a onclick="mostraAuthScreen('reset')">Password dimenticata?</a>
+        <a onclick="mostraAuthScreen('recover')">Ho dimenticato email e password</a>
+      </div>
+    </div>`;
+  ov.style.display = 'flex';
+  renderAuthBody(vista);
+}
+
+function nascondiAuthScreen() {
+  const ov = el('auth-overlay');
+  if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
+}
+
+function renderAuthBody(vista) {
+  const body = el('auth-body');
+  const tabs = el('auth-tabs');
+  if (!body) return;
+  authErr('');
+
+  if (vista === 'login') {
+    if (tabs) tabs.style.display = 'flex';
+    body.innerHTML = `
+      <form id="auth-form-login" class="auth-form">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" type="email" id="auth-login-email" required autocomplete="username">
+        <label class="auth-label">Password</label>
+        <input class="auth-input" type="password" id="auth-login-pass" required autocomplete="current-password">
+        <button type="submit" class="btn-primary auth-submit">Accedi</button>
+      </form>`;
+    el('auth-form-login').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authErr('');
+      try {
+        await authLogin(el('auth-login-email').value.trim(), el('auth-login-pass').value);
+      } catch (err) { authErr(err.message); }
+    });
+    return;
+  }
+
+  if (vista === 'register') {
+    if (tabs) tabs.style.display = 'flex';
+    body.innerHTML = `
+      <form id="auth-form-register" class="auth-form">
+        <label class="auth-label">Email</label>
+        <input class="auth-input" type="email" id="auth-reg-email" required autocomplete="username">
+        <label class="auth-label">Password</label>
+        <input class="auth-input" type="password" id="auth-reg-pass" required autocomplete="new-password">
+        <ul class="auth-rules" id="auth-rules">
+          <li data-rule="lunghezza">Almeno 8 caratteri</li>
+          <li data-rule="cifra">Almeno un numero</li>
+          <li data-rule="speciale">Almeno un carattere speciale</li>
+        </ul>
+        <button type="submit" class="btn-primary auth-submit">Registrati</button>
+      </form>`;
+    const passInp = el('auth-reg-pass');
+    passInp.addEventListener('input', () => {
+      const v = validaPasswordClient(passInp.value);
+      Object.entries(v).forEach(([rule, ok]) => {
+        const li = el('auth-rules').querySelector(`[data-rule="${rule}"]`);
+        if (li) li.classList.toggle('ok', ok);
+      });
+    });
+    el('auth-form-register').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authErr('');
+      const email = el('auth-reg-email').value.trim();
+      const pass = passInp.value;
+      if (!passwordOk(pass)) return authErr('La password non rispetta i requisiti richiesti');
+      try {
+        const recoveryCode = await authRegister(email, pass);
+        renderCodiceRecupero(recoveryCode);
+      } catch (err) { authErr(err.message); }
+    });
+    return;
+  }
+
+  if (vista === 'reset') {
+    if (tabs) tabs.style.display = 'none';
+    body.innerHTML = `
+      <form id="auth-form-reset" class="auth-form">
+        <div class="auth-form-title">Recupera la password</div>
+        <label class="auth-label">Email</label>
+        <input class="auth-input" type="email" id="auth-reset-email" required autocomplete="username">
+        <button type="submit" class="btn-primary auth-submit">Invia codice</button>
+        <div class="auth-back"><a onclick="mostraAuthScreen('login')">&larr; Torna al login</a></div>
+      </form>`;
+    el('auth-form-reset').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authErr('');
+      const email = el('auth-reset-email').value.trim();
+      try {
+        await authRequestReset(email);
+        renderResetStep2(email);
+      } catch (err) { authErr(err.message); }
+    });
+    return;
+  }
+
+  if (vista === 'recover') {
+    if (tabs) tabs.style.display = 'none';
+    body.innerHTML = `
+      <form id="auth-form-recover" class="auth-form">
+        <div class="auth-form-title">Recupero completo account</div>
+        <label class="auth-label">Codice di recupero</label>
+        <input class="auth-input" type="text" id="auth-rec-code" required placeholder="XXXX-XXXX-XXXX">
+        <label class="auth-label">Nuova email</label>
+        <input class="auth-input" type="email" id="auth-rec-email" required autocomplete="username">
+        <label class="auth-label">Nuova password</label>
+        <input class="auth-input" type="password" id="auth-rec-pass" required autocomplete="new-password">
+        <ul class="auth-rules" id="auth-rec-rules">
+          <li data-rule="lunghezza">Almeno 8 caratteri</li>
+          <li data-rule="cifra">Almeno un numero</li>
+          <li data-rule="speciale">Almeno un carattere speciale</li>
+        </ul>
+        <button type="submit" class="btn-primary auth-submit">Recupera account</button>
+        <div class="auth-back"><a onclick="mostraAuthScreen('login')">&larr; Torna al login</a></div>
+      </form>`;
+    const passInp = el('auth-rec-pass');
+    passInp.addEventListener('input', () => {
+      const v = validaPasswordClient(passInp.value);
+      Object.entries(v).forEach(([rule, ok]) => {
+        const li = el('auth-rec-rules').querySelector(`[data-rule="${rule}"]`);
+        if (li) li.classList.toggle('ok', ok);
+      });
+    });
+    el('auth-form-recover').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      authErr('');
+      const code = el('auth-rec-code').value.trim();
+      const newEmail = el('auth-rec-email').value.trim();
+      const newPassword = passInp.value;
+      if (!passwordOk(newPassword)) return authErr('La password non rispetta i requisiti richiesti');
+      try {
+        await authRecoverFull(code, newEmail, newPassword);
+        authErr('');
+        const body2 = el('auth-body');
+        body2.innerHTML = `<div class="auth-ok">Account recuperato. Ora puoi accedere con la nuova email e password.</div>`;
+        setTimeout(() => mostraAuthScreen('login'), 1800);
+      } catch (err) { authErr(err.message); }
+    });
+    return;
+  }
+}
+
+function renderResetStep2(email) {
+  const body = el('auth-body');
+  authErr('');
+  body.innerHTML = `
+    <form id="auth-form-reset2" class="auth-form">
+      <div class="auth-form-title">Controlla la tua email</div>
+      <div class="auth-hint">Abbiamo inviato un codice a ${escHtml(email)} (se l'account esiste).</div>
+      <label class="auth-label">Codice ricevuto</label>
+      <input class="auth-input" type="text" id="auth-reset-code" required>
+      <label class="auth-label">Nuova password</label>
+      <input class="auth-input" type="password" id="auth-reset-newpass" required autocomplete="new-password">
+      <ul class="auth-rules" id="auth-reset-rules">
+        <li data-rule="lunghezza">Almeno 8 caratteri</li>
+        <li data-rule="cifra">Almeno un numero</li>
+        <li data-rule="speciale">Almeno un carattere speciale</li>
+      </ul>
+      <button type="submit" class="btn-primary auth-submit">Reimposta password</button>
+      <div class="auth-back"><a onclick="mostraAuthScreen('login')">&larr; Torna al login</a></div>
+    </form>`;
+  const passInp = el('auth-reset-newpass');
+  passInp.addEventListener('input', () => {
+    const v = validaPasswordClient(passInp.value);
+    Object.entries(v).forEach(([rule, ok]) => {
+      const li = el('auth-reset-rules').querySelector(`[data-rule="${rule}"]`);
+      if (li) li.classList.toggle('ok', ok);
+    });
+  });
+  el('auth-form-reset2').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    authErr('');
+    const code = el('auth-reset-code').value.trim();
+    const newPassword = passInp.value;
+    if (!passwordOk(newPassword)) return authErr('La password non rispetta i requisiti richiesti');
+    try {
+      await authResetPassword(email, code, newPassword);
+      const body2 = el('auth-body');
+      body2.innerHTML = `<div class="auth-ok">Password reimpostata. Ora puoi accedere.</div>`;
+      setTimeout(() => mostraAuthScreen('login'), 1500);
+    } catch (err) { authErr(err.message); }
+  });
+}
+
+function renderCodiceRecupero(recoveryCode) {
+  const tabs = el('auth-tabs');
+  if (tabs) tabs.style.display = 'none';
+  authErr('');
+  const body = el('auth-body');
+  body.innerHTML = `
+    <div class="auth-form-title">Salva il tuo codice di recupero</div>
+    <div class="auth-hint">Questo codice è l'unico modo per recuperare l'account se perdi email e password. Conservalo in un posto sicuro: non verrà mostrato di nuovo.</div>
+    <div class="auth-code">${escHtml(recoveryCode)}</div>
+    <button type="button" class="btn-primary auth-submit" id="auth-code-continua">Ho salvato il codice, continua</button>`;
+  el('auth-code-continua').addEventListener('click', () => {
+    nascondiAuthScreen();
+    avviaApp();
+  });
+}

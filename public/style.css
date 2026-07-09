@@ -1203,4 +1203,156 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   flex: 0 0 auto;
   transition: transform .12s;
 }
+
+/* ═══════════════════════════════════════════════════
+   AUTH OVERLAY (login / registrazione / recupero)
+   ═══════════════════════════════════════════════════ */
+#auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 24px;
+}
+.auth-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border-radius: 14px;
+  box-shadow: 0 10px 40px rgba(38,38,42,.12), 0 2px 8px rgba(38,38,42,.06);
+  padding: 32px 28px 26px;
+}
+.auth-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  color: var(--ink);
+  line-height: 1;
+  margin-bottom: 16px;
+}
+.auth-logo svg { width: 0.62em; height: 0.68em; align-self: center; display: block; }
+.auth-logo .auth-reg { font-size: 11px; font-weight: 700; color: var(--faint); align-self: flex-start; margin-left: 2px; }
+.auth-rule {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--red) 0 50%, var(--blue) 50% 100%);
+  margin-bottom: 20px;
+}
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-subtle);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 18px;
+}
+.auth-tab {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+  transition: background .12s, color .12s;
+}
+.auth-tab.active { background: var(--surface); color: var(--blue); box-shadow: 0 1px 3px rgba(38,38,42,.08); }
+.auth-tab:hover:not(.active) { color: var(--ink-soft); }
+
+.auth-form { display: flex; flex-direction: column; }
+.auth-form-title { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 10px; text-align: center; }
+.auth-hint { font-size: 12px; color: var(--muted); margin-bottom: 14px; line-height: 1.5; text-align: center; }
+.auth-label { font-size: 12px; font-weight: 500; color: var(--ink-soft); margin-bottom: 5px; margin-top: 12px; }
+.auth-label:first-child { margin-top: 0; }
+.auth-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 13.5px;
+  color: var(--ink);
+  background: var(--surface);
+  transition: border-color .12s, box-shadow .12s;
+}
+.auth-input:focus {
+  outline: none;
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px var(--blue-tint);
+}
+.auth-submit { width: 100%; justify-content: center; margin-top: 20px; padding: 10px 16px; font-size: 14px; }
+
+.auth-rules { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.auth-rules li {
+  font-size: 11.5px;
+  color: var(--faint);
+  padding-left: 18px;
+  position: relative;
+}
+.auth-rules li::before {
+  content: '✕';
+  position: absolute;
+  left: 0;
+  color: var(--red);
+  font-size: 10px;
+}
+.auth-rules li.ok { color: var(--blue-dark); }
+.auth-rules li.ok::before { content: '✓'; color: var(--blue); }
+
+.auth-err {
+  background: var(--red-tint);
+  color: var(--red-dark);
+  border: 1px solid var(--red-line);
+  border-radius: 7px;
+  padding: 9px 12px;
+  font-size: 12.5px;
+  margin-bottom: 14px;
+}
+.auth-ok {
+  background: var(--blue-tint);
+  color: var(--blue-dark);
+  border: 1px solid var(--blue-line);
+  border-radius: 7px;
+  padding: 12px 14px;
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.5;
+}
+.auth-code {
+  font-family: 'Courier New', monospace;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--bg-subtle);
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  text-align: center;
+  margin-bottom: 18px;
+  user-select: all;
+}
+.auth-back { text-align: center; margin-top: 14px; }
+.auth-back a { font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.auth-back a:hover { color: var(--blue); }
+
+.auth-links {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.auth-links a {
+  font-size: 12.5px;
+  color: var(--muted);
+  cursor: pointer;
+  transition: color .12s;
+}
+.auth-links a:hover { color: var(--blue); }
 .roi-edit-banner:hover .roi-edit-arrow { transform: translateX(4px); }
