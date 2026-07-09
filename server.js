@@ -28,7 +28,7 @@ db.exec('PRAGMA journal_mode = WAL');
 db.exec(`
   CREATE TABLE IF NOT EXISTS strutture (
     id   INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT UNIQUE NOT NULL
+    nome TEXT NOT NULL
   );
 
   CREATE TABLE IF NOT EXISTS file_caricati (
@@ -64,6 +64,52 @@ function addColIfMissing(table, col, decl) {
   if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 addColIfMissing('strutture', 'user_id', 'INTEGER');
+
+// Migrazione non distruttiva: rimuove il vincolo UNIQUE globale su strutture.nome
+// (DB creati prima della fix avevano "nome TEXT UNIQUE NOT NULL", che rompe
+// l'isolamento per utente). SQLite non supporta DROP di un vincolo UNIQUE via
+// ALTER, quindi si ricostruisce la tabella preservando gli id (referenziati da
+// file_caricati.struttura_id). Idempotente: gira solo se l'indice unique esiste
+// ancora.
+function migrateStruttureDropGlobalUnique(db) {
+  const indici = db.prepare(`PRAGMA index_list('strutture')`).all();
+  const haUniqueSuNome = indici.some(idx => {
+    if (!idx.unique) return false;
+    const cols = db.prepare(`PRAGMA index_info('${idx.name}')`).all();
+    return cols.length === 1 && cols[0].name === 'nome';
+  });
+  if (!haUniqueSuNome) return;
+
+  // file_caricati.struttura_id REFERENCES strutture(id): con foreign_keys=ON
+  // (default in node:sqlite) il DROP TABLE fallirebbe per violazione FK finche'
+  // esistono righe che puntano a strutture. Le PRAGMA non sono transazionali,
+  // quindi si disattivano/riattivano fuori dalla BEGIN/COMMIT, seguendo la
+  // procedura standard SQLite per la ricostruzione di tabelle referenziate.
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.exec('BEGIN');
+    try {
+      db.exec(`
+        CREATE TABLE strutture_new (
+          id      INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome    TEXT NOT NULL,
+          user_id INTEGER
+        );
+      `);
+      db.exec(`INSERT INTO strutture_new (id, nome, user_id) SELECT id, nome, user_id FROM strutture;`);
+      db.exec(`DROP TABLE strutture;`);
+      db.exec(`ALTER TABLE strutture_new RENAME TO strutture;`);
+      db.exec('COMMIT');
+      console.log('  ✓ Migrazione strutture: rimosso vincolo UNIQUE globale su nome');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    }
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+migrateStruttureDropGlobalUnique(db);
 
 // ── Piani di scontistica ────────────────────────────
 piani.ensureSchema(db);
