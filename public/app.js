@@ -1880,9 +1880,35 @@ async function aggiornaMatchConcorrente(tr) {
     aggiornaRigaDOM(tr);
   } else if (m.trovato && !m.sicuro) {
     mostraBannerMatch(tr, m);
-  } else if (banner) {
-    banner.style.display = 'none';
+  } else {
+    // nessuna corrispondenza: banner cliccabile per mappare a mano nel listino concorrente
+    mostraBannerNoMatch(esame, requestedConcorrenteId);
   }
+}
+
+function mostraBannerNoMatch(esame, concorrenteId) {
+  const banner = el('roi-match-banner');
+  if (!banner) return;
+  banner.innerHTML = `
+    <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
+    <div onclick="mappaturaManualeDaRoi(${concorrenteId}, decodeURIComponent('${encodeURIComponent(esame)}'))" style="cursor:pointer">
+      🔗 Nessuna corrispondenza per <strong>${escHtml(esame)}</strong> nel listino concorrente.<br>
+      <span style="font-size:11px;color:#6b7280">Clicca per mapparlo a mano nel listino</span>
+    </div>
+  `;
+  banner.style.display = 'block';
+}
+
+async function mappaturaManualeDaRoi(concorrenteId, esameMyl) {
+  const banner = el('roi-match-banner');
+  if (banner) banner.style.display = 'none';
+  window._currentView = 'concorrenti';
+  await renderConcorrentiAdmin();
+  await renderConcorrenteDettaglio(concorrenteId);
+  const s = el('conc-search');
+  if (s) { s.value = esameMyl; filtraDettaglio(esameMyl); }
+  el('concorrente-dettaglio-wrap')?.scrollIntoView({ behavior: 'smooth' });
+  buildSidebar();
 }
 
 function mostraBannerMatch(tr, m) {
