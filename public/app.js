@@ -1288,6 +1288,7 @@ async function renderPiani() {
     return;
   }
 
+  S.pianiAdmin = elenco;
   setMain(`
     <div class="page-header">
       <div><div class="page-title">Gestione piani di scontistica</div>
@@ -1299,28 +1300,45 @@ async function renderPiani() {
       </div>
     </div>
     <div class="page-body">
+      <div class="dett-toolbar" style="margin-bottom:14px">
+        <input class="roi-input dett-search" id="piani-search" placeholder="🔍 Cerca piano per nome o categoria…"
+               value="${escHtml(S.pianiFiltro || '')}" oninput="filtraPiani(this.value)" autocomplete="off">
+      </div>
       <div class="table-card">
         <div class="table-scroll">
           <table>
             <thead><tr><th>Nome</th><th>Categoria</th><th>Anno</th><th>Attivo</th><th></th></tr></thead>
-            <tbody>
-              ${elenco.map(p => `<tr>
-                <td>${escHtml(p.nome)}</td>
-                <td class="td-muted">${escHtml(p.categoria)}</td>
-                <td class="td-muted">${p.anno || '—'}</td>
-                <td>${p.attivo ? '✅' : '❌'}</td>
-                <td style="display:flex;gap:6px">
-                  <button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
-                  <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>
-                </td>
-              </tr>`).join('')}
-            </tbody>
+            <tbody id="piani-tbody"></tbody>
           </table>
         </div>
       </div>
       <div id="piano-edit-wrap"></div>
     </div>
   `);
+  renderPianiBody();
+}
+
+function renderPianiBody() {
+  const tb = el('piani-tbody');
+  if (!tb) return;
+  const q = (S.pianiFiltro || '').trim().toLowerCase();
+  const list = (S.pianiAdmin || []).filter(p =>
+    !q || p.nome.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
+  tb.innerHTML = list.map(p => `<tr>
+    <td>${escHtml(p.nome)}</td>
+    <td class="td-muted">${escHtml(p.categoria)}</td>
+    <td class="td-muted">${p.anno || '—'}</td>
+    <td>${p.attivo ? '✅' : '❌'}</td>
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
+      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>
+    </td>
+  </tr>`).join('') || '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:16px">Nessun piano trovato</td></tr>';
+}
+
+function filtraPiani(v) {
+  S.pianiFiltro = v;
+  renderPianiBody();
 }
 
 async function togglePianoAttivo(id, attivo) {
