@@ -1667,6 +1667,9 @@ async function renderConcorrenteDettaglio(id) {
   const wrap = el('concorrente-dettaglio-wrap');
   if (!wrap) return;
 
+  // Nomi del catalogo Mylav per l'autocomplete del campo "Nome Mylav" (una volta, in cache).
+  if (!S.esamiMylavNomi) S.esamiMylavNomi = await api('/api/esami-riferimento/nomi').catch(() => []);
+
   // Stato locale della vista (ricerca + ordinamento) — il body si ri-renderizza senza ricaricare.
   S.concDett = { id, esami: dettaglio.esami, nome: dettaglio.concorrente.nome, filtro: '', dir: 1 };
 
@@ -1676,8 +1679,11 @@ async function renderConcorrenteDettaglio(id) {
     ? `<div class="dett-maphint">Esami Mylav da mappare (${hint.length}): ${hint.map(h => `<strong>${escHtml(h)}</strong>`).join(' · ')}</div>`
     : '';
 
+  const datalist = `<datalist id="mylav-esami-list">${(S.esamiMylavNomi || []).map(n => `<option value="${escHtml(n)}">`).join('')}</datalist>`;
+
   wrap.innerHTML = `
     <div class="section-card" data-concorrente-id="${id}">
+      ${datalist}
       <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
       ${hintHtml}
       <div class="dett-maplabel">Inserisci il nome dell'esame della concorrenza che vuoi mappare</div>
@@ -1708,7 +1714,7 @@ function renderDettaglioBody() {
     <td class="td-muted">${fmtE(e.prezzo)}</td>
     <td class="td-muted">${e.sconto != null ? e.sconto + '%' : '—'}</td>
     <td>${e.esame_mylav_nome ? (e.confermato ? '✅ confermato' : '🔎 auto') : '— non mappato'}</td>
-    <td><input class="roi-input" data-esame-concorrente-id="${e.id}" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="nome esame Mylav" style="width:180px"></td>
+    <td><input class="roi-input" data-esame-concorrente-id="${e.id}" list="mylav-esami-list" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="scegli esame Mylav…" autocomplete="off" style="width:220px"></td>
     <td style="display:flex;gap:6px">
       <button class="btn-outline" onclick="salvaMappaturaManuale(${st.id}, ${e.id})">Salva</button>
       ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${st.id}, ${e.id})">Rimuovi</button>` : ''}

@@ -951,6 +951,14 @@ app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Tutti i nomi del catalogo esami Mylav (per autocomplete/datalist)
+app.get('/api/esami-riferimento/nomi', (req, res) => {
+  try {
+    const nomi = db.prepare('SELECT nome FROM esami_riferimento ORDER BY nome').all().map(r => r.nome);
+    res.json(nomi);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/prezzi-custom', express.json(), (req, res) => {
   try {
     const { esame_nome, piano_id, prezzo } = req.body || {};
