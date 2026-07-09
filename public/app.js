@@ -1163,12 +1163,20 @@ async function downloadPdf(fileId, foglio, tipo) {
   const donutImg = donutCanvas ? donutCanvas.toDataURL('image/png') : null;
   const barreImg = barreCanvas ? barreCanvas.toDataURL('image/png') : null;
 
+  // Le legende sono HTML separati dal canvas: le catturo per riprodurle nel PDF.
+  const grabLegend = id => [...document.querySelectorAll(`#${id} .legend-item`)].map(it => ({
+    label: (it.querySelector('span:last-child')?.textContent || '').trim(),
+    color: it.querySelector('.legend-dot')?.style.background || '#26262a'
+  }));
+  const donutLegend = grabLegend('donut-legend');
+  const barreLegend = grabLegend('barre-legend');
+
   let res;
   try {
     res = await fetch(`/api/pdf/${tipo}/${fileId}/${encodeURIComponent(foglio)}`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ donutImg, barreImg })
+      body:    JSON.stringify({ donutImg, barreImg, donutLegend, barreLegend })
     });
   } catch (e) {
     alert('Errore rete: ' + e.message);

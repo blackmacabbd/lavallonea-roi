@@ -724,28 +724,39 @@ function brandHeader(fileInfo, foglio, titolo, badge) {
 <div class="brand-rule"></div>`;
 }
 
-function chartsSection(donutImg, barreImg) {
+// Legenda colori sotto ai grafici (i canvas catturati non la contengono).
+function pdfLegend(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  const chips = items.map(i => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:9.5px;color:#26262a">
+      <span style="width:10px;height:10px;border-radius:2px;background:${i.color};display:inline-block;flex:0 0 auto"></span>${i.label}</span>`).join('');
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;margin-top:10px">${chips}</div>`;
+}
+
+function chartsSection(donutImg, barreImg, donutLegend, barreLegend) {
   if (!donutImg && !barreImg) return '';
+  const lbl = 'font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:#0f76bc;margin-bottom:8px';
   const donutHtml = donutImg
-    ? `<div style="flex:0 0 240px;text-align:center">
-         <div style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:8px">Confronto prezzi</div>
-         <img src="${donutImg}" style="width:200px;height:200px;object-fit:contain">
+    ? `<div style="flex:0 0 230px;text-align:center">
+         <div style="${lbl}">Confronto prezzi</div>
+         <img src="${donutImg}" style="width:190px;height:190px;object-fit:contain">
+         ${pdfLegend(donutLegend)}
        </div>` : '';
   const barreHtml = barreImg
     ? `<div style="flex:1;min-width:0">
-         <div style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:8px">Confronto per esame</div>
-         <img src="${barreImg}" style="width:100%;max-height:320px;object-fit:contain">
+         <div style="${lbl}">Confronto per esame</div>
+         <img src="${barreImg}" style="width:100%;max-height:300px;object-fit:contain">
+         ${pdfLegend(barreLegend)}
        </div>` : '';
   return `<div class="sec">
   <h2>Grafici</h2>
-  <div style="display:flex;gap:20px;align-items:flex-start">
+  <div style="display:flex;gap:22px;align-items:flex-start">
     ${donutHtml}${barreHtml}
   </div>
 </div>`;
 }
 
 // Vista DOTTORE
-function buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg) {
+function buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend) {
   const rows = dati.map(d => {
     const risp    = d.risparmio_dottore || 0;
     const rispPct = d.prezzo_scontato_concorrenza > 0
@@ -770,7 +781,7 @@ ${brandHeader(fileInfo, foglio, 'Confronto risparmio')}
     <div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:12px;font-weight:600;color:#6b7280">(${t.risparmio_pct}%)</span></div>
   </div>
 </div>
-${chartsSection(donutImg, barreImg)}
+${chartsSection(donutImg, barreImg, donutLegend, barreLegend)}
 <div class="sec">
   <h2>Dettaglio esami</h2>
   <table>
@@ -786,7 +797,7 @@ ${chartsSection(donutImg, barreImg)}
 }
 
 // Vista COMPLETA (interna)
-function buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg) {
+function buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend) {
   const rows = dati.map(d => {
     const risp    = d.risparmio_dottore || 0;
     const rispPct = d.prezzo_scontato_concorrenza > 0
@@ -813,7 +824,7 @@ ${brandHeader(fileInfo, foglio, 'Report completo', 'Uso interno')}
   <div class="kpi b"><div class="l">Scontato Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
   <div class="kpi k"><div class="l">Risparmio dottore</div><div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:12px;font-weight:600;color:#6b7280">(${t.risparmio_pct}%)</span></div></div>
 </div>
-${chartsSection(donutImg, barreImg)}
+${chartsSection(donutImg, barreImg, donutLegend, barreLegend)}
 <div class="sec">
   <h2>Dettaglio completo</h2>
   <table>
@@ -852,12 +863,12 @@ async function renderPDF(html) {
 app.post('/api/pdf/dottore/:fileId/:foglio', express.json({ limit: '15mb' }), async (req, res) => {
   try {
     const { fileId, foglio } = req.params;
-    const { donutImg, barreImg } = req.body || {};
+    const { donutImg, barreImg, donutLegend, barreLegend } = req.body || {};
     const dati     = db.prepare('SELECT * FROM dati_foglio WHERE file_id = ? AND foglio = ? ORDER BY id').all(fileId, foglio);
     const fileInfo = db.prepare('SELECT fc.*, s.nome as struttura_nome FROM file_caricati fc JOIN strutture s ON fc.struttura_id = s.id WHERE fc.id = ?').get(fileId);
     if (!fileInfo) return res.status(404).json({ error: 'File non trovato' });
     const t   = calcolaTotali(dati);
-    const pdf = await renderPDF(buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg));
+    const pdf = await renderPDF(buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend));
     const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_dottore.pdf`;
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
     res.send(pdf);
@@ -870,12 +881,12 @@ app.post('/api/pdf/dottore/:fileId/:foglio', express.json({ limit: '15mb' }), as
 app.post('/api/pdf/completo/:fileId/:foglio', express.json({ limit: '15mb' }), async (req, res) => {
   try {
     const { fileId, foglio } = req.params;
-    const { donutImg, barreImg } = req.body || {};
+    const { donutImg, barreImg, donutLegend, barreLegend } = req.body || {};
     const dati     = db.prepare('SELECT * FROM dati_foglio WHERE file_id = ? AND foglio = ? ORDER BY id').all(fileId, foglio);
     const fileInfo = db.prepare('SELECT fc.*, s.nome as struttura_nome FROM file_caricati fc JOIN strutture s ON fc.struttura_id = s.id WHERE fc.id = ?').get(fileId);
     if (!fileInfo) return res.status(404).json({ error: 'File non trovato' });
     const t   = calcolaTotali(dati);
-    const pdf = await renderPDF(buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg));
+    const pdf = await renderPDF(buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend));
     const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_completo.pdf`;
     res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
     res.send(pdf);
