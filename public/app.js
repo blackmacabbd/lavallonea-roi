@@ -138,6 +138,7 @@ function buildSidebar() {
         <span class="struttura-chevron">›</span>
       </div>
       <div class="struttura-children ${altroOpen}">
+        <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">Risparmio totale strutture</div>
         <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">Cronologia file</div>
         <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">Debug Excel</div>
       </div>
@@ -203,6 +204,7 @@ function navigate(view, params = {}) {
     case 'cronologia': renderCronologia();                             break;
     case 'confronto':  renderConfronto();                              break;
     case 'debug':      renderDebug();                                  break;
+    case 'risparmio-totale': renderRisparmioTotale();                  break;
     case 'piani':      renderPiani();                                  break;
     case 'concorrenti': renderConcorrentiAdmin();                      break;
   }
@@ -254,18 +256,11 @@ async function renderDashboard() {
     <div class="page-body" style="padding-top:24px">
       <div class="section-card" id="roi-hero"></div>
       <div class="riepilogo-band">
-        <div class="kpi-card kpi-risparmio">
-          <div class="kpi-label">Risparmio totale dottori</div>
-          <div class="kpi-value">${euro(differenziale_totale)}</div>
-          <div class="kpi-sub">vs concorrenza</div>
+        <div class="kpi-card kpi-risparmio" id="dash-risparmio-card">
+          <div class="kpi-label">Risparmio calcolo attuale</div>
+          <div class="kpi-value" id="dash-risparmio-val">${euro(0)}</div>
+          <div class="kpi-sub">vs concorrenza — solo il calcolo qui sopra</div>
         </div>
-        ${per_struttura.length >= 2 ? `
-        <div class="section-card">
-          <div class="section-card-title">Riepilogo per struttura</div>
-          <div class="chart-canvas-wrap">
-            <canvas id="chart-confronto-dash" height="180"></canvas>
-          </div>
-        </div>` : ''}
       </div>
       ${buildRoiActionsHtml()}
     </div>
@@ -274,11 +269,58 @@ async function renderDashboard() {
   // Calcolatore ROI — eroe in cima alla dashboard
   el('roi-hero').innerHTML = buildRoiSectionHtml();
   initRoiEvents();
+  updateDashRisparmio();
+}
 
-  if (per_struttura.length >= 2) {
-    const ctx = el('chart-confronto-dash');
+// KPI "Risparmio calcolo attuale": riflette solo il calcolatore in uso, live.
+function updateDashRisparmio() {
+  const val = el('dash-risparmio-val');
+  if (!val) return;
+  const d = calcolaRoiTotali().differenziale;
+  val.textContent = euro(d);
+  val.style.color = d >= 0 ? 'var(--blue)' : 'var(--red)';
+  const card = el('dash-risparmio-card');
+  if (card) card.style.setProperty('--kpi-accent', d >= 0 ? 'var(--blue)' : 'var(--red)');
+}
+
+// ── Risparmio totale strutture (sezione "Altro", poco evidente) ──
+async function renderRisparmioTotale() {
+  let data;
+  try { data = await api('/api/dashboard'); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
+    return;
+  }
+  const { differenziale_totale, per_struttura } = data;
+  setMain(`
+    <div class="page-header">
+      <div>
+        <div class="page-title">Risparmio totale strutture</div>
+        <div class="page-subtitle">Somma del risparmio di tutti i calcoli salvati, per struttura</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="kpi-card kpi-risparmio" style="max-width:340px;margin-bottom:24px">
+        <div class="kpi-label">Risparmio totale dottori</div>
+        <div class="kpi-value" style="color:${differenziale_totale >= 0 ? 'var(--blue)' : 'var(--red)'}">${euro(differenziale_totale)}</div>
+        <div class="kpi-sub">vs concorrenza — tutte le strutture</div>
+      </div>
+      ${per_struttura.length ? `
+      <div class="section-card">
+        <div class="section-card-title">Riepilogo per struttura</div>
+        <div class="chart-canvas-wrap">
+          <canvas id="chart-confronto-tot" height="${Math.max(180, per_struttura.length * 46)}"></canvas>
+        </div>
+      </div>` : `<div class="empty-state"><div class="empty-icon">📭</div>
+        <div class="empty-title">Nessun calcolo salvato</div></div>`}
+    </div>
+  `);
+
+  if (per_struttura.length) {
+    const ctx = el('chart-confronto-tot');
     if (ctx) {
-      S.charts.dash = new Chart(ctx, {
+      S.charts.tot = new Chart(ctx, {
         type: 'bar',
         data: {
           labels: per_struttura.map(s => s.nome),
@@ -2441,6 +2483,7 @@ function aggiornaTotaliDOM() {
   if (lastTd) { lastTd.textContent = fmtE(tots.differenziale); lastTd.style.color = tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'; }
   const note = el('roi-diff-note');
   if (note) note.style.display = tots.differenziale < 0 ? 'inline' : 'none';
+  updateDashRisparmio();
 }
 
 let _acTimeout = null;
