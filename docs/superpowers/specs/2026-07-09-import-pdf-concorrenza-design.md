@@ -3,9 +3,18 @@
 Data: 2026-07-09
 Contesto: la Gestione concorrenti importa oggi solo Excel (`POST /api/concorrenti/import` + `/conferma`, `lib/concorrenti.js`). L'utente vuole caricare anche un PDF listino concorrente (es. `2026_LISTINO PREZZI_Italy.pdf` — IDEXX, ~90 pagine) ed estrarne automaticamente esami + prezzi per il confronto ROI.
 
-## Fattibilità (accertata sul PDF reale)
+## Fattibilità (accertata sul PDF reale con pdf-parse 1.1.1)
 
-Il PDF è semi-strutturato. Ogni riga esame ha colonne: `Esame | Materiale | Tempi | Prezzo Vet. (IVA escl.) | Prezzo Propr. (IVA incl.) | Code`. Le righe-prezzo sono riconoscibili perché terminano con due importi in formato italiano (`53,50  91,38`) seguiti da un codice maiuscolo (`GCUPI`). Le righe di descrizione, intestazione di sezione e materiale non hanno questo pattern e vanno scartate. Il nome esame spesso sbrodola nella descrizione sulla stessa riga: l'estrazione è quindi **best-effort**, con revisione umana obbligatoria prima del salvataggio.
+Il PDF è IDEXX 2026 Italia, 100 pagine. Estratto con `pdf-parse` (senza layout), il testo NON tiene nome e prezzo sulla stessa riga. La struttura reale di un blocco-esame è:
+
+```
+Check-up completo (cane, gatto) Il nostro profilo più   ← riga NOME (con eventuale coda descrittiva)
+Quadro ematico completo, urea-N (BUN), ...              ← righe DESCRIZIONE (senza prezzo)
+1 ml siero + 1 – 2 ml                                    ← righe MATERIALE
+in giornata53,5091,38GCUPI                               ← riga PREZZI: <tempi><prezzoVet><prezzoPropr><CODE>, tutto incollato
+```
+
+Cioè: il **nome è la prima riga del blocco**, la **riga-prezzo lo chiude** e contiene i due importi in formato italiano *incollati senza spazio* (`53,50`+`91,38`), a volte preceduti dai "tempi" (`in giornata`, `1 ml siero…`) e seguiti da un codice maiuscolo (`GCUPI`). L'estrazione è quindi **a blocchi** (associazione nome↔prezzo), best-effort, con revisione umana obbligatoria prima del salvataggio. Il nome spesso include una coda descrittiva → l'utente lo rifinisce in revisione.
 
 ## Decisioni prese in fase di brainstorming
 
@@ -19,16 +28,21 @@ Il PDF è semi-strutturato. Ogni riga esame ha colonne: `Esame | Materiale | Tem
 Due funzioni separate, la seconda pura e testabile senza PDF:
 
 - `estraiTestoPdf(buffer)` → `Promise<string>`: usa `pdf-parse` per ottenere il testo grezzo del PDF.
-- `parseRigheDaTesto(testo)` → `{ righe: [{ nome_originale, prezzo, code }], scartate: number }`: logica pura di parsing riga per riga.
+- `parseRigheDaTesto(testo)` → `{ righe: [{ nome_originale, prezzo, code }], scartate: number }`: logica pura, parsing a blocchi, testabile senza PDF.
 
-Euristica in `parseRigheDaTesto`:
-- Regex prezzo IT: `\d{1,3}(?:\.\d{3})*,\d{2}` (es. `53,50`, `1.234,50`).
-- Una riga è un esame se contiene, verso la fine, **due** importi consecutivi seguiti (opzionalmente) da un token codice maiuscolo: `(.+?)\s+(PREZZO)\s+(PREZZO)(?:\s+([A-Z0-9]+))?\s*$`.
-- `nome_originale` = gruppo 1 (testo prima del primo prezzo), ripulito da spazi multipli.
-- `prezzo` = primo importo (Vet. escl.), convertito in numero (`53,50` → `53.50`: rimuovi separatore migliaia `.`, sostituisci `,`→`.`).
-- `code` = eventuale token finale (informativo, non salvato nello schema — utile solo in anteprima/debug).
-- Righe senza il pattern → conteggiate in `scartate`, non incluse.
-- Nomi vuoti o troppo corti (< 3 caratteri) dopo il trim → scartati.
+Costanti:
+- Regex prezzo IT: `\d{1,3}(?:\.\d{3})*,\d{2}` (es. `53,50`, `115,29`, `1.234,50`).
+- Regex riga-prezzo (i due importi incollati + codice, in coda alla riga): `/(\d{1,3}(?:\.\d{3})*,\d{2})(\d{1,3}(?:\.\d{3})*,\d{2})([A-Z][A-Z0-9]*)\s*$/`. Il codice maiuscolo finale è richiesto (riduce i falsi positivi da numeri nelle descrizioni).
+- Prefissi di intestazione/rumore da NON considerare mai come nome (case-insensitive, `startsWith` dopo trim): `Profili`, `Test o Profili`, `Esame`, `Materiale`, `Tutti i prezzi`, `Listino prezzi`, `Indice`, `IDEXX Laboratorio`, `IDEXX Gli analizzatori`.
+
+Algoritmo a blocchi in `parseRigheDaTesto`:
+- Dividi il testo in righe, `trim` ciascuna, scarta le vuote.
+- Mantieni `bloccoInizioNome = null` (il candidato nome corrente).
+- Per ogni riga:
+  - Se la riga matcha la regex riga-prezzo → chiudi il blocco: `nome_originale` = `bloccoInizioNome` (se presente e valido), `prezzo` = primo importo convertito (rimuovi `.` migliaia, `,`→`.`), `code` = terzo gruppo. Se `bloccoInizioNome` manca o è troppo corto (< 3 char) o è un prefisso-intestazione → incrementa `scartate` (riga-prezzo orfana), altrimenti aggiungi la riga a `righe`. Poi azzera `bloccoInizioNome = null`.
+  - Altrimenti (riga senza prezzo): se `bloccoInizioNome === null` e la riga NON è un prefisso-intestazione → è la prima riga del blocco, imposta `bloccoInizioNome = riga`. Se è un prefisso-intestazione → ignorala (non diventa nome). Se `bloccoInizioNome` è già impostato → è descrizione/materiale, ignorala.
+- `code` è informativo (anteprima/debug), non salvato nello schema.
+- `scartate` conta le righe-prezzo che non hanno prodotto un esame valido (nome mancante/corto/intestazione).
 
 Esporta: `estraiTestoPdf`, `parseRigheDaTesto`.
 
@@ -53,13 +67,13 @@ Esporta: `estraiTestoPdf`, `parseRigheDaTesto`.
 
 ## Sezione 4 — Test e qualità
 
-- `lib/pdfimport.test.js` (node:test): testa `parseRigheDaTesto` su un testo-campione multi-riga che imita il PDF reale — verifica che (a) rilevi le righe con due prezzi + codice, (b) scarti descrizioni/intestazioni/materiali, (c) parsi correttamente i decimali IT e prenda il prezzo Vet, (d) conteggi le righe scartate, (e) scarti nomi troppo corti.
+- `lib/pdfimport.test.js` (node:test): testa `parseRigheDaTesto` su un testo-campione multi-riga che imita l'output pdf-parse reale (nome su una riga, descrizione/materiale in mezzo, riga-prezzo coi due importi incollati + codice) — verifica che (a) associ il nome corretto (prima riga del blocco) al prezzo, (b) scarti descrizioni/materiali, (c) NON usi le intestazioni di sezione come nome, (d) parsi i decimali IT incollati e prenda il prezzo Vet (primo), (e) conteggi le righe-prezzo orfane in `scartate`, (f) scarti nomi troppo corti (< 3 char).
 - `estraiTestoPdf` non è unit-testata (dipende da pdf-parse + I/O); verificata a mano/end-to-end col PDF reale in browser durante l'implementazione.
 - Verifica end-to-end: caricare il PDF reale, controllare che l'anteprima estragga righe plausibili, correggerne una, escluderne una, salvare, e vedere il concorrente in lista + un match nel Calcolatore ROI.
 
 ## Compatibilità e vincoli
 
-- **Nuova dipendenza npm**: `pdf-parse` (unica eccezione al "no nuove dipendenze"; giustificata dalla richiesta esplicita di supporto PDF).
+- **Nuova dipendenza npm**: `pdf-parse@1.1.1` (versione stabile, API `pdf(buffer).then(d => d.text)`; la 2.x ha API diversa — non usarla). Unica eccezione al "no nuove dipendenze", giustificata dalla richiesta esplicita di supporto PDF. Nota: richiedere `require('pdf-parse')` normalmente (mai come modulo `main`), altrimenti la 1.1.1 tenta di leggere un PDF di test interno.
 - Schema `concorrenti`/`esami_concorrente` invariato (riuso `upsertConcorrente`).
 - Import Excel, matching, calcolo ROI, tema: invariati.
 - Nessuna AI/servizio esterno. Testo UI in italiano.
