@@ -243,6 +243,10 @@ async function renderDashboard() {
     roiSection.style.cssText = 'margin:0 24px 24px';
     roiSection.innerHTML = buildRoiSectionHtml();
     el('main-content').querySelector('.page-body').appendChild(roiSection);
+    const actions = document.createElement('div');
+    actions.style.cssText = 'margin:0 24px 24px';
+    actions.innerHTML = buildRoiActionsHtml();
+    el('main-content').querySelector('.page-body').appendChild(actions);
     initRoiEvents();
     return;
   }
@@ -264,6 +268,7 @@ async function renderDashboard() {
           </div>
         </div>` : ''}
       </div>
+      ${buildRoiActionsHtml()}
     </div>
   `);
 
@@ -1750,20 +1755,28 @@ function buildRoiSectionHtml() {
           </button>
           <div id="roi-concorrente-panel" class="roi-piano-panel" style="display:none"></div>
         </div>
-        <button class="btn-outline" onclick="openUploadModal()" style="font-size:12px">+ Carica file</button>
       </div>
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn-outline" onclick="addRigaRoi()" style="font-size:12px">+ Aggiungi esame</button>
-      <button class="btn-outline" onclick="salvaCalcolo()" style="font-size:12px;color:#0f76bc;border-color:#0f76bc">💾 Salva come file</button>
-      <button class="btn-outline" onclick="esportaExcelRoi()" style="font-size:12px">📥 Esporta Excel</button>
     </div>
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="roi-ac" class="roi-autocomplete" style="display:none"></div>
     <div id="roi-consiglio-banner" class="roi-consiglio-banner" style="display:none"></div>
     <div id="roi-match-banner" class="roi-consiglio-banner roi-match-banner" style="display:none"></div>
   `;
+}
+
+// Barra azioni sotto il banner Risparmio: salvataggio/export + scorciatoie a Gestione piani/concorrenti
+function buildRoiActionsHtml() {
+  return `
+    <div class="roi-actions-bar">
+      <button class="btn-outline" onclick="salvaCalcolo()" style="color:var(--blue);border-color:var(--blue)">💾 Salva come file</button>
+      <button class="btn-outline" onclick="esportaExcelRoi()">📥 Esporta Excel</button>
+      <button class="btn-outline" onclick="navigate('piani')" style="color:var(--blue);border-color:var(--blue)">+ Aggiungi piano MYL</button>
+      <button class="btn-outline" onclick="navigate('concorrenti')" style="color:var(--red);border-color:var(--red)">+ Aggiungi piano concorrenza</button>
+    </div>`;
 }
 
 function pianoSelezionatoNome() {

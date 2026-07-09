@@ -353,6 +353,17 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
   .riepilogo-band { grid-template-columns: 1fr; }
 }
 
+/* Barra azioni sotto il banner Risparmio */
+.roi-actions-bar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 20px;
+}
+.roi-actions-bar .btn-outline { font-size: 12px; }
+.roi-actions-sep { flex: 1; min-width: 8px; }
+
 /* ═══════════════════════════════════════════════════
    CHARTS
    ═══════════════════════════════════════════════════ */
