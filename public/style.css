@@ -182,6 +182,18 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
 }
 .struttura-header.open .struttura-chevron { transform: rotate(90deg); }
 
+.struttura-del {
+  flex-shrink: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: #c8ccd2;
+  padding: 0 4px;
+  opacity: 0;
+  transition: opacity 120ms, color 120ms;
+}
+.struttura-header:hover .struttura-del { opacity: 1; }
+.struttura-del:hover { color: var(--red); }
+
 .struttura-children {
   display: none;
   padding-bottom: 4px;

@@ -1214,6 +1214,33 @@ app.delete('/api/cronologia/:id', (req, res) => {
   }
 });
 
+app.delete('/api/strutture/:id', (req, res) => {
+  try {
+    const id = req.params.id;
+    const esiste = db.prepare('SELECT 1 FROM strutture WHERE id = ?').get(id);
+    if (!esiste) return res.status(404).json({ error: 'Struttura non trovata' });
+
+    const files = db.prepare('SELECT id, path_file FROM file_caricati WHERE struttura_id = ?').all(id);
+    db.exec('BEGIN');
+    try {
+      for (const f of files) {
+        db.prepare('DELETE FROM dati_foglio WHERE file_id = ?').run(f.id);
+      }
+      db.prepare('DELETE FROM file_caricati WHERE struttura_id = ?').run(id);
+      db.prepare('DELETE FROM strutture WHERE id = ?').run(id);
+      db.exec('COMMIT');
+    } catch (e) { db.exec('ROLLBACK'); throw e; }
+
+    // best-effort: rimuovi i file Excel caricati dal disco
+    for (const f of files) {
+      if (f.path_file) { try { fs.unlinkSync(f.path_file); } catch (_) {} }
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`\n  ✓ Mylav ROI Dashboard`);
   console.log(`  → http://localhost:${PORT}\n`);

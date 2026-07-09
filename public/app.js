@@ -95,6 +95,7 @@ function buildSidebar() {
       <div class="struttura-group">
         <div class="struttura-header ${open}" onclick="toggleStruttura(${s.id})">
           <span class="sname">▼ ${s.nome}</span>
+          <span class="struttura-del" title="Elimina struttura" onclick="event.stopPropagation(); eliminaStrutturaUI(${s.id})">×</span>
           <span class="struttura-chevron">›</span>
         </div>
         <div class="struttura-children ${open}" id="sc-${s.id}">
@@ -163,6 +164,18 @@ function buildSidebar() {
 function toggleGestione() {
   S.gestioneOpen = !S.gestioneOpen;
   buildSidebar();
+}
+
+async function eliminaStrutturaUI(id) {
+  const s = S.strutture.find(x => x.id === id);
+  const nome = s ? s.nome : 'questa struttura';
+  if (!confirm(`Eliminare la struttura "${nome}" con tutti i suoi file e dati? L'operazione non è reversibile.`)) return;
+  try {
+    await api(`/api/strutture/${id}`, { method: 'DELETE' });
+    await loadStrutture();
+    buildSidebar();
+    navigate('dashboard');
+  } catch (e) { alert('Errore: ' + e.message); }
 }
 
 function isActive(view, extra) {
