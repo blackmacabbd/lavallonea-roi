@@ -660,6 +660,70 @@ function euro(n) {
   });
 }
 
+// Logo MYLAV (wordmark + "A" a doppio triangolo rosso/blu + ®), riusabile nel PDF.
+function mylavLogo() {
+  return `<div style="display:flex;align-items:flex-end;gap:1px;font-family:Arial,Helvetica,sans-serif;font-weight:800;font-size:30px;letter-spacing:1px;line-height:1;color:#ffffff">
+    <span>MYL</span>
+    <svg width="25" height="30" viewBox="0 0 100 100" style="display:block">
+      <polygon points="6,94 40,10 52,10 22,94" fill="#ce181e"/>
+      <polygon points="94,94 60,10 48,10 78,94" fill="#0f76bc"/>
+    </svg>
+    <span>V</span>
+    <span style="font-size:11px;font-weight:600;margin-left:2px;color:#9cc8e8">&reg;</span>
+  </div>`;
+}
+
+// Stile brand condiviso dai PDF. Palette MYLAV: grafite #26262a, blu #0f76bc,
+// rosso #ce181e. Semantica coerente coi grafici: rosso=concorrenza, blu=Mylav,
+// grafite=risparmio.
+const PDF_BRAND_STYLE = `
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#26262a;background:#fff;font-size:12px}
+  .hdr{background:#26262a;color:#fff;padding:20px 28px;display:flex;justify-content:space-between;align-items:flex-end}
+  .hdr .tag{font-size:10px;color:#c9cace;margin-top:7px;letter-spacing:.02em}
+  .hdr .tag b{color:#fff;font-weight:600}
+  .hdr-meta{text-align:right}
+  .hdr-title{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.09em;color:#9cc8e8}
+  .hdr-sub{font-size:11px;color:#c9cace;margin-top:5px}
+  .badge{display:inline-block;background:#ce181e;color:#fff;font-size:9px;font-weight:700;
+         text-transform:uppercase;letter-spacing:.08em;padding:3px 9px;border-radius:3px;margin-left:10px;vertical-align:middle}
+  .brand-rule{height:4px;background:linear-gradient(90deg,#ce181e 0 50%,#0f76bc 50% 100%)}
+  .kpis{display:flex;gap:12px;padding:20px 28px;background:#f6f7f9;flex-wrap:wrap}
+  .kpi{flex:1;min-width:120px;background:#fff;padding:13px 16px;border-radius:7px;
+       border:1px solid #e6e7ea;border-left:4px solid #cfd2d7}
+  .kpi .l{font-size:9.5px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+  .kpi .v{font-size:16px;font-weight:700;color:#26262a}
+  .kpi.r{border-left-color:#ce181e} .kpi.r .v{color:#ce181e}
+  .kpi.b{border-left-color:#0f76bc} .kpi.b .v{color:#0f76bc}
+  .kpi.k{border-left-color:#26262a} .kpi.k .v{color:#26262a}
+  .sec{padding:20px 28px}
+  .sec h2{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+          color:#26262a;border-bottom:2px solid #0f76bc;padding-bottom:7px;margin-bottom:13px}
+  table{width:100%;border-collapse:collapse}
+  th{background:#eaf3fb;padding:8px 10px;text-align:left;font-weight:600;
+     color:#26262a;border-bottom:2px solid #0f76bc;font-size:10.5px}
+  td{padding:7px 10px;border-bottom:1px solid #eef0f2;font-size:10.5px}
+  tbody tr:nth-child(even){background:#fafbfc}
+  .muted{color:#9ca3af}
+  .c-conc{color:#ce181e} .c-lav{color:#0f76bc;font-weight:600} .c-risp{color:#26262a;font-weight:700}
+  .ftr{padding:15px 28px;font-size:9.5px;color:#9ca3af;border-top:2px solid #0f76bc;margin-top:8px}
+`;
+
+function brandHeader(fileInfo, foglio, titolo, badge) {
+  const data = new Date().toLocaleDateString('it-IT');
+  return `<div class="hdr">
+  <div>
+    ${mylavLogo()}
+    <div class="tag">Il laboratorio dei <b>clinici</b> per i <b>clinici</b></div>
+  </div>
+  <div class="hdr-meta">
+    <div class="hdr-title">${titolo}${badge ? `<span class="badge">${badge}</span>` : ''}</div>
+    <div class="hdr-sub">${fileInfo.struttura_nome} &middot; ${foglio} &middot; ${data}</div>
+  </div>
+</div>
+<div class="brand-rule"></div>`;
+}
+
 function chartsSection(donutImg, barreImg) {
   if (!donutImg && !barreImg) return '';
   const donutHtml = donutImg
@@ -689,43 +753,21 @@ function buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg) {
     return `<tr>
       <td>${d.esame}</td>
       <td style="text-align:center">${d.n_esami}</td>
-      <td>${euro(d.prezzo_scontato_concorrenza)}</td>
-      <td style="color:#f5a800;font-weight:500">${euro(d.totale_scontato_lav)}</td>
-      <td style="color:#1a7a4a;font-weight:500">${euro(risp)}</td>
-      <td style="color:#1a7a4a">${rispPct}%</td>
+      <td class="c-conc">${euro(d.prezzo_scontato_concorrenza)}</td>
+      <td class="c-lav">${euro(d.totale_scontato_lav)}</td>
+      <td class="c-risp">${euro(risp)}</td>
+      <td class="c-risp">${rispPct}%</td>
     </tr>`;
   }).join('');
 
   return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:system-ui,-apple-system,sans-serif;color:#1a1a1a;background:#fff;font-size:12px}
-  .hdr{background:#1a7a4a;color:#fff;padding:24px 28px}
-  .hdr h1{font-size:22px;font-weight:500;margin-bottom:4px}
-  .hdr .sub{font-size:12px;opacity:.8}
-  .kpis{display:flex;gap:12px;padding:20px 28px;background:#f5f6f8}
-  .kpi{flex:1;background:#fff;padding:14px 16px;border-radius:6px;border:1px solid #e8e9eb}
-  .kpi .l{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-  .kpi .v{font-size:16px;font-weight:500}
-  .kpi.r .v{color:#c0392b} .kpi.g .v{color:#1a7a4a} .kpi.y .v{color:#f5a800} .kpi.b .v{color:#2563a8}
-  .sec{padding:20px 28px}
-  .sec h2{font-size:12px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
-          color:#6b7280;border-bottom:1px solid #e8e9eb;padding-bottom:8px;margin-bottom:14px}
-  table{width:100%;border-collapse:collapse}
-  th{background:#f5f6f8;padding:8px 10px;text-align:left;font-weight:500;
-     border-bottom:1px solid #e8e9eb;font-size:11px}
-  td{padding:7px 10px;border-bottom:1px solid #f5f5f5;font-size:11px}
-  .ftr{padding:16px 28px;font-size:10px;color:#9ca3af;border-top:1px solid #e8e9eb;margin-top:8px}
-</style></head><body>
-<div class="hdr">
-  <h1>Mylav</h1>
-  <div class="sub">${fileInfo.struttura_nome} &mdash; ${foglio} &mdash; ${new Date().toLocaleDateString('it-IT')}</div>
-</div>
+<style>${PDF_BRAND_STYLE}</style></head><body>
+${brandHeader(fileInfo, foglio, 'Confronto risparmio')}
 <div class="kpis">
   <div class="kpi r"><div class="l">Pagheresti con concorrenza</div><div class="v">${euro(t.prezzo_scontato_concorrenza)}</div></div>
-  <div class="kpi y"><div class="l">Paghi con Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
-  <div class="kpi g"><div class="l">Risparmi scegliendo noi</div>
-    <div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:13px;font-weight:400">(${t.risparmio_pct}%)</span></div>
+  <div class="kpi b"><div class="l">Paghi con Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
+  <div class="kpi k"><div class="l">Risparmi scegliendo noi</div>
+    <div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:12px;font-weight:600;color:#6b7280">(${t.risparmio_pct}%)</span></div>
   </div>
 </div>
 ${chartsSection(donutImg, barreImg)}
@@ -734,7 +776,7 @@ ${chartsSection(donutImg, barreImg)}
   <table>
     <thead><tr>
       <th>Esame</th><th>N.</th><th>Prezzo mercato</th>
-      <th>Prezzo Mylav</th><th>Risparmi €</th><th>Risparmi %</th>
+      <th>Prezzo Mylav</th><th>Risparmi &euro;</th><th>Risparmi %</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
@@ -753,48 +795,23 @@ function buildHtmlCompleto(fileInfo, foglio, dati, t, donutImg, barreImg) {
       <td>${d.esame}</td>
       <td style="text-align:center">${d.n_esami}</td>
       <td class="muted">${euro(d.listino_concorrenza)}</td>
-      <td style="color:#c0392b">${euro(d.prezzo_scontato_concorrenza)}</td>
+      <td class="c-conc">${euro(d.prezzo_scontato_concorrenza)}</td>
       <td class="muted">${euro(d.listino_lav)}</td>
-      <td style="color:#f5a800">${euro(d.totale_scontato_lav)}</td>
-      <td style="color:#1a7a4a;font-weight:500">${euro(risp)}</td>
-      <td style="color:#1a7a4a">${rispPct}%</td>
+      <td class="c-lav">${euro(d.totale_scontato_lav)}</td>
+      <td class="c-risp">${euro(risp)}</td>
+      <td class="c-risp">${rispPct}%</td>
     </tr>`;
   }).join('');
 
   return `<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8">
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:system-ui,-apple-system,sans-serif;color:#1a1a1a;background:#fff;font-size:12px}
-  .hdr{background:#1a1a1a;color:#fff;padding:24px 28px}
-  .hdr h1{font-size:22px;font-weight:500;margin-bottom:4px}
-  .hdr .sub{font-size:12px;opacity:.7}
-  .badge{display:inline-block;background:#f5a800;color:#1a1a1a;font-size:10px;
-         font-weight:500;padding:3px 10px;border-radius:3px;margin-left:12px;vertical-align:middle}
-  .kpis{display:flex;gap:10px;padding:16px 28px;background:#f5f6f8;flex-wrap:wrap}
-  .kpi{flex:1;min-width:110px;background:#fff;padding:12px 14px;border-radius:6px;border:1px solid #e8e9eb}
-  .kpi .l{font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
-  .kpi .v{font-size:15px;font-weight:500}
-  .kpi.r .v{color:#c0392b} .kpi.g .v{color:#1a7a4a} .kpi.y .v{color:#f5a800} .kpi.b .v{color:#2563a8}
-  .sec{padding:18px 28px}
-  .sec h2{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
-          color:#6b7280;border-bottom:1px solid #e8e9eb;padding-bottom:8px;margin-bottom:12px}
-  table{width:100%;border-collapse:collapse}
-  th{background:#f5f6f8;padding:7px 8px;text-align:left;font-weight:500;
-     border-bottom:1px solid #e8e9eb;font-size:10px}
-  td{padding:6px 8px;border-bottom:1px solid #f5f5f5;font-size:10px}
-  .muted{color:#9ca3af}
-  .ftr{padding:14px 28px;font-size:10px;color:#9ca3af;border-top:1px solid #e8e9eb}
-</style></head><body>
-<div class="hdr">
-  <h1>Mylav &mdash; Report Completo <span class="badge">USO INTERNO</span></h1>
-  <div class="sub">${fileInfo.struttura_nome} &mdash; ${foglio} &mdash; ${new Date().toLocaleDateString('it-IT')}</div>
-</div>
+<style>${PDF_BRAND_STYLE}</style></head><body>
+${brandHeader(fileInfo, foglio, 'Report completo', 'Uso interno')}
 <div class="kpis">
   <div class="kpi"><div class="l">Listino concorrenza</div><div class="v">${euro(t.totale_concorrenza)}</div></div>
   <div class="kpi r"><div class="l">Scontato concorrenza</div><div class="v">${euro(t.prezzo_scontato_concorrenza)}</div></div>
   <div class="kpi"><div class="l">Listino Mylav</div><div class="v">${euro(t.totale_listino_lav)}</div></div>
-  <div class="kpi y"><div class="l">Scontato Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
-  <div class="kpi g"><div class="l">Risparmio dottore</div><div class="v">${euro(t.risparmio_totale_dottore)} (${t.risparmio_pct}%)</div></div>
+  <div class="kpi b"><div class="l">Scontato Mylav</div><div class="v">${euro(t.totale_scontato_lav)}</div></div>
+  <div class="kpi k"><div class="l">Risparmio dottore</div><div class="v">${euro(t.risparmio_totale_dottore)} <span style="font-size:12px;font-weight:600;color:#6b7280">(${t.risparmio_pct}%)</span></div></div>
 </div>
 ${chartsSection(donutImg, barreImg)}
 <div class="sec">
@@ -804,7 +821,7 @@ ${chartsSection(donutImg, barreImg)}
       <th>Esame</th><th>N.</th>
       <th>Listino conc.</th><th>Scontato conc.</th>
       <th>Listino Lav</th><th>Scontato Lav</th>
-      <th>Risparmio €</th><th>%</th>
+      <th>Risparmio &euro;</th><th>%</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>
