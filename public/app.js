@@ -1617,25 +1617,37 @@ async function renderConcorrenteDettaglio(id) {
   const wrap = el('concorrente-dettaglio-wrap');
   if (!wrap) return;
 
+  const byNome = (a, b) => a.nome_originale.localeCompare(b.nome_originale, 'it', { sensitivity: 'base' });
+  const mappati    = dettaglio.esami.filter(e => e.esame_mylav_nome).sort(byNome);
+  const nonMappati = dettaglio.esami.filter(e => !e.esame_mylav_nome).sort(byNome);
+
+  const rigaHtml = e => `<tr>
+    <td>${escHtml(e.nome_originale)}</td>
+    <td class="td-muted">${fmtE(e.prezzo)}</td>
+    <td class="td-muted">${e.sconto != null ? e.sconto + '%' : '—'}</td>
+    <td>${e.esame_mylav_nome ? (e.confermato ? '✅ confermato' : '🔎 auto') : '— non mappato'}</td>
+    <td><input class="roi-input" data-esame-concorrente-id="${e.id}" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="nome esame Mylav" style="width:180px"></td>
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="salvaMappaturaManuale(${id}, ${e.id})">Salva</button>
+      ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${id}, ${e.id})">Rimuovi</button>` : ''}
+    </td>
+  </tr>`;
+
+  const tabella = (lista) => `
+    <table class="roi-editable-table" style="margin-bottom:8px">
+      <thead><tr><th>Nome originale</th><th>Prezzo</th><th>Sconto</th><th>Stato</th><th>Nome Mylav</th><th></th></tr></thead>
+      <tbody>${lista.map(rigaHtml).join('')}</tbody>
+    </table>`;
+
+  const gruppo = (titolo, lista) => `
+    <div class="section-card-title" style="margin-top:16px">${titolo} (${lista.length})</div>
+    ${lista.length ? tabella(lista) : '<div class="td-muted" style="padding:4px 0">Nessuno</div>'}`;
+
   wrap.innerHTML = `
     <div class="section-card">
       <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
-      <table class="roi-editable-table">
-        <thead><tr><th>Nome originale</th><th>Prezzo</th><th>Sconto</th><th>Stato</th><th>Nome Mylav</th><th></th></tr></thead>
-        <tbody>
-          ${dettaglio.esami.map(e => `<tr>
-            <td>${escHtml(e.nome_originale)}</td>
-            <td class="td-muted">${fmtE(e.prezzo)}</td>
-            <td class="td-muted">${e.sconto != null ? e.sconto + '%' : '—'}</td>
-            <td>${e.esame_mylav_nome ? (e.confermato ? '✅ confermato' : '🔎 auto') : '— non mappato'}</td>
-            <td><input class="roi-input" data-esame-concorrente-id="${e.id}" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="nome esame Mylav" style="width:180px"></td>
-            <td style="display:flex;gap:6px">
-              <button class="btn-outline" onclick="salvaMappaturaManuale(${id}, ${e.id})">Salva</button>
-              ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${id}, ${e.id})">Rimuovi</button>` : ''}
-            </td>
-          </tr>`).join('')}
-        </tbody>
-      </table>
+      ${gruppo('✅ Mappati', mappati)}
+      ${gruppo('Da mappare', nonMappati)}
     </div>
   `;
 }
