@@ -33,7 +33,7 @@ Due funzioni separate, la seconda pura e testabile senza PDF:
 Costanti:
 - Regex prezzo IT: `\d{1,3}(?:\.\d{3})*,\d{2}` (es. `53,50`, `115,29`, `1.234,50`).
 - Regex riga-prezzo (i due importi incollati + codice, in coda alla riga): `/(\d{1,3}(?:\.\d{3})*,\d{2})(\d{1,3}(?:\.\d{3})*,\d{2})([A-Z][A-Z0-9]*)\s*$/`. Il codice maiuscolo finale è richiesto (riduce i falsi positivi da numeri nelle descrizioni).
-- Prefissi di intestazione/rumore da NON considerare mai come nome (case-insensitive, `startsWith` dopo trim): `Profili`, `Test o Profili`, `Esame`, `Materiale`, `Tutti i prezzi`, `Listino prezzi`, `Indice`, `IDEXX Laboratorio`, `IDEXX Gli analizzatori`.
+- Prefissi di intestazione/rumore da NON considerare mai come nome (case-insensitive, `startsWith` dopo trim): `Profili`, `Test o Profili`, `Tutti i prezzi`, `Listino prezzi`, `Indice`, `IDEXX Laboratorio`, `IDEXX Gli analizzatori`. **Non** includere `Esame`/`Materiale` come prefisso: molti nomi esame iniziano con "Esame ..." (es. "Esame citologico"). La riga di intestazione colonne si riconosce invece perché contiene sia `materiale` sia `tempi`.
 
 Algoritmo a blocchi in `parseRigheDaTesto`:
 - Dividi il testo in righe, `trim` ciascuna, scarta le vuote.
