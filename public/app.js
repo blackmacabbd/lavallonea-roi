@@ -69,6 +69,11 @@ async function loadPiani() {
 
 async function loadConcorrenti() {
   S.concorrenti = await api('/api/concorrenti');
+  // Se c'e' un solo concorrente, selezionalo di default nel Calcolatore ROI
+  // (cosi le mappature si applicano subito senza doverlo scegliere a mano).
+  if (S.roi.concorrenteId == null && S.concorrenti.length === 1) {
+    S.roi.concorrenteId = S.concorrenti[0].id;
+  }
 }
 
 function buildSidebar() {
