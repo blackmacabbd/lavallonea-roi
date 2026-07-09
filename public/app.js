@@ -2092,7 +2092,10 @@ function buildRoiTableHtml() {
     <td></td>
   </tr>`;
   const diffRow = `<tr class="roi-diff-row">
-    <td colspan="13" style="text-align:right;font-size:13px;font-weight:500">Differenziale totale:</td>
+    <td colspan="13" style="text-align:right;font-size:13px;font-weight:500">
+      <span id="roi-diff-note" style="display:${tots.differenziale < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">⚠ Con questo piano il dottore NON risparmia rispetto alla concorrenza</span>
+      Differenziale totale:
+    </td>
     <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'}">${fmtE(tots.differenziale)}</td>
   </tr>`;
 
@@ -2119,7 +2122,10 @@ function buildRoiRigaHtml(r, i) {
   const prezConc = calcPrezConc(totConc, sc, 1);
   const totLL    = ll * n;
   const totPL    = pl * n;
-  const risp     = prezConc - totPL;
+  // Costo Mylav effettivo: prezzo di piano se c'e', altrimenti il listino (senza piano
+  // il dottore paga il listino) -> evita un falso "risparmio" positivo quando manca il piano.
+  const mylavCost = totPL > 0 ? totPL : totLL;
+  const risp     = prezConc - mylavCost;
 
   const rispColor = risp >= 0 ? '#0f76bc' : '#ce181e';
   const scPlaceholder = sc > 0 ? String(sc) : '';
@@ -2175,7 +2181,7 @@ function calcolaRoiTotali() {
     t.tot_tot_lav        += tll;
     t.tot_prezzo_lav_sc  += pl;
     t.tot_tot_prezzo_lav += tpl;
-    t.differenziale      += pc - tpl;
+    t.differenziale      += pc - (tpl > 0 ? tpl : tll); // senza piano usa il listino Mylav
   }
   return t;
 }
@@ -2328,7 +2334,7 @@ function aggiornaRigaDOM(tr) {
   const pc  = calcPrezConc(tc, sc, 1);
   const tll = ll * n;
   const tpl = pl * n;
-  const risp = pc - tpl;
+  const risp = pc - (tpl > 0 ? tpl : tll); // senza piano usa il listino Mylav
   setText(tr, 'tot_conc',         fmtE(tc));
   setText(tr, 'prezzo_conc',      fmtE(pc));
   setText(tr, 'tot_listino_lav',  fmtE(tll));
@@ -2366,6 +2372,8 @@ function aggiornaTotaliDOM() {
   const diffVal = diffRow.querySelectorAll('td');
   const lastTd = diffVal[diffVal.length - 1];
   if (lastTd) { lastTd.textContent = fmtE(tots.differenziale); lastTd.style.color = tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'; }
+  const note = el('roi-diff-note');
+  if (note) note.style.display = tots.differenziale < 0 ? 'inline' : 'none';
 }
 
 let _acTimeout = null;
