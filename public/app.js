@@ -1639,11 +1639,16 @@ async function renderConcorrenteDettaglio(id) {
   // Stato locale della vista (ricerca + ordinamento) — il body si ri-renderizza senza ricaricare.
   S.concDett = { id, esami: dettaglio.esami, nome: dettaglio.concorrente.nome, filtro: '', dir: 1 };
 
+  const hint = S.mappingDaRoi;   // eventuale esame Mylav in mappatura, arrivato dal Calcolatore ROI
+  S.mappingDaRoi = null;         // consuma (una volta sola)
+
   wrap.innerHTML = `
     <div class="section-card" data-concorrente-id="${id}">
       <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
+      ${hint ? `<div class="dett-maphint">Stai mappando l'esame Mylav <strong>«${escHtml(hint)}»</strong></div>` : ''}
+      <div class="dett-maplabel">Inserisci il nome dell'esame della concorrenza che vuoi mappare</div>
       <div class="dett-toolbar">
-        <input class="roi-input dett-search" id="conc-search" placeholder="🔍 Cerca esame…"
+        <input class="roi-input dett-search" id="conc-search" placeholder="🔍 Nome esame concorrenza…"
                oninput="filtraDettaglio(this.value)" autocomplete="off">
         <button class="btn-outline" id="conc-sort" onclick="toggleSortDettaglio()">Ordina A → Z</button>
       </div>
@@ -1930,11 +1935,12 @@ async function mappaturaManualeDaRoi(concorrenteId, esameMyl) {
   const banner = el('roi-match-banner');
   if (banner) banner.style.display = 'none';
   window._currentView = 'concorrenti';
+  S.mappingDaRoi = esameMyl;   // mostrato come contesto nel dettaglio; l'utente cerca il nome CONCORRENTE
   await renderConcorrentiAdmin();
   await renderConcorrenteDettaglio(concorrenteId);
-  const s = el('conc-search');
-  if (s) { s.value = esameMyl; filtraDettaglio(esameMyl); }
   el('concorrente-dettaglio-wrap')?.scrollIntoView({ behavior: 'smooth' });
+  const s = el('conc-search');
+  if (s) s.focus();
   buildSidebar();
 }
 
