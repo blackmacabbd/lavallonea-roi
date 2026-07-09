@@ -1617,9 +1617,33 @@ async function renderConcorrenteDettaglio(id) {
   const wrap = el('concorrente-dettaglio-wrap');
   if (!wrap) return;
 
-  const byNome = (a, b) => a.nome_originale.localeCompare(b.nome_originale, 'it', { sensitivity: 'base' });
-  const mappati    = dettaglio.esami.filter(e => e.esame_mylav_nome).sort(byNome);
-  const nonMappati = dettaglio.esami.filter(e => !e.esame_mylav_nome).sort(byNome);
+  // Stato locale della vista (ricerca + ordinamento) — il body si ri-renderizza senza ricaricare.
+  S.concDett = { id, esami: dettaglio.esami, nome: dettaglio.concorrente.nome, filtro: '', dir: 1 };
+
+  wrap.innerHTML = `
+    <div class="section-card" data-concorrente-id="${id}">
+      <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
+      <div class="dett-toolbar">
+        <input class="roi-input dett-search" id="conc-search" placeholder="🔍 Cerca esame…"
+               oninput="filtraDettaglio(this.value)" autocomplete="off">
+        <button class="btn-outline" id="conc-sort" onclick="toggleSortDettaglio()">Ordina A → Z</button>
+      </div>
+      <div id="conc-dett-body"></div>
+    </div>
+  `;
+  renderDettaglioBody();
+}
+
+function renderDettaglioBody() {
+  const body = el('conc-dett-body');
+  const st = S.concDett;
+  if (!body || !st) return;
+
+  const q = st.filtro.trim().toLowerCase();
+  const byNome = (a, b) => st.dir * a.nome_originale.localeCompare(b.nome_originale, 'it', { sensitivity: 'base' });
+  const filtrati = st.esami.filter(e => !q || e.nome_originale.toLowerCase().includes(q));
+  const mappati    = filtrati.filter(e => e.esame_mylav_nome).sort(byNome);
+  const nonMappati = filtrati.filter(e => !e.esame_mylav_nome).sort(byNome);
 
   const rigaHtml = e => `<tr>
     <td>${escHtml(e.nome_originale)}</td>
@@ -1628,8 +1652,8 @@ async function renderConcorrenteDettaglio(id) {
     <td>${e.esame_mylav_nome ? (e.confermato ? '✅ confermato' : '🔎 auto') : '— non mappato'}</td>
     <td><input class="roi-input" data-esame-concorrente-id="${e.id}" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="nome esame Mylav" style="width:180px"></td>
     <td style="display:flex;gap:6px">
-      <button class="btn-outline" onclick="salvaMappaturaManuale(${id}, ${e.id})">Salva</button>
-      ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${id}, ${e.id})">Rimuovi</button>` : ''}
+      <button class="btn-outline" onclick="salvaMappaturaManuale(${st.id}, ${e.id})">Salva</button>
+      ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${st.id}, ${e.id})">Rimuovi</button>` : ''}
     </td>
   </tr>`;
 
@@ -1639,17 +1663,25 @@ async function renderConcorrenteDettaglio(id) {
       <tbody>${lista.map(rigaHtml).join('')}</tbody>
     </table>`;
 
-  const gruppo = (titolo, lista) => `
-    <div class="section-card-title" style="margin-top:16px">${titolo} (${lista.length})</div>
+  const gruppo = (titolo, cls, lista) => `
+    <div class="grp-title ${cls}">${titolo} (${lista.length})</div>
     ${lista.length ? tabella(lista) : '<div class="td-muted" style="padding:4px 0">Nessuno</div>'}`;
 
-  wrap.innerHTML = `
-    <div class="section-card">
-      <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
-      ${gruppo('✅ Mappati', mappati)}
-      ${gruppo('Da mappare', nonMappati)}
-    </div>
-  `;
+  body.innerHTML = gruppo('✅ Mappati', 'grp-map', mappati) + gruppo('Da mappare', 'grp-nomap', nonMappati);
+}
+
+function filtraDettaglio(v) {
+  if (!S.concDett) return;
+  S.concDett.filtro = v;
+  renderDettaglioBody();
+}
+
+function toggleSortDettaglio() {
+  if (!S.concDett) return;
+  S.concDett.dir = -S.concDett.dir;
+  const btn = el('conc-sort');
+  if (btn) btn.textContent = S.concDett.dir === 1 ? 'Ordina A → Z' : 'Ordina Z → A';
+  renderDettaglioBody();
 }
 
 async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {

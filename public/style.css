@@ -726,15 +726,55 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   border-radius: 8px;
   padding: 18px;
   margin-bottom: 20px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 8px 22px rgba(0,0,0,0.04);
 }
+/* Titolo principale di sezione — colori brand MYLAV (grafite + accento blu) */
 .section-card-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: #374151;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.01em;
   margin-bottom: 14px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #f3f4f6;
+  border-bottom: 1px solid var(--line);
 }
+.section-card-title::before {
+  content: '';
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--red) 0 50%, var(--blue) 50% 100%);
+}
+
+/* Toolbar dettaglio concorrente: ricerca + ordinamento */
+.dett-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.dett-search {
+  flex: 1;
+  min-width: 200px;
+  border: 1px solid var(--line) !important;
+  background: var(--bg-subtle) !important;
+}
+.dett-search:focus { border-color: var(--blue) !important; background: #fff !important; }
+
+/* Titoli di gruppo con colore semantico brand: mappati=blu, da mappare=rosso */
+.grp-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 16px 0 8px;
+}
+.grp-title.grp-map   { color: var(--blue); }
+.grp-title.grp-nomap { color: var(--red); }
 
 /* ═══════════════════════════════════════════════════
    CRONOLOGIA / BADGES
