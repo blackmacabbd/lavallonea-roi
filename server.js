@@ -971,40 +971,54 @@ app.post('/api/pdf/dottore/:fileId/:foglio', requireAuth, express.json({ limit: 
 
 // ── Calcolatore endpoints ──────────────────────────
 
-app.get('/api/esami/autocomplete', (req, res) => {
+app.get('/api/esami/autocomplete', optionalAuth, (req, res) => {
   try {
     const q = String(req.query.q || '').trim();
     if (q.length < 1) return res.json([]);
     const like = `%${q}%`;
-    const rows = db.prepare(`
-      SELECT esame AS nome FROM dati_foglio WHERE esame LIKE ?
-      UNION
-      SELECT nome FROM esami_riferimento WHERE nome LIKE ?
-      UNION
-      SELECT esame_nome AS nome FROM prezzi_esami_custom WHERE esame_nome LIKE ?
-      UNION
-      SELECT esame_mylav_nome AS nome FROM esami_concorrente WHERE esame_mylav_nome IS NOT NULL AND esame_mylav_nome LIKE ?
-      ORDER BY nome LIMIT 20
-    `).all(like, like, like, like);
+    const rows = req.user
+      ? db.prepare(`
+          SELECT esame AS nome FROM dati_foglio df
+            JOIN file_caricati fc ON fc.id = df.file_id
+            JOIN strutture s ON s.id = fc.struttura_id
+            WHERE s.user_id = ? AND esame LIKE ?
+          UNION
+          SELECT nome FROM esami_riferimento WHERE nome LIKE ?
+          UNION
+          SELECT esame_nome AS nome FROM prezzi_esami_custom WHERE user_id = ? AND esame_nome LIKE ?
+          UNION
+          SELECT esame_mylav_nome AS nome FROM esami_concorrente ec
+            JOIN concorrenti c ON c.id = ec.concorrente_id
+            WHERE c.user_id = ? AND esame_mylav_nome IS NOT NULL AND esame_mylav_nome LIKE ?
+          ORDER BY nome LIMIT 20
+        `).all(req.user.id, like, like, req.user.id, like, req.user.id, like)
+      : db.prepare(`
+          SELECT nome FROM esami_riferimento WHERE nome LIKE ?
+          ORDER BY nome LIMIT 20
+        `).all(like);
     res.json(rows.map(r => r.nome));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/esami/prezzi', (req, res) => {
+app.get('/api/esami/prezzi', optionalAuth, (req, res) => {
   try {
     const nome = String(req.query.nome || '').trim();
+    if (!req.user) return res.json({});
     const row = db.prepare(`
       SELECT
-        ROUND(AVG(listino_concorrenza), 2) as listino_concorrenza,
-        ROUND(AVG(listino_lav), 2)         as listino_lav,
-        ROUND(AVG(prezzo_scontato_lav), 2) as prezzo_scontato_lav
-      FROM dati_foglio WHERE LOWER(TRIM(esame)) = LOWER(TRIM(?))
-    `).get(nome);
+        ROUND(AVG(df.listino_concorrenza), 2) as listino_concorrenza,
+        ROUND(AVG(df.listino_lav), 2)         as listino_lav,
+        ROUND(AVG(df.prezzo_scontato_lav), 2) as prezzo_scontato_lav
+      FROM dati_foglio df
+      JOIN file_caricati fc ON fc.id = df.file_id
+      JOIN strutture s ON s.id = fc.struttura_id
+      WHERE s.user_id = ? AND LOWER(TRIM(df.esame)) = LOWER(TRIM(?))
+    `).get(req.user.id, nome);
     res.json(row || {});
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/piani', (req, res) => {
+app.get('/api/piani', optionalAuth, (req, res) => {
   try {
     const all = req.query.all === '1';
     const rows = all
@@ -1014,11 +1028,11 @@ app.get('/api/piani', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/piani/:id/prezzo', (req, res) => {
+app.get('/api/piani/:id/prezzo', optionalAuth, (req, res) => {
   try {
     const { esame } = req.query;
     if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
-    const result = piani.resolvePrezzo(db, Number(req.params.id), esame);
+    const result = piani.resolvePrezzo(db, Number(req.params.id), esame, req.user ? req.user.id : null);
     if (result.fonte === 'base_fallback') {
       console.warn(`Prezzo mancante per piano ${req.params.id}, esame "${esame}" — uso il prezzo base come fallback`);
     }
@@ -1026,37 +1040,38 @@ app.get('/api/piani/:id/prezzo', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/piani/consiglio', (req, res) => {
+app.get('/api/piani/consiglio', optionalAuth, (req, res) => {
   try {
     const { esame } = req.query;
     if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
-    res.json(piani.pianoMigliorePerEsame(db, esame));
+    res.json(piani.pianoMigliorePerEsame(db, esame, req.user ? req.user.id : null));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/piani/consiglio-totale', express.json(), (req, res) => {
+app.post('/api/piani/consiglio-totale', optionalAuth, express.json(), (req, res) => {
   try {
     const { esami, pianoIdAttuale } = req.body || {};
     if (!Array.isArray(esami)) return res.status(400).json({ error: 'Parametro esami mancante' });
-    const migliore = piani.pianoMiglioreTotale(db, esami);
+    const userId = req.user ? req.user.id : null;
+    const migliore = piani.pianoMiglioreTotale(db, esami, userId);
     let totaleAttuale = null;
     if (migliore && pianoIdAttuale) {
-      totaleAttuale = piani.totalePiano(db, Number(pianoIdAttuale), esami.filter(e => e && e.nome)).totale;
+      totaleAttuale = piani.totalePiano(db, Number(pianoIdAttuale), esami.filter(e => e && e.nome), userId).totale;
     }
     res.json(migliore ? { ...migliore, totaleAttuale } : null);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // Classifica di tutti i piani attivi per gli esami dati (dal piu' conveniente al meno)
-app.post('/api/piani/classifica', express.json(), (req, res) => {
+app.post('/api/piani/classifica', optionalAuth, express.json(), (req, res) => {
   try {
     const { esami } = req.body || {};
     if (!Array.isArray(esami)) return res.status(400).json({ error: 'Parametro esami mancante' });
-    res.json(piani.pianiClassifica(db, esami));
+    res.json(piani.pianiClassifica(db, esami, req.user ? req.user.id : null));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
+app.get('/api/esami-riferimento/prezzo-base', optionalAuth, (req, res) => {
   try {
     const { nome } = req.query;
     res.json({ prezzo_base: nome ? piani.getPrezzoBase(db, nome) : null });
@@ -1064,32 +1079,39 @@ app.get('/api/esami-riferimento/prezzo-base', (req, res) => {
 });
 
 // Tutti i nomi del catalogo esami Mylav (per autocomplete/datalist)
-app.get('/api/esami-riferimento/nomi', (req, res) => {
+app.get('/api/esami-riferimento/nomi', optionalAuth, (req, res) => {
   try {
-    // Tutti i nomi esame Mylav "conosciuti": catalogo + storico + custom + gia' mappati.
-    const nomi = db.prepare(`
-      SELECT nome FROM esami_riferimento
-      UNION SELECT esame FROM dati_foglio WHERE esame IS NOT NULL AND esame != ''
-      UNION SELECT esame_nome FROM prezzi_esami_custom
-      UNION SELECT esame_mylav_nome FROM esami_concorrente WHERE esame_mylav_nome IS NOT NULL
-      ORDER BY nome
-    `).all().map(r => r.nome);
+    // Tutti i nomi esame Mylav "conosciuti": catalogo (+ storico/custom/mappati dell'utente se loggato).
+    const nomi = req.user
+      ? db.prepare(`
+          SELECT nome FROM esami_riferimento
+          UNION SELECT df.esame FROM dati_foglio df
+            JOIN file_caricati fc ON fc.id = df.file_id
+            JOIN strutture s ON s.id = fc.struttura_id
+            WHERE s.user_id = ? AND df.esame IS NOT NULL AND df.esame != ''
+          UNION SELECT esame_nome FROM prezzi_esami_custom WHERE user_id = ?
+          UNION SELECT ec.esame_mylav_nome FROM esami_concorrente ec
+            JOIN concorrenti c ON c.id = ec.concorrente_id
+            WHERE c.user_id = ? AND ec.esame_mylav_nome IS NOT NULL
+          ORDER BY nome
+        `).all(req.user.id, req.user.id, req.user.id).map(r => r.nome)
+      : db.prepare(`SELECT nome FROM esami_riferimento ORDER BY nome`).all().map(r => r.nome);
     res.json(nomi);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/prezzi-custom', express.json(), (req, res) => {
+app.post('/api/prezzi-custom', requireAuth, express.json(), (req, res) => {
   try {
     const { esame_nome, piano_id, prezzo } = req.body || {};
     if (!esame_nome || !piano_id || prezzo == null) {
       return res.status(400).json({ error: 'Dati mancanti (esame_nome, piano_id, prezzo)' });
     }
-    piani.salvaPrezzoCustom(db, esame_nome, Number(piano_id), Number(prezzo));
+    piani.salvaPrezzoCustom(db, esame_nome, Number(piano_id), Number(prezzo), req.user.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/piani/:id', (req, res) => {
+app.get('/api/piani/:id', optionalAuth, (req, res) => {
   try {
     const piano = db.prepare(`SELECT * FROM piani_sconto WHERE id = ?`).get(req.params.id);
     if (!piano) return res.status(404).json({ error: 'Piano non trovato' });
@@ -1103,7 +1125,7 @@ app.get('/api/piani/:id', (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/piani/:id/prezzi', express.json({ limit: '2mb' }), (req, res) => {
+app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (req, res) => {
   try {
     const { prezzi } = req.body || {};
     if (!Array.isArray(prezzi)) return res.status(400).json({ error: 'Formato non valido, atteso { prezzi: [...] }' });
@@ -1120,7 +1142,7 @@ app.put('/api/piani/:id/prezzi', express.json({ limit: '2mb' }), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/piani/:id/attivo', express.json(), (req, res) => {
+app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
   try {
     const { attivo } = req.body || {};
     db.prepare(`UPDATE piani_sconto SET attivo = ? WHERE id = ?`).run(attivo ? 1 : 0, req.params.id);
@@ -1128,7 +1150,7 @@ app.put('/api/piani/:id/attivo', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/piani/import', express.json({ limit: '10mb' }), (req, res) => {
+app.post('/api/piani/import', requireAuth, express.json({ limit: '10mb' }), (req, res) => {
   try {
     const data = req.body;
     if (!data || !data.plans || !data.exams_base_price) {
