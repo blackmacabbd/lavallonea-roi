@@ -992,6 +992,21 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 
 .roi-piano-btn { white-space: nowrap; border-radius: 20px; }
 
+/* Pillole ROI: icona blu = piano MYLAV, icona rossa = concorrente */
+.roi-pill-myl::before, .roi-pill-conc::before {
+  content: '';
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 7px;
+  vertical-align: middle;
+}
+.roi-pill-myl::before  { background: var(--blue); }
+.roi-pill-conc::before { background: var(--red); }
+.roi-pill-myl  { border-color: var(--blue); }
+.roi-pill-conc { border-color: var(--red); }
+
 .roi-piano-panel {
   position: absolute;
   top: 38px;

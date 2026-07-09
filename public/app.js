@@ -1418,7 +1418,10 @@ async function renderConcorrentiAdmin() {
                 <td class="td-muted">${fmtDate(c.data_import)}</td>
                 <td class="td-muted">${c.n_esami}</td>
                 <td class="td-muted">${c.n_mappati} / ${c.n_esami}</td>
-                <td><button class="btn-outline" onclick="renderConcorrenteDettaglio(${c.id})">Vedi esami</button></td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn-outline" onclick="renderConcorrenteDettaglio(${c.id})">Vedi esami</button>
+                  <button class="btn-outline" onclick="eliminaConcorrenteUI(${c.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
+                </td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -1520,6 +1523,17 @@ async function confermaImportConcorrente() {
   } catch (e) {
     alert('Errore import: ' + e.message);
   }
+}
+
+async function eliminaConcorrenteUI(id) {
+  const c = S.concorrenti.find(x => x.id === id);
+  const nome = c ? c.nome : 'questo concorrente';
+  if (!confirm(`Eliminare "${nome}" e tutti i suoi esami? L'operazione non è reversibile.`)) return;
+  try {
+    await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
+    await loadConcorrenti();
+    renderConcorrentiAdmin();
+  } catch (e) { alert('Errore: ' + e.message); }
 }
 
 // ── Import PDF (best-effort + revisione) ──
@@ -1723,14 +1737,14 @@ function buildRoiSectionHtml() {
       </div>
       <div class="roi-toolbar-controls">
         <div style="position:relative">
-          <button class="btn-outline roi-piano-btn" id="roi-piano-btn"
+          <button class="btn-outline roi-piano-btn roi-pill-myl" id="roi-piano-btn"
                   onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
             Piano: ${escHtml(pianoSelezionatoNome() || 'Nessuno')} ▾
           </button>
           <div id="roi-piano-panel" class="roi-piano-panel" style="display:none"></div>
         </div>
         <div style="position:relative">
-          <button class="btn-outline roi-piano-btn" id="roi-concorrente-btn"
+          <button class="btn-outline roi-piano-btn roi-pill-conc" id="roi-concorrente-btn"
                   onclick="toggleConcorrentePanel()" title="${escHtml(concorrenteSelezionatoNome() || '')}">
             Concorrente: ${escHtml(concorrenteSelezionatoNome() || 'Nessuno')} ▾
           </button>

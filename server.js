@@ -1072,6 +1072,14 @@ app.post('/api/concorrenti/:id/rimuovi-match', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.delete('/api/concorrenti/:id', (req, res) => {
+  try {
+    const ok = concorrenti.eliminaConcorrente(db, req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Concorrente non trovato' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/concorrenti/import-pdf', uploadPdf.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Nessun file' });
   try {
