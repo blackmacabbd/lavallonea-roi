@@ -22,6 +22,7 @@ const S = {
   auth: {
     token: localStorage.getItem('authToken') || null,
     email: localStorage.getItem('authEmail') || null,
+    isAdmin: localStorage.getItem('authIsAdmin') === '1',
     guest: false
   }
 };
@@ -1405,17 +1406,21 @@ async function renderPiani() {
   }
 
   S.pianiAdmin = elenco;
+  const admin = !!(S.auth && S.auth.isAdmin);
   setMain(`
     <div class="page-header">
       <div><div class="page-title">Gestione piani di scontistica</div>
         <div class="page-subtitle">${elenco.length} piani (attivi e disattivati)</div>
       </div>
       <div class="page-actions">
-        <label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
-        <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">
+        ${admin ? `<label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
+        <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">` : ''}
       </div>
     </div>
     <div class="page-body">
+      ${admin ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
+        <div class="empty-sub">🔒 Solo l'amministratore può modificare il catalogo. Puoi comunque consultare piani e prezzi.</div>
+      </div>`}
       <div class="dett-toolbar" style="margin-bottom:14px">
         <input class="roi-input dett-search" id="piani-search" placeholder="🔍 Cerca piano per nome o categoria…"
                value="${escHtml(S.pianiFiltro || '')}" oninput="filtraPiani(this.value)" autocomplete="off">
@@ -1437,6 +1442,7 @@ async function renderPiani() {
 function renderPianiBody() {
   const tb = el('piani-tbody');
   if (!tb) return;
+  const admin = !!(S.auth && S.auth.isAdmin);
   const q = (S.pianiFiltro || '').trim().toLowerCase();
   const list = (S.pianiAdmin || []).filter(p =>
     !q || p.nome.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
@@ -1446,8 +1452,10 @@ function renderPianiBody() {
     <td class="td-muted">${p.anno || '—'}</td>
     <td>${p.attivo ? '✅' : '❌'}</td>
     <td style="display:flex;gap:6px">
-      <button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
-      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>
+      ${admin
+        ? `<button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
+      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>`
+        : `<button class="btn-outline" onclick="renderPianoEdit(${p.id})">Vedi prezzi</button>`}
     </td>
   </tr>`).join('') || '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:16px">Nessun piano trovato</td></tr>';
 }
@@ -1458,6 +1466,7 @@ function filtraPiani(v) {
 }
 
 async function togglePianoAttivo(id, attivo) {
+  if (!S.auth.isAdmin) { alert('Solo l\'amministratore può modificare il catalogo'); return; }
   try {
     await api(`/api/piani/${id}/attivo`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1480,25 +1489,28 @@ async function renderPianoEdit(id) {
   }
   const wrap = el('piano-edit-wrap');
   if (!wrap) return;
+  const admin = !!(S.auth && S.auth.isAdmin);
   wrap.innerHTML = `
     <div class="section-card">
       <div class="section-card-title">Prezzi — ${escHtml(data.piano.nome)}</div>
+      ${admin ? '' : `<div class="empty-sub" style="margin-bottom:10px">🔒 Solo l'amministratore può modificare il catalogo.</div>`}
       <table class="roi-editable-table">
         <thead><tr><th>Esame</th><th>Prezzo base</th><th>Prezzo per questo piano</th></tr></thead>
         <tbody>
           ${data.prezzi.map(p => `<tr>
             <td>${escHtml(p.esame_nome)}</td>
             <td class="td-muted">${fmtE(p.prezzo_base)}</td>
-            <td><input class="roi-input roi-num" data-esame-id="${p.esame_id}" value="${p.prezzo != null ? p.prezzo : ''}" placeholder="0.00"></td>
+            <td><input class="roi-input roi-num" data-esame-id="${p.esame_id}" value="${p.prezzo != null ? p.prezzo : ''}" placeholder="0.00" ${admin ? '' : 'disabled'}></td>
           </tr>`).join('')}
         </tbody>
       </table>
-      <button class="btn-primary mt-4" onclick="salvaPianoPrezzi(${id})">Salva prezzi</button>
+      ${admin ? `<button class="btn-primary mt-4" onclick="salvaPianoPrezzi(${id})">Salva prezzi</button>` : ''}
     </div>
   `;
 }
 
 async function salvaPianoPrezzi(id) {
+  if (!S.auth.isAdmin) { alert('Solo l\'amministratore può modificare il catalogo'); return; }
   const wrap = el('piano-edit-wrap');
   const inputs = wrap.querySelectorAll('[data-esame-id]');
   const prezzi = Array.from(inputs)
@@ -1517,6 +1529,7 @@ async function salvaPianoPrezzi(id) {
 
 async function importaPianiJson(inputEl) {
   if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); inputEl.value = ''; return; }
+  if (!S.auth.isAdmin) { alert('Solo l\'amministratore può modificare il catalogo'); inputEl.value = ''; return; }
   const file = inputEl.files[0];
   if (!file) return;
   const text = await file.text();
@@ -2793,7 +2806,11 @@ async function boot() {
   if (S.auth.token) {
     try {
       const me = await fetch('/api/auth/me', { headers: authHeaders() }).then(r => r.ok ? r.json() : null);
-      if (me) { S.auth.email = me.email; nascondiAuthScreen(); return avviaApp(); }
+      if (me) {
+        S.auth.email = me.email; S.auth.isAdmin = !!me.isAdmin;
+        localStorage.setItem('authIsAdmin', me.isAdmin ? '1' : '0');
+        nascondiAuthScreen(); return avviaApp();
+      }
     } catch (_) {}
   }
   mostraAuthScreen();
@@ -2802,33 +2819,34 @@ async function boot() {
 document.addEventListener('DOMContentLoaded', boot);
 
 // ── Autenticazione ─────────────────────────────────
-function salvaSessione(token, email) {
-  S.auth.token = token; S.auth.email = email; S.auth.guest = false;
+function salvaSessione(token, email, isAdmin) {
+  S.auth.token = token; S.auth.email = email; S.auth.guest = false; S.auth.isAdmin = !!isAdmin;
   localStorage.setItem('authToken', token); localStorage.setItem('authEmail', email);
+  localStorage.setItem('authIsAdmin', isAdmin ? '1' : '0');
 }
 
 async function authLogin(email, password) {
   const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
   const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Login fallito');
-  salvaSessione(d.token, d.email); nascondiAuthScreen(); avviaApp();
+  salvaSessione(d.token, d.email, d.isAdmin); nascondiAuthScreen(); avviaApp();
 }
 
 async function authRegister(email, password) {
   const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
   const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Registrazione fallita');
-  salvaSessione(d.token, d.email);
+  salvaSessione(d.token, d.email, d.isAdmin);
   return d.recoveryCode; // il chiamante mostra la schermata "salva il codice"
 }
 
 function authGuest() {
-  S.auth = { token: null, email: null, guest: true };
+  S.auth = { token: null, email: null, isAdmin: false, guest: true };
   nascondiAuthScreen(); avviaApp();
 }
 
 async function authLogout(silent) {
   if (S.auth.token) { try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (_) {} }
-  S.auth = { token: null, email: null, guest: false };
-  localStorage.removeItem('authToken'); localStorage.removeItem('authEmail');
+  S.auth = { token: null, email: null, isAdmin: false, guest: false };
+  localStorage.removeItem('authToken'); localStorage.removeItem('authEmail'); localStorage.removeItem('authIsAdmin');
   mostraAuthScreen();
 }
 

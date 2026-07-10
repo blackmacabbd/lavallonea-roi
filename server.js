@@ -13,7 +13,11 @@ const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
 const app  = express();
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3000;
+
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'direttorecommerciale@mylav.net').trim().toLowerCase();
+function isAdmin(user) { return !!user && !!user.email && user.email.toLowerCase() === ADMIN_EMAIL; }
 
 const DB_PATH     = process.env.DB_PATH     || path.join(__dirname, 'db', 'database.sqlite');
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, 'uploads');
@@ -184,6 +188,12 @@ function requireAuth(req, res, next) {
   req.user = u; next();
 }
 function optionalAuth(req, res, next) { req.user = userFromToken(req); next(); }
+function requireAdmin(req, res, next) {
+  const u = userFromToken(req);
+  if (!u) return res.status(401).json({ error: 'Autenticazione richiesta' });
+  if (u.email.toLowerCase() !== ADMIN_EMAIL) return res.status(403).json({ error: 'Solo l\'amministratore può modificare il catalogo' });
+  req.user = u; next();
+}
 
 // ── Excel helpers ──────────────────────────────────
 const norm = piani.norm;
@@ -482,7 +492,7 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
 
     const tpl = mailer.templateRecovery(recoveryCode);
     mailer.sendMail({ to: email, subject: tpl.subject, html: tpl.html }).catch(() => {});
-    res.json({ token, email, recoveryCode });
+    res.json({ token, email, recoveryCode, isAdmin: isAdmin({ email }) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -495,7 +505,7 @@ app.post('/api/auth/login', authRateLimit, express.json(), (req, res) => {
     rateLimitReset(req._rateLimitKey);
     const token = auth.genToken();
     db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, u.id);
-    res.json({ token, email: u.email });
+    res.json({ token, email: u.email, isAdmin: isAdmin(u) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -506,7 +516,7 @@ app.post('/api/auth/logout', (req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/auth/me', requireAuth, (req, res) => res.json({ email: req.user.email }));
+app.get('/api/auth/me', requireAuth, (req, res) => res.json({ email: req.user.email, isAdmin: isAdmin(req.user) }));
 
 app.post('/api/auth/request-reset', authRateLimit, express.json(), async (req, res) => {
   try {
@@ -1229,7 +1239,7 @@ app.get('/api/piani/:id', optionalAuth, (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (req, res) => {
+app.put('/api/piani/:id/prezzi', requireAdmin, express.json({ limit: '2mb' }), (req, res) => {
   try {
     const { prezzi } = req.body || {};
     if (!Array.isArray(prezzi)) return res.status(400).json({ error: 'Formato non valido, atteso { prezzi: [...] }' });
@@ -1246,7 +1256,7 @@ app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (r
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
+app.put('/api/piani/:id/attivo', requireAdmin, express.json(), (req, res) => {
   try {
     const { attivo } = req.body || {};
     db.prepare(`UPDATE piani_sconto SET attivo = ? WHERE id = ?`).run(attivo ? 1 : 0, req.params.id);
@@ -1254,7 +1264,7 @@ app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/piani/import', requireAuth, express.json({ limit: '10mb' }), (req, res) => {
+app.post('/api/piani/import', requireAdmin, express.json({ limit: '10mb' }), (req, res) => {
   try {
     const data = req.body;
     if (!data || !data.plans || !data.exams_base_price) {
