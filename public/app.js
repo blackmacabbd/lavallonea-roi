@@ -165,8 +165,37 @@ function buildSidebar() {
     </div>
   `;
 
+  html += `
+    <div class="sidebar-account">
+      <button class="account-btn" onclick="toggleAccountMenu()" title="Account">
+        <span class="account-ico">👤</span>
+        <span class="account-email">${S.auth.guest ? 'Ospite' : (S.auth.email || 'Account')}</span>
+      </button>
+      <div id="account-menu" class="account-menu" style="display:none">
+        ${S.auth.guest || !S.auth.token ? `
+          <div onclick="mostraAuthScreen('login')">Accedi</div>
+          <div onclick="mostraAuthScreen('register')">Registrati</div>
+          <div onclick="authGuest()">Entra come ospite</div>` : `
+          <div onclick="authLogout()">Logout</div>
+          <div onclick="mostraAuthScreen('login')">Cambia account</div>`}
+      </div>
+    </div>`;
+
   nav.innerHTML = html;
 }
+
+function toggleAccountMenu() {
+  const m = el('account-menu');
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+
+// Chiude il menu account cliccando fuori (bottone o popover).
+document.addEventListener('click', e => {
+  const m = el('account-menu');
+  if (!m || m.style.display === 'none') return;
+  if (e.target.closest('.sidebar-account')) return;
+  m.style.display = 'none';
+});
 
 function toggleGestione() {
   S.gestioneOpen = !S.gestioneOpen;
@@ -1214,6 +1243,7 @@ function showStatus(type, msg) {
 }
 
 async function doUpload(file, force = false) {
+  if (S.auth.guest || !S.auth.token) { showStatus('error', '❌ Accedi per salvare i dati'); return; }
   showStatus('loading', '<div class="spinner" style="width:18px;height:18px"></div> Elaborazione...');
 
   const fd = new FormData();
@@ -1486,6 +1516,7 @@ async function salvaPianoPrezzi(id) {
 }
 
 async function importaPianiJson(inputEl) {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); inputEl.value = ''; return; }
   const file = inputEl.files[0];
   if (!file) return;
   const text = await file.text();
@@ -1625,6 +1656,7 @@ function renderImportConcorrenteForm(parsed) {
 }
 
 async function confermaImportConcorrente() {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
   const nomeConcorrente = el('import-nome-concorrente')?.value.trim();
   const colEsame  = Number(el('import-col-esame')?.value);
   const colPrezzo = Number(el('import-col-prezzo')?.value);
@@ -1717,6 +1749,7 @@ function renderImportPdfForm(parsed, nomeDefault) {
 }
 
 async function confermaImportPdf() {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
   const nomeConcorrente = el('import-pdf-nome')?.value.trim();
   if (!nomeConcorrente) return alert('Inserisci il nome del concorrente');
   const wrap = el('concorrente-import-wrap');
@@ -1835,6 +1868,7 @@ function toggleSortDettaglio() {
 }
 
 async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
   const inp = document.querySelector(`[data-esame-concorrente-id="${esameConcorrenteId}"]`);
   const esameMylavNome = inp ? inp.value.trim() : '';
   if (!esameMylavNome) return alert('Scrivi il nome esame Mylav corrispondente');
@@ -1859,6 +1893,7 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
 }
 
 async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
   try {
     await api(`/api/concorrenti/${concorrenteId}/rimuovi-match`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2686,6 +2721,7 @@ function getRoiRigheValide() {
 }
 
 async function salvaCalcolo() {
+  if (S.auth.guest || !S.auth.token) { roiMsg('Accedi per salvare i dati', 'error'); return; }
   const righe    = getRoiRigheValide();
   const struttura = (document.querySelector('.roi-struttura-inp')?.value || S.roi.struttura || '').trim();
 
