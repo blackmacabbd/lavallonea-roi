@@ -629,8 +629,18 @@ app.get('/api/strutture/:id/aggregato', requireAuth, (req, res) => {
   }
 });
 
-app.get('/api/dashboard', requireAuth, (req, res) => {
+app.get('/api/dashboard', optionalAuth, (req, res) => {
   try {
+    if (!req.user) {
+      return res.json({
+        strutture_count: 0,
+        file_count: 0,
+        differenziale_totale: 0,
+        ultimi_file: [],
+        per_struttura: []
+      });
+    }
+
     const strutture_count = db.prepare('SELECT COUNT(*) as cnt FROM strutture WHERE user_id = ?').get(req.user.id).cnt;
     const file_count      = db.prepare(`
       SELECT COUNT(*) as cnt FROM file_caricati fc
