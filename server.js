@@ -416,6 +416,53 @@ app.get('/vendor/chart.min.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/chart.js/dist/chart.umd.min.js'));
 });
 
+// ── Rate limiting (best-effort, in-memory, nessuna dipendenza) ─────────────
+// Finestra scorrevole per IP + email/marker: max RATE_LIMIT_MAX tentativi ogni
+// RATE_LIMIT_WINDOW_MS. Pensato per le rotte di autenticazione (login, reset,
+// recover); non e' persistente e si azzera al riavvio del processo — accettabile
+// per una protezione "best effort" contro brute-force banali.
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const RATE_LIMIT_MAX = 10;
+const rateLimitHits = new Map(); // chiave -> array di timestamp (ms)
+
+function rateLimitKey(req) {
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+  const marker = auth.normEmail(req.body?.email) || 'anon';
+  return ip + ':' + marker;
+}
+
+function rateLimitCheck(key) {
+  const now = Date.now();
+  let hits = rateLimitHits.get(key);
+  if (!hits) { hits = []; rateLimitHits.set(key, hits); }
+  while (hits.length && now - hits[0] > RATE_LIMIT_WINDOW_MS) hits.shift();
+  if (hits.length >= RATE_LIMIT_MAX) return false;
+  hits.push(now);
+  return true;
+}
+
+function rateLimitReset(key) { rateLimitHits.delete(key); }
+
+// Pulizia periodica delle chiavi scadute (facoltativa, evita crescita illimitata
+// della Map su processi a lunga vita). unref() cosi' non tiene vivo il processo.
+const rateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, hits] of rateLimitHits) {
+    while (hits.length && now - hits[0] > RATE_LIMIT_WINDOW_MS) hits.shift();
+    if (hits.length === 0) rateLimitHits.delete(key);
+  }
+}, RATE_LIMIT_WINDOW_MS);
+if (typeof rateLimitCleanup.unref === 'function') rateLimitCleanup.unref();
+
+function authRateLimit(req, res, next) {
+  const key = rateLimitKey(req);
+  if (!rateLimitCheck(key)) {
+    return res.status(429).json({ error: 'Troppi tentativi, riprova più tardi' });
+  }
+  req._rateLimitKey = key;
+  next();
+}
+
 // ── Auth ────────────────────────────────────────────
 app.post('/api/auth/register', express.json(), async (req, res) => {
   try {
@@ -439,12 +486,13 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/auth/login', express.json(), (req, res) => {
+app.post('/api/auth/login', authRateLimit, express.json(), (req, res) => {
   try {
     const email = auth.normEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
     if (!u || !auth.verifyPassword(password, u.pass_hash)) return res.status(401).json({ error: 'Email o password errati' });
+    rateLimitReset(req._rateLimitKey);
     const token = auth.genToken();
     db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, u.id);
     res.json({ token, email: u.email });
@@ -460,7 +508,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ email: req.user.email }));
 
-app.post('/api/auth/request-reset', express.json(), async (req, res) => {
+app.post('/api/auth/request-reset', authRateLimit, express.json(), async (req, res) => {
   try {
     const email = auth.normEmail(req.body?.email);
     const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
@@ -475,7 +523,7 @@ app.post('/api/auth/request-reset', express.json(), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/auth/reset-password', express.json(), (req, res) => {
+app.post('/api/auth/reset-password', authRateLimit, express.json(), (req, res) => {
   try {
     const email = auth.normEmail(req.body?.email);
     const code = String(req.body?.code || '').trim();
@@ -492,7 +540,7 @@ app.post('/api/auth/reset-password', express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/auth/recover-full', express.json(), (req, res) => {
+app.post('/api/auth/recover-full', authRateLimit, express.json(), (req, res) => {
   try {
     const recoveryCode = String(req.body?.recoveryCode || '');
     const newEmail = auth.normEmail(req.body?.newEmail);
@@ -1280,7 +1328,7 @@ app.post('/api/concorrenti/:id/conferma-match', requireAuth, express.json(), (re
     }
     const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
     if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
-    concorrenti.confermaMatch(db, Number(esameConcorrenteId), esameMylavNome);
+    concorrenti.confermaMatch(db, Number(req.params.id), Number(esameConcorrenteId), esameMylavNome);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1291,7 +1339,7 @@ app.post('/api/concorrenti/:id/rimuovi-match', requireAuth, express.json(), (req
     if (!esameConcorrenteId) return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId)' });
     const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
     if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
-    concorrenti.rimuoviMatch(db, Number(esameConcorrenteId));
+    concorrenti.rimuoviMatch(db, Number(req.params.id), Number(esameConcorrenteId));
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
