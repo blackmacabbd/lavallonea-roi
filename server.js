@@ -518,6 +518,22 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/me', requireAuth, (req, res) => res.json({ email: req.user.email, isAdmin: isAdmin(req.user) }));
 
+// Diagnostica invio email (solo admin): manda un'email di prova e ritorna
+// l'esito nella risposta HTTP, senza dover leggere i log del deploy.
+app.get('/api/auth/_mailtest', requireAdmin, async (req, res) => {
+  const to = String(req.query.to || req.user.email);
+  try {
+    const result = await mailer.sendMail({
+      to,
+      subject: 'Test invio — MYLAV ROI',
+      html: '<p>Email di prova per verificare la configurazione di invio.</p>'
+    });
+    res.json({ to, ...result });
+  } catch (err) {
+    res.status(500).json({ to, sent: false, error: err.message });
+  }
+});
+
 app.post('/api/auth/request-reset', authRateLimit, express.json(), async (req, res) => {
   try {
     const email = auth.normEmail(req.body?.email);
