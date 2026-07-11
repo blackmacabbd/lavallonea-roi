@@ -116,19 +116,41 @@ function buildSidebar() {
   }
 
   for (const s of S.strutture) {
-    const primoFoglio = s.fogli && s.fogli.length ? s.fogli[0] : null;
-    const attiva = (window._currentStrutturaId === s.id) ? 'active' : '';
-    const onclick = primoFoglio
-      ? `navigateToStruttura(${s.id}, '${primoFoglio}')`
-      : `navigate('dashboard')`;
-    html += `
-      <div class="struttura-group">
-        <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
-          <span class="sname">${s.nome}</span>
-          <span class="struttura-del" title="Elimina struttura" onclick="event.stopPropagation(); eliminaStrutturaUI(${s.id})">×</span>
+    const files = s.files || [];
+    if (files.length > 1) {
+      // Piu' calcoli salvati sotto la stessa struttura: una riga per file,
+      // etichettate nome, nome(2), nome(3)... in ordine di creazione.
+      files.forEach((f, i) => {
+        const label = i === 0 ? s.nome : `${s.nome}(${i + 1})`;
+        const foglio = f.fogli && f.fogli.length ? f.fogli[0] : '';
+        const attiva = (window._currentFileId === f.id) ? 'active' : '';
+        const onclick = foglio
+          ? `navigate('foglio', { fileId: ${f.id}, foglio: '${foglio}', strutturaId: ${s.id} })`
+          : `navigate('dashboard')`;
+        html += `
+          <div class="struttura-group">
+            <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
+              <span class="sname">${escHtml(label)}</span>
+              <span class="struttura-del" title="Elimina questo calcolo" onclick="event.stopPropagation(); eliminaFileSidebarUI(${f.id}, '${escHtml(label)}')">×</span>
+            </div>
+          </div>
+        `;
+      });
+    } else {
+      const primoFoglio = s.fogli && s.fogli.length ? s.fogli[0] : null;
+      const attiva = (window._currentStrutturaId === s.id) ? 'active' : '';
+      const onclick = primoFoglio
+        ? `navigateToStruttura(${s.id}, '${primoFoglio}')`
+        : `navigate('dashboard')`;
+      html += `
+        <div class="struttura-group">
+          <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
+            <span class="sname">${escHtml(s.nome)}</span>
+            <span class="struttura-del" title="Elimina struttura" onclick="event.stopPropagation(); eliminaStrutturaUI(${s.id})">×</span>
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
   }
 
   html += `
@@ -215,6 +237,17 @@ async function eliminaStrutturaUI(id) {
   } catch (e) { alert('Errore: ' + e.message); }
 }
 
+// Elimina un singolo calcolo (file) quando una struttura ne ha piu' di uno in sidebar.
+async function eliminaFileSidebarUI(fileId, label) {
+  if (!confirm(`Eliminare il calcolo "${label}"? L'operazione non è reversibile.`)) return;
+  try {
+    await api(`/api/cronologia/${fileId}`, { method: 'DELETE' });
+    await loadStrutture();
+    buildSidebar();
+    if (window._currentFileId === fileId) navigate('dashboard');
+  } catch (e) { alert('Errore: ' + e.message); }
+}
+
 function isActive(view, extra) {
   if (window._currentView === view) {
     if (extra === undefined) return 'active';
@@ -244,6 +277,7 @@ function navigate(view, params = {}) {
   window._currentView        = view;
   window._currentStrutturaId = params.strutturaId || null;
   window._currentFoglio      = params.foglio      || null;
+  window._currentFileId      = params.fileId      || null;
 
   setMain('<div class="page-loading"><div class="spinner"></div></div>');
 

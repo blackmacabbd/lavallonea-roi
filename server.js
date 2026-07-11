@@ -627,7 +627,17 @@ app.get('/api/strutture', requireAuth, (req, res) => {
         WHERE fc.struttura_id = ?
         ORDER BY df.foglio
       `).all(s.id).map(r => r.foglio);
-      return { ...s, file_count: fileCnt, fogli };
+      // Elenco file in ordine di creazione (id crescente): serve alla sidebar per
+      // mostrare piu' calcoli salvati sotto la stessa struttura come voci distinte.
+      const files = db.prepare(`
+        SELECT fc.id, fc.nome_file, GROUP_CONCAT(DISTINCT df.foglio) as fogli
+        FROM file_caricati fc
+        LEFT JOIN dati_foglio df ON df.file_id = fc.id
+        WHERE fc.struttura_id = ?
+        GROUP BY fc.id
+        ORDER BY fc.id ASC
+      `).all(s.id).map(f => ({ id: f.id, nome_file: f.nome_file, fogli: (f.fogli || '').split(',').filter(Boolean) }));
+      return { ...s, file_count: fileCnt, fogli, files };
     });
     res.json(result);
   } catch (err) {
