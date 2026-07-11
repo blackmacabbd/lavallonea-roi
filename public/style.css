@@ -432,6 +432,23 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
 .roi-actions-bar .btn-outline { font-size: 12px; }
 .roi-actions-sep { flex: 1; min-width: 8px; }
 
+/* Pulsante grande "Rimuovi tutto": azione distruttiva, ben visibile */
+.roi-clear-all-btn {
+  display: block;
+  width: 100%;
+  margin-top: 14px;
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--red);
+  background: var(--red-tint);
+  border: 2px solid var(--red-line);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+.roi-clear-all-btn:hover { background: var(--red-line); border-color: var(--red); }
+
 /* ═══════════════════════════════════════════════════
    CHARTS
    ═══════════════════════════════════════════════════ */

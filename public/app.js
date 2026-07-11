@@ -1971,7 +1971,18 @@ function buildRoiActionsHtml() {
       <button class="btn-outline" onclick="navigate('piani')" style="color:var(--blue);border-color:var(--blue)">+ Aggiungi piano MYL</button>
       <button class="btn-outline" onclick="navigate('concorrenti')" style="color:var(--red);border-color:var(--red)">+ Aggiungi piano concorrenza</button>
     </div>
+    <button class="roi-clear-all-btn" onclick="rimuoviTuttoRoi()">🗑️ Rimuovi tutto</button>
     <div id="roi-classifica"></div>`;
+}
+
+// Azzera completamente il calcolatore ROI: righe, struttura, piano, concorrente.
+function rimuoviTuttoRoi() {
+  if (!confirm('Rimuovere tutto dal calcolatore? Righe, struttura, piano e concorrente selezionati verranno azzerati.')) return;
+  S.roi.struttura = '';
+  S.roi.pianoId = null;
+  S.roi.concorrenteId = null;
+  S.roi.righe = [roiRigaVuota()];
+  navigate('dashboard');
 }
 
 function pianoSelezionatoNome() {

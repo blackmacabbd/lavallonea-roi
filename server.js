@@ -421,7 +421,13 @@ function calcolaTotali(dati) {
 
 // ── Middleware ─────────────────────────────────────
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, filePath) => {
+    // Mai cache "cieca" su JS/CSS/HTML: dopo un deploy il browser deve sempre
+    // rivalidare col server (ETag/Last-Modified restano attivi per i 304).
+    if (/\.(js|css|html)$/.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+  }
+}));
 app.get('/vendor/chart.min.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/chart.js/dist/chart.umd.min.js'));
 });
