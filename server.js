@@ -648,7 +648,7 @@ app.get('/api/strutture/:id/file', requireAuth, (req, res) => {
       LEFT JOIN dati_foglio df ON df.file_id = fc.id
       WHERE fc.struttura_id = ?
       GROUP BY fc.id
-      ORDER BY fc.data_carico DESC
+      ORDER BY fc.data_carico DESC, fc.id DESC
     `).all(req.params.id);
     res.json(files);
   } catch (err) {
@@ -783,7 +783,7 @@ app.get('/api/cronologia', requireAuth, (req, res) => {
       LEFT JOIN dati_foglio df ON df.file_id = fc.id
       WHERE s.user_id = ? ${where}
       GROUP BY fc.id
-      ORDER BY fc.data_carico DESC
+      ORDER BY fc.data_carico DESC, fc.id DESC
     `).all(...params);
 
     res.json(rows);

@@ -1103,10 +1103,19 @@ function buildCronoRows(rows) {
   if (!rows.length) return `<tr><td colspan="7" class="td-muted text-center" style="padding:24px">
     Nessun file caricato</td></tr>`;
 
+  // Se la stessa struttura ha piu' salvataggi, numerali (n) in ordine di creazione
+  // (id crescente = piu' vecchio prima) cosi' si distinguono in elenco.
+  const perStruttura = {};
+  rows.forEach(r => { (perStruttura[r.struttura_id] = perStruttura[r.struttura_id] || []).push(r); });
+  Object.values(perStruttura).forEach(list => {
+    if (list.length < 2) return;
+    list.slice().sort((a, b) => a.id - b.id).forEach((r, i) => { r._ordine = i + 1; });
+  });
+
   return rows.map(r => `
     <tr class="clickable" onclick="navigateFromCrono(${r.id}, ${r.struttura_id}, '${(r.fogli||'').split(',')[0]}')">
       <td class="td-muted">${fmtDate(r.data_carico)}</td>
-      <td>${r.nome_file}</td>
+      <td>${r.nome_file}${r._ordine ? ` <span class="crono-ordine">(${r._ordine})</span>` : ''}</td>
       <td>${r.struttura_nome}</td>
       <td>${(r.fogli || '').split(',').map(f => `<span class="badge badge-gray">${f}</span>`).join(' ')}</td>
       <td style="color:#ce181e">${euro(r.totale_dottore)}</td>

@@ -626,6 +626,7 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 .td-yellow { color: var(--blue) !important; font-weight: 500; }
 .td-blue   { color: var(--blue) !important; font-weight: 500; }
 .td-muted  { color: #9ca3af !important; }
+.crono-ordine { color: var(--blue); font-weight: 600; font-size: 12px; }
 
 /* ═══════════════════════════════════════════════════
    BUTTONS
