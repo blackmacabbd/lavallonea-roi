@@ -1458,7 +1458,8 @@ async function renderPiani() {
       </div>
       <div class="page-actions">
         ${admin ? `<label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
-        <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">` : ''}
+        <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">
+        <button class="btn-outline" onclick="ImportPdf.avvia({ entita: 'piano' })">📄 Importa listino PDF</button>` : ''}
       </div>
     </div>
     <div class="page-body">

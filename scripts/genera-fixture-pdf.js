@@ -64,6 +64,27 @@ const FRAMMENTI_HTML = `
   <div class="riga">ESAME<span class="distanziato">CODICE</span></div>
 </body></html>`;
 
+// Listino misto: righe pulite (confidenza alta) accanto a righe in stile reale
+// con colonne intermedie materiale/tempi, che devono risultare da rivedere.
+// Serve a esercitare entrambe le evidenziazioni, verde e giallo.
+const MISTO_HTML = `
+<html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 18mm 15mm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #26262a; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 8.5pt; border-bottom: 1px solid #0f76bc; padding: 2mm 0; }
+  td { padding: 1.5mm 0; }
+  td.n { text-align: right; }
+</style></head><body>
+  <table>
+    <tr><th>Esame</th><th>Materiale</th><th>Tempi</th><th class="n">Vet</th><th class="n">Privato</th></tr>
+    <tr><td>EMOCROMO COMPLETO</td><td></td><td></td><td class="n">18,50</td><td class="n"></td></tr>
+    <tr><td>Profilo tiroideo</td><td>Siero</td><td>in giornata</td><td class="n">34,00</td><td class="n">48,60</td></tr>
+    <tr><td>Coprologico completo</td><td>Feci</td><td>2 giorni</td><td class="n">26,00</td><td class="n">37,10</td></tr>
+    <tr><td>LEISHMANIA IFI</td><td></td><td></td><td class="n">31,50</td><td class="n"></td></tr>
+  </table>
+</body></html>`;
+
 // PDF di sola immagine (nessun testo incorporato): simula uno scansionato.
 // PNG 2x2 grigio in data URI, ingrandito a tutta pagina.
 const PNG_2X2 =
@@ -93,6 +114,7 @@ async function scrivi(browser, html, nomeFile) {
   try {
     await scrivi(browser, LISTINO_HTML, 'listino-testo.pdf');
     await scrivi(browser, FRAMMENTI_HTML, 'righe-frammentate.pdf');
+    await scrivi(browser, MISTO_HTML, 'listino-misto.pdf');
     await scrivi(browser, SCANSIONE_HTML, 'listino-scansionato.pdf');
   } finally {
     await browser.close();

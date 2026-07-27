@@ -451,6 +451,15 @@ app.get('/vendor/chart.min.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/chart.js/dist/chart.umd.min.js'));
 });
 
+// Build "legacy" di pdfjs: UMD, quindi si carica con un <script> semplice senza
+// bundler. Caricata su richiesta dal componente di import, non a ogni pagina.
+app.get('/vendor/pdf.min.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.min.js'));
+});
+app.get('/vendor/pdf.worker.min.js', (req, res) => {
+  res.sendFile(path.join(__dirname, 'node_modules/pdfjs-dist/legacy/build/pdf.worker.min.js'));
+});
+
 // ── Rate limiting (best-effort, in-memory, nessuna dipendenza) ─────────────
 // Finestra scorrevole per IP + email/marker: max RATE_LIMIT_MAX tentativi ogni
 // RATE_LIMIT_WINDOW_MS. Pensato per le rotte di autenticazione (login, reset,
