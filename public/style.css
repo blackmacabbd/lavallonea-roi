@@ -1472,28 +1472,63 @@ body.imp-aperto { overflow: hidden; }
 .imp-x:hover { background: var(--bg-subtle); color: var(--ink); }
 .imp-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-.imp-attesa {
-  flex: 1; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 14px;
-  color: var(--muted); font-size: 13.5px;
+/* Avanzamento a fasi distinte: si vede quale passo è in corso, non una barra
+   generica. Il conteggio per pagina compare nella fase che lavora per pagina. */
+.imp-progresso {
+  flex: 1; display: flex; flex-direction: column; justify-content: center;
+  gap: 22px; padding: 40px 48px;
 }
-.imp-spinner {
-  width: 26px; height: 26px; border-radius: 50%;
-  border: 2.5px solid var(--blue-line); border-top-color: var(--blue);
-  animation: imp-gira .7s linear infinite;
+.imp-fasi { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.imp-fase { display: flex; align-items: baseline; gap: 11px; font-size: 13.5px; color: var(--faint); }
+.imp-fase-n {
+  flex: 0 0 22px; height: 22px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--line); background: var(--surface);
+  font-size: 11.5px; font-weight: 650; color: var(--faint);
 }
-@keyframes imp-gira { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .imp-spinner { animation-duration: 2s; }
-}
+.imp-fase-testo { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; }
+.imp-fase-nota { font-size: 12px; color: var(--blue); font-variant-numeric: tabular-nums; }
+.imp-fase-corso { color: var(--ink); font-weight: 600; }
+.imp-fase-corso .imp-fase-n { border-color: var(--blue); color: var(--blue); background: var(--blue-tint); }
+.imp-fase-fatta { color: var(--ink-soft); }
+.imp-fase-fatta .imp-fase-n { border-color: var(--imp-ok); background: var(--imp-ok-tint); color: var(--imp-ok); }
 
-.imp-errore {
-  flex: 1; display: flex; align-items: center; justify-content: center;
-  gap: 14px; padding: 32px; text-align: left;
+.imp-barra-avanz { height: 5px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.imp-barra-riemp { height: 100%; background: var(--blue); border-radius: 999px; transition: width .25s ease; }
+@media (prefers-reduced-motion: reduce) { .imp-barra-riemp { transition: none; } }
+
+/* Banner a tre stati: riuscito, da rivedere, errore. Mai binario. */
+.imp-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 11px 16px; border-bottom: 1px solid var(--line);
+  font-size: 13px;
 }
-.imp-errore-icona { font-size: 26px; }
-.imp-errore-tit { font-weight: 600; color: var(--ink); margin-bottom: 4px; }
-.imp-errore-msg { font-size: 13px; color: var(--muted); max-width: 460px; line-height: 1.5; }
+.imp-banner-corpo { flex: 1; min-width: 0; }
+.imp-banner-ico {
+  flex: 0 0 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700;
+}
+.imp-banner-ok { background: var(--imp-ok-tint); }
+.imp-banner-ok .imp-banner-ico { background: var(--imp-ok); color: #fff; }
+.imp-banner-rivedi { background: var(--imp-warn-tint); }
+.imp-banner-rivedi .imp-banner-ico { background: var(--imp-warn); color: #fff; }
+.imp-banner-errore { background: var(--red-tint); }
+.imp-banner-errore .imp-banner-ico { background: none; font-size: 20px; }
+.imp-banner-solo { flex: 1; align-items: center; justify-content: center; border-bottom: none; }
+.imp-banner-tit { font-weight: 600; color: var(--ink); }
+.imp-banner-msg { color: var(--ink-soft); margin-top: 2px; line-height: 1.45; }
+.imp-banner-azioni { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; }
+.imp-link {
+  background: none; border: none; padding: 0; cursor: pointer;
+  font-size: 12.5px; font-weight: 600; color: var(--blue); text-decoration: underline;
+}
+.imp-link:hover { color: var(--blue-dark); }
+
+/* Indicatore sintetico di confidenza dell'estrazione. */
+.imp-fiducia { flex: 0 0 auto; text-align: right; }
+.imp-fiducia-val { font-size: 17px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
+.imp-fiducia-lab { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 
 /* Due colonne indipendenti: ognuna scorre da sola.
    minmax(0,…) sulle righe e min-height:0 sulle colonne sono indispensabili:
@@ -1581,3 +1616,55 @@ body.imp-aperto { overflow: hidden; }
   .imp-split { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
   .imp-col-pdf { border-right: none; border-bottom: 1px solid var(--line); }
 }
+
+/* ── Revisione: tabella editabile, righe recuperabili, conferma ────────── */
+.imp-barra-azioni { display: flex; align-items: center; gap: 10px; }
+.imp-mini {
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 6px; padding: 3px 9px; font-size: 11.5px; font-weight: 600; cursor: pointer;
+}
+.imp-mini:hover { border-color: var(--blue-line); color: var(--blue); }
+
+.imp-campo { padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.imp-campo label { display: block; font-size: 11.5px; font-weight: 600; color: var(--ink-soft); margin-bottom: 4px; }
+.imp-campo .roi-input { width: 100%; }
+
+.imp-tabella-edit tbody td { padding: 4px 8px; vertical-align: middle; }
+.imp-inp {
+  width: 100%; border: 1px solid transparent; background: transparent;
+  border-radius: 5px; padding: 4px 6px; font: inherit; color: var(--ink);
+}
+.imp-inp:hover { border-color: var(--line); background: var(--surface); }
+.imp-inp:focus { outline: none; border-color: var(--blue); background: var(--surface); box-shadow: 0 0 0 2px var(--blue-tint); }
+.imp-inp-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.imp-tag-mod { color: var(--blue); border-color: var(--blue-line); background: var(--blue-tint); }
+.imp-x-riga {
+  border: none; background: none; cursor: pointer; color: var(--faint);
+  font-size: 12px; padding: 3px 5px; border-radius: 5px; line-height: 1;
+}
+.imp-x-riga:hover { color: var(--red); background: var(--red-tint); }
+
+/* Righe con un importo che l'analisi non ha classificato: sono il divario di
+   completezza, quindi vanno viste e recuperabili, non nascoste. */
+.imp-scartate { border-top: 1px solid var(--line); background: var(--bg-subtle); }
+.imp-scartate-tit {
+  padding: 9px 12px; font-size: 11.5px; font-weight: 650;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--imp-warn);
+}
+.imp-scartate-testo { font-size: 12px; color: var(--ink-soft); }
+.imp-scartate-pag {
+  display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px;
+  background: var(--line); color: var(--ink-soft); font-size: 10.5px; font-variant-numeric: tabular-nums;
+}
+.imp-scartate-motivo { font-size: 11px; color: var(--faint); margin-top: 2px; }
+
+.imp-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+  padding: 12px 18px; border-top: 1px solid var(--line); background: var(--bg-subtle);
+}
+.imp-conferma { display: flex; align-items: center; gap: 9px; font-size: 13px; color: var(--ink); cursor: pointer; }
+.imp-conferma input { width: 16px; height: 16px; accent-color: var(--blue); cursor: pointer; }
+.imp-foot-dx { display: flex; align-items: center; gap: 12px; }
+.imp-foot-nota { font-size: 12px; color: var(--muted); }
+.imp-foot .btn-primary:disabled { opacity: .45; cursor: not-allowed; }

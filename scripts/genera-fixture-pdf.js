@@ -82,6 +82,8 @@ const MISTO_HTML = `
     <tr><td>Profilo tiroideo</td><td>Siero</td><td>in giornata</td><td class="n">34,00</td><td class="n">48,60</td></tr>
     <tr><td>Coprologico completo</td><td>Feci</td><td>2 giorni</td><td class="n">26,00</td><td class="n">37,10</td></tr>
     <tr><td>LEISHMANIA IFI</td><td></td><td></td><td class="n">31,50</td><td class="n"></td></tr>
+    <tr><td>AB</td><td></td><td></td><td class="n">12,00</td><td class="n"></td></tr>
+    <tr><td>Sconto convenzione</td><td></td><td></td><td class="n">10,00 %</td><td class="n"></td></tr>
   </table>
 </body></html>`;
 
