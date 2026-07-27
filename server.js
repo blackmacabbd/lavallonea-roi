@@ -9,6 +9,9 @@ const fs       = require('fs');
 const piani = require('./lib/piani');
 const concorrenti = require('./lib/concorrenti');
 const pdfimport = require('./lib/pdfimport');
+const pdfestrazione = require('./lib/pdfestrazione');
+const pdfclassifica = require('./lib/pdfclassifica');
+const importbozze = require('./lib/importbozze');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -133,6 +136,9 @@ try {
 // ── Concorrenza ─────────────────────────────────────
 concorrenti.ensureSchema(db);
 addColIfMissing('concorrenti', 'user_id', 'INTEGER');
+
+// ── Bozze di import PDF e audit ─────────────────────
+importbozze.ensureSchema(db);
 
 // ── Autenticazione ──────────────────────────────────
 auth.ensureSchema(db);
@@ -1463,6 +1469,154 @@ app.post('/api/concorrenti/import-pdf/conferma', requireAuth, express.json({ lim
       .filter(r => r.nome_originale && String(r.nome_originale).trim() && r.prezzo > 0);
     const result = concorrenti.upsertConcorrente(db, nomeConcorrente, pulite, req.user.id);
     res.json({ success: true, ...result });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Import PDF condiviso (Gestione Piani e Gestione Concorrenti) ───
+// Due passi distinti: l'analisi NON scrive nel catalogo, produce una bozza;
+// solo la conferma esplicita dell'operatore promuove i dati. Il PDF caricato
+// non viene conservato: il viewer lo rende dal file locale scelto dall'utente,
+// mentre le coordinate autorevoli arrivano da qui.
+
+// Va dichiarata prima di /:id, altrimenti 'audit' verrebbe letto come un id.
+app.get('/api/import-pdf/audit', requireAuth, (req, res) => {
+  try { res.json(importbozze.listaAudit(db, req.user.id)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nessun file' });
+  // entita puo' arrivare dal form o dalla query: con multipart il campo di testo
+  // e' leggibile solo se precede il file, la query evita quel vincolo di ordine.
+  const entita = String((req.body && req.body.entita) || req.query.entita || '').trim();
+  const nomeFile = req.file.originalname;
+  const annota = (esito, dettaglio, extra = {}) => {
+    try {
+      importbozze.registraAudit(db, { userId: req.user.id, entita, nomeFile, esito, dettaglio, ...extra });
+    } catch (_) { /* l'audit non deve mai far fallire l'import */ }
+  };
+
+  try {
+    if (!importbozze.ENTITA.includes(entita)) {
+      annota('errore', `entita non valida: "${entita}"`);
+      return res.status(400).json({ error: `Destinazione non valida: attese ${importbozze.ENTITA.join(' o ')}` });
+    }
+
+    const buf = fs.readFileSync(req.file.path);
+    let grezze;
+    try {
+      grezze = await pdfestrazione.estraiRigheGrezze(buf);
+    } catch (err) {
+      // Errore comprensibile all'operatore (PDF scansionato, protetto, corrotto).
+      annota('errore', err.codice || err.message);
+      return res.status(400).json({ error: err.message, codice: err.codice || 'PDF_NON_LEGGIBILE' });
+    }
+
+    const cls = pdfclassifica.classificaRighe(grezze);
+    const { id } = importbozze.creaBozza(db, {
+      userId: req.user.id,
+      entita,
+      nomeFile,
+      righe: cls.righe,
+      pagine: grezze.pagine,
+      totaliTabellari: cls.totaliTabellari,
+      classificate: cls.classificate,
+      confidenza: cls.confidenzaComplessiva
+    });
+    annota('analizzato', `${cls.classificate} su ${cls.totaliTabellari} righe tabellari`, {
+      nRighe: cls.classificate, bozzaId: id
+    });
+
+    res.json({
+      importId: id,
+      entita,
+      nomeFile,
+      pagine: grezze.pagine,
+      dimensioni: grezze.dimensioni,
+      righe: cls.righe,
+      totaliTabellari: cls.totaliTabellari,
+      classificate: cls.classificate,
+      alta: cls.alta,
+      incerte: cls.incerte,
+      scartate: cls.scartate,
+      confidenzaComplessiva: cls.confidenzaComplessiva
+    });
+  } catch (err) {
+    annota('errore', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+  }
+});
+
+app.get('/api/import-pdf/:id', requireAuth, (req, res) => {
+  try {
+    const bozza = importbozze.getBozza(db, req.params.id, req.user.id);
+    if (!bozza) return res.status(404).json({ error: 'Bozza non trovata' });
+    res.json(bozza);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10mb' }), (req, res) => {
+  try {
+    const { nome, righe, confermaCompletezza } = req.body || {};
+    const bozza = importbozze.getBozza(db, req.params.id, req.user.id);
+    if (!bozza) return res.status(404).json({ error: 'Bozza non trovata' });
+    if (bozza.stato !== 'bozza') {
+      return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
+    }
+    const annota = (esito, dettaglio, extra = {}) => {
+      try {
+        importbozze.registraAudit(db, {
+          userId: req.user.id, entita: bozza.entita, nomeFile: bozza.nomeFile,
+          esito, dettaglio, bozzaId: bozza.id, ...extra
+        });
+      } catch (_) {}
+    };
+
+    // Il requisito e' esplicito: senza la conferma umana non si scrive nulla.
+    if (confermaCompletezza !== true) {
+      annota('rifiutato', 'conferma di completezza mancante');
+      return res.status(422).json({
+        error: 'Serve la conferma che l\'elenco e corretto e completo',
+        codice: 'CONFERMA_MANCANTE'
+      });
+    }
+
+    const { valide, ignorate } = importbozze.normalizzaRighe(righe);
+    if (!valide.length) {
+      annota('rifiutato', 'nessuna riga importabile');
+      return res.status(400).json({ error: 'Nessuna riga importabile nell\'elenco confermato' });
+    }
+
+    // La destinazione e' quella fissata all'analisi, non quella che arriva ora:
+    // il client non puo' dirottare l'import su un'altra entita dopo la revisione.
+    let risultato;
+    if (bozza.entita === 'concorrente') {
+      const nomeConc = String(nome || '').trim();
+      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente' });
+      risultato = concorrenti.upsertConcorrente(
+        db, nomeConc,
+        valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
+        req.user.id
+      );
+    } else {
+      // Aggiorna i prezzi base della PROPRIA copia del catalogo: upsert per nome,
+      // nessuna cancellazione degli esami assenti dal PDF e nessun piano toccato.
+      risultato = piani.upsertFromJson(db, {
+        exams_base_price: Object.fromEntries(valide.map(r => [r.nome, r.prezzo])),
+        plans: {}
+      }, req.user.id);
+    }
+
+    // Scrittura prima della conferma: gli upsert sono idempotenti per nome,
+    // quindi una doppia richiesta non duplica nulla, mentre l'ordine inverso
+    // rischierebbe una bozza segnata confermata con il catalogo non aggiornato.
+    const confermata = importbozze.confermaBozza(db, bozza.id, req.user.id, valide);
+    if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
+
+    annota('confermato', `${valide.length} righe importate, ${ignorate} ignorate`, { nRighe: valide.length });
+    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, ...risultato });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
