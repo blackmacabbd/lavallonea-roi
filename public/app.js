@@ -1449,7 +1449,8 @@ async function renderPiani() {
   }
 
   S.pianiAdmin = elenco;
-  const admin = !!(S.auth && S.auth.isAdmin);
+  // Ogni account modifica la PROPRIA copia del catalogo: basta essere loggati.
+  const admin = !!(S.auth && S.auth.token && !S.auth.guest);
   setMain(`
     <div class="page-header">
       <div><div class="page-title">Gestione piani di scontistica</div>
@@ -1462,7 +1463,7 @@ async function renderPiani() {
     </div>
     <div class="page-body">
       ${admin ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
-        <div class="empty-sub">🔒 Solo l'amministratore può modificare il catalogo. Puoi comunque consultare piani e prezzi.</div>
+        <div class="empty-sub">🔒 Accedi per modificare i tuoi piani. Come ospite puoi consultare il listino ufficiale.</div>
       </div>`}
       <div class="dett-toolbar" style="margin-bottom:14px">
         <input class="roi-input dett-search" id="piani-search" placeholder="🔍 Cerca piano per nome o categoria…"
@@ -1485,7 +1486,8 @@ async function renderPiani() {
 function renderPianiBody() {
   const tb = el('piani-tbody');
   if (!tb) return;
-  const admin = !!(S.auth && S.auth.isAdmin);
+  // Ogni account modifica la PROPRIA copia del catalogo: basta essere loggati.
+  const admin = !!(S.auth && S.auth.token && !S.auth.guest);
   const q = (S.pianiFiltro || '').trim().toLowerCase();
   const list = (S.pianiAdmin || []).filter(p =>
     !q || p.nome.toLowerCase().includes(q) || (p.categoria || '').toLowerCase().includes(q));
@@ -1509,7 +1511,7 @@ function filtraPiani(v) {
 }
 
 async function togglePianoAttivo(id, attivo) {
-  if (!S.auth.isAdmin) { alert('Solo l\'amministratore può modificare il catalogo'); return; }
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per modificare i tuoi piani'); return; }
   try {
     await api(`/api/piani/${id}/attivo`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1532,11 +1534,12 @@ async function renderPianoEdit(id) {
   }
   const wrap = el('piano-edit-wrap');
   if (!wrap) return;
-  const admin = !!(S.auth && S.auth.isAdmin);
+  // Ogni account modifica la PROPRIA copia del catalogo: basta essere loggati.
+  const admin = !!(S.auth && S.auth.token && !S.auth.guest);
   wrap.innerHTML = `
     <div class="section-card">
       <div class="section-card-title">Prezzi — ${escHtml(data.piano.nome)}</div>
-      ${admin ? '' : `<div class="empty-sub" style="margin-bottom:10px">🔒 Solo l'amministratore può modificare il catalogo.</div>`}
+      ${admin ? '' : `<div class="empty-sub" style="margin-bottom:10px">🔒 Accedi per modificare i tuoi piani.</div>`}
       <table class="roi-editable-table">
         <thead><tr><th>Esame</th><th>Prezzo base</th><th>Prezzo per questo piano</th></tr></thead>
         <tbody>
@@ -1553,7 +1556,7 @@ async function renderPianoEdit(id) {
 }
 
 async function salvaPianoPrezzi(id) {
-  if (!S.auth.isAdmin) { alert('Solo l\'amministratore può modificare il catalogo'); return; }
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per modificare i tuoi piani'); return; }
   const wrap = el('piano-edit-wrap');
   const inputs = wrap.querySelectorAll('[data-esame-id]');
   const prezzi = Array.from(inputs)
@@ -1572,7 +1575,6 @@ async function salvaPianoPrezzi(id) {
 
 async function importaPianiJson(inputEl) {
   if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); inputEl.value = ''; return; }
-  if (!S.auth.isAdmin) { alert('Solo l\'amministratore può modificare il catalogo'); inputEl.value = ''; return; }
   const file = inputEl.files[0];
   if (!file) return;
   const text = await file.text();

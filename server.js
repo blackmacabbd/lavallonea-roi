@@ -138,6 +138,19 @@ addColIfMissing('concorrenti', 'user_id', 'INTEGER');
 auth.ensureSchema(db);
 addColIfMissing('prezzi_esami_custom', 'user_id', 'INTEGER');
 
+// Backfill: gli account creati prima del catalogo per-utente non hanno ancora la
+// loro copia. copiaCatalogoPerUtente e' idempotente, quindi girare a ogni boot e'
+// sicuro e recupera anche eventuali copie fallite.
+try {
+  let creati = 0;
+  for (const u of db.prepare(`SELECT id FROM users`).all()) {
+    if (piani.copiaCatalogoPerUtente(db, u.id).copiato) creati++;
+  }
+  if (creati) console.log(`  ✓ Catalogo piani copiato per ${creati} account`);
+} catch (err) {
+  console.error('Backfill catalogo per account fallito:', err.message);
+}
+
 // I dati creati prima degli account non hanno proprietario: rimuovili una sola volta.
 try {
   const orfane = db.prepare(`SELECT id FROM strutture WHERE user_id IS NULL`).all().map(r => r.id);
@@ -496,6 +509,11 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
     const token = auth.genToken();
     db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, userId);
 
+    // Ogni nuovo account parte con la propria copia del catalogo piani, che potra'
+    // modificare liberamente senza toccare gli altri account.
+    try { piani.copiaCatalogoPerUtente(db, userId); }
+    catch (e) { console.error('Copia catalogo per nuovo account fallita:', e.message); }
+
     const tpl = mailer.templateRecovery(recoveryCode);
     mailer.sendMail({ to: email, subject: tpl.subject, html: tpl.html }).catch(() => {});
     res.json({ token, email, recoveryCode, isAdmin: isAdmin({ email }) });
@@ -511,6 +529,9 @@ app.post('/api/auth/login', authRateLimit, express.json(), (req, res) => {
     rateLimitReset(req._rateLimitKey);
     const token = auth.genToken();
     db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, u.id);
+    // Rete di sicurezza: idempotente, crea la copia se per qualche motivo manca.
+    try { piani.copiaCatalogoPerUtente(db, u.id); }
+    catch (e) { console.error('Copia catalogo al login fallita:', e.message); }
     res.json({ token, email: u.email, isAdmin: isAdmin(u) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1129,7 +1150,7 @@ app.get('/api/esami/autocomplete', optionalAuth, (req, res) => {
             JOIN strutture s ON s.id = fc.struttura_id
             WHERE s.user_id = ? AND esame LIKE ?
           UNION
-          SELECT nome FROM esami_riferimento WHERE nome LIKE ?
+          SELECT nome FROM esami_riferimento WHERE user_id = ? AND nome LIKE ?
           UNION
           SELECT esame_nome AS nome FROM prezzi_esami_custom WHERE user_id = ? AND esame_nome LIKE ?
           UNION
@@ -1137,9 +1158,9 @@ app.get('/api/esami/autocomplete', optionalAuth, (req, res) => {
             JOIN concorrenti c ON c.id = ec.concorrente_id
             WHERE c.user_id = ? AND esame_mylav_nome IS NOT NULL AND esame_mylav_nome LIKE ?
           ORDER BY nome LIMIT 20
-        `).all(req.user.id, like, like, req.user.id, like, req.user.id, like)
+        `).all(req.user.id, like, req.user.id, like, req.user.id, like, req.user.id, like)
       : db.prepare(`
-          SELECT nome FROM esami_riferimento WHERE nome LIKE ?
+          SELECT nome FROM esami_riferimento WHERE user_id IS NULL AND nome LIKE ?
           ORDER BY nome LIMIT 20
         `).all(like);
     res.json(rows.map(r => r.nome));
@@ -1167,9 +1188,10 @@ app.get('/api/esami/prezzi', optionalAuth, (req, res) => {
 app.get('/api/piani', optionalAuth, (req, res) => {
   try {
     const all = req.query.all === '1';
+    const sc = piani.scopeCatalogo(req.user ? req.user.id : null);
     const rows = all
-      ? db.prepare(`SELECT id, nome, categoria, anno, ordine, attivo FROM piani_sconto ORDER BY ordine`).all()
-      : db.prepare(`SELECT id, nome, categoria, anno, ordine FROM piani_sconto WHERE attivo = 1 ORDER BY ordine`).all();
+      ? db.prepare(`SELECT id, nome, categoria, anno, ordine, attivo FROM piani_sconto WHERE ${sc.sql} ORDER BY ordine`).all(...sc.params)
+      : db.prepare(`SELECT id, nome, categoria, anno, ordine FROM piani_sconto WHERE attivo = 1 AND ${sc.sql} ORDER BY ordine`).all(...sc.params);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1220,7 +1242,7 @@ app.post('/api/piani/classifica', optionalAuth, express.json(), (req, res) => {
 app.get('/api/esami-riferimento/prezzo-base', optionalAuth, (req, res) => {
   try {
     const { nome } = req.query;
-    res.json({ prezzo_base: nome ? piani.getPrezzoBase(db, nome) : null });
+    res.json({ prezzo_base: nome ? piani.getPrezzoBase(db, nome, req.user ? req.user.id : null) : null });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1230,7 +1252,7 @@ app.get('/api/esami-riferimento/nomi', optionalAuth, (req, res) => {
     // Tutti i nomi esame Mylav "conosciuti": catalogo (+ storico/custom/mappati dell'utente se loggato).
     const nomi = req.user
       ? db.prepare(`
-          SELECT nome FROM esami_riferimento
+          SELECT nome FROM esami_riferimento WHERE user_id = ?
           UNION SELECT df.esame FROM dati_foglio df
             JOIN file_caricati fc ON fc.id = df.file_id
             JOIN strutture s ON s.id = fc.struttura_id
@@ -1240,8 +1262,8 @@ app.get('/api/esami-riferimento/nomi', optionalAuth, (req, res) => {
             JOIN concorrenti c ON c.id = ec.concorrente_id
             WHERE c.user_id = ? AND ec.esame_mylav_nome IS NOT NULL
           ORDER BY nome
-        `).all(req.user.id, req.user.id, req.user.id).map(r => r.nome)
-      : db.prepare(`SELECT nome FROM esami_riferimento ORDER BY nome`).all().map(r => r.nome);
+        `).all(req.user.id, req.user.id, req.user.id, req.user.id).map(r => r.nome)
+      : db.prepare(`SELECT nome FROM esami_riferimento WHERE user_id IS NULL ORDER BY nome`).all().map(r => r.nome);
     res.json(nomi);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1257,52 +1279,74 @@ app.post('/api/prezzi-custom', requireAuth, express.json(), (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Il piano richiesto deve appartenere all'ambito del chiamante (propria copia per
+// un account, template per l'ospite): altrimenti 404, senza rivelarne l'esistenza.
+function pianoInAmbito(req, pianoId) {
+  const sc = piani.scopeCatalogo(req.user ? req.user.id : null);
+  return db.prepare(`SELECT * FROM piani_sconto WHERE id = ? AND ${sc.sql}`).get(pianoId, ...sc.params);
+}
+
 app.get('/api/piani/:id', optionalAuth, (req, res) => {
   try {
-    const piano = db.prepare(`SELECT * FROM piani_sconto WHERE id = ?`).get(req.params.id);
+    const piano = pianoInAmbito(req, req.params.id);
     if (!piano) return res.status(404).json({ error: 'Piano non trovato' });
+    const sc = piani.scopeCatalogo(req.user ? req.user.id : null);
     const prezzi = db.prepare(`
       SELECT er.id AS esame_id, er.nome AS esame_nome, er.prezzo_base, pp.prezzo
       FROM esami_riferimento er
       LEFT JOIN prezzi_piano_esame pp ON pp.esame_id = er.id AND pp.piano_id = ?
+      WHERE er.${sc.sql}
       ORDER BY er.nome
-    `).all(req.params.id);
+    `).all(req.params.id, ...sc.params);
     res.json({ piano, prezzi });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/piani/:id/prezzi', requireAdmin, express.json({ limit: '2mb' }), (req, res) => {
+app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (req, res) => {
   try {
     const { prezzi } = req.body || {};
     if (!Array.isArray(prezzi)) return res.status(400).json({ error: 'Formato non valido, atteso { prezzi: [...] }' });
+    if (!pianoInAmbito(req, req.params.id)) return res.status(404).json({ error: 'Piano non trovato' });
+
+    // esame_id arriva dal client: va verificato che appartenga a questo account,
+    // altrimenti si potrebbe agganciare un prezzo all'esame di un altro utente.
+    const esameProprio = db.prepare(`SELECT 1 FROM esami_riferimento WHERE id = ? AND user_id = ?`);
     const upsert = db.prepare(`
       INSERT INTO prezzi_piano_esame (piano_id, esame_id, prezzo) VALUES (?, ?, ?)
       ON CONFLICT(piano_id, esame_id) DO UPDATE SET prezzo = excluded.prezzo
     `);
     db.exec('BEGIN');
+    let aggiornati = 0;
     try {
-      for (const r of prezzi) upsert.run(req.params.id, r.esame_id, r.prezzo);
+      for (const r of prezzi) {
+        if (!esameProprio.get(r.esame_id, req.user.id)) continue;
+        upsert.run(req.params.id, r.esame_id, r.prezzo);
+        aggiornati++;
+      }
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
-    res.json({ success: true, aggiornati: prezzi.length });
+    res.json({ success: true, aggiornati, ignorati: prezzi.length - aggiornati });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.put('/api/piani/:id/attivo', requireAdmin, express.json(), (req, res) => {
+app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
   try {
     const { attivo } = req.body || {};
-    db.prepare(`UPDATE piani_sconto SET attivo = ? WHERE id = ?`).run(attivo ? 1 : 0, req.params.id);
+    if (!pianoInAmbito(req, req.params.id)) return res.status(404).json({ error: 'Piano non trovato' });
+    db.prepare(`UPDATE piani_sconto SET attivo = ? WHERE id = ? AND user_id = ?`)
+      .run(attivo ? 1 : 0, req.params.id, req.user.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/piani/import', requireAdmin, express.json({ limit: '10mb' }), (req, res) => {
+// Import nella PROPRIA copia del catalogo: non tocca il template ne' altri account.
+app.post('/api/piani/import', requireAuth, express.json({ limit: '10mb' }), (req, res) => {
   try {
     const data = req.body;
     if (!data || !data.plans || !data.exams_base_price) {
       return res.status(400).json({ error: 'JSON non nel formato atteso (servono exams_base_price e plans)' });
     }
-    const result = piani.upsertFromJson(db, data);
+    const result = piani.upsertFromJson(db, data, req.user.id);
     res.json({ success: true, ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
