@@ -147,8 +147,14 @@
     S.fase = chiave;
     S.nota = nota || '';
     if (percento != null) S.percento = Math.round(percento);
-    if (!document.querySelector('.imp-fasi')) renderFasi();
-    else aggiornaFasi();
+
+    if (document.querySelector('.imp-fasi')) { aggiornaFasi(); return; }
+
+    // Passati alla revisione, la lista delle fasi non e' piu' in pagina: qui
+    // l'avanzamento dell'anteprima si scrive accanto al titolo del documento.
+    // Ricreare la schermata di caricamento cancellerebbe la revisione.
+    const nota2 = document.getElementById('imp-nota-anteprima');
+    if (nota2) nota2.textContent = S.nota;
   }
 
   // Aggiornamento puntuale: ridisegnare la lista a ogni pagina farebbe
@@ -320,6 +326,7 @@
         <div class="imp-col imp-col-pdf">
           <div class="imp-barra">
             <span class="imp-barra-tit">Documento</span>
+            <span class="imp-nota-anteprima" id="imp-nota-anteprima"></span>
             <div class="imp-zoom">
               <button type="button" class="imp-zoom-b" data-zoom="-1" aria-label="Riduci">−</button>
               <span id="imp-zoom-val">${Math.round(S.scala * 100)}%</span>

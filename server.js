@@ -8,7 +8,6 @@ const path     = require('path');
 const fs       = require('fs');
 const piani = require('./lib/piani');
 const concorrenti = require('./lib/concorrenti');
-const pdfimport = require('./lib/pdfimport');
 const pdfestrazione = require('./lib/pdfestrazione');
 const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
@@ -1450,34 +1449,6 @@ app.delete('/api/concorrenti/:id', requireAuth, (req, res) => {
     const ok = concorrenti.eliminaConcorrente(db, req.params.id, req.user.id);
     if (!ok) return res.status(404).json({ error: 'Concorrente non trovato' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/concorrenti/import-pdf', requireAuth, uploadPdf.single('file'), async (req, res) => {
-  if (!req.file) return res.status(400).json({ error: 'Nessun file' });
-  try {
-    const buf = fs.readFileSync(req.file.path);
-    const testo = await pdfimport.estraiTestoPdf(buf);
-    const parsed = pdfimport.parseRigheDaTesto(testo);
-    fs.unlinkSync(req.file.path);
-    res.json(parsed);
-  } catch (e) {
-    try { fs.unlinkSync(req.file.path); } catch (_) {}
-    res.status(500).json({ error: e.message });
-  }
-});
-
-app.post('/api/concorrenti/import-pdf/conferma', requireAuth, express.json({ limit: '5mb' }), (req, res) => {
-  try {
-    const { nomeConcorrente, righe } = req.body || {};
-    if (!nomeConcorrente || !Array.isArray(righe)) {
-      return res.status(400).json({ error: 'Dati mancanti (nomeConcorrente, righe)' });
-    }
-    const pulite = righe
-      .map(r => ({ nome_originale: r.nome_originale, prezzo: Number(r.prezzo) || 0, sconto: null }))
-      .filter(r => r.nome_originale && String(r.nome_originale).trim() && r.prezzo > 0);
-    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, pulite, req.user.id);
-    res.json({ success: true, ...result });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
