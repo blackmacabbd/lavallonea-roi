@@ -131,6 +131,34 @@ function listinoLungoHtml(pagine) {
 </style></head><body>${blocchi.join('')}</body></html>`;
 }
 
+// Listino misto esami + analizzatori, con capitoli separati: e' il caso che il
+// riconoscimento a sezioni deve saper suddividere.
+const MISTO_MACCHINE_HTML = `
+<html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 18mm 15mm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #26262a; }
+  h2 { font-size: 12pt; margin: 6mm 0 3mm; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 1.5mm 0; }
+  td.n { text-align: right; }
+  .salto { page-break-before: always; }
+</style></head><body>
+  <h2>ESAMI DI LABORATORIO</h2>
+  <table>
+    <tr><td>EMOCROMO COMPLETO</td><td class="n">18,50</td></tr>
+    <tr><td>PROFILO BIOCHIMICO COMPLETO</td><td class="n">42,00</td></tr>
+    <tr><td>LEISHMANIA IFI</td><td class="n">31,50</td></tr>
+  </table>
+  <div class="salto">
+    <h2>ANALIZZATORI</h2>
+    <table>
+      <tr><td>Analizzatore biochimico da banco</td><td class="n">8.500,00</td></tr>
+      <tr><td>Ematologico veterinario</td><td class="n">11.200,00</td></tr>
+      <tr><td>Analizzatore urine con lettore</td><td class="n">4.300,00</td></tr>
+    </table>
+  </div>
+</body></html>`;
+
 // PDF di sola immagine (nessun testo incorporato): simula uno scansionato.
 // PNG 2x2 grigio in data URI, ingrandito a tutta pagina.
 const PNG_2X2 =
@@ -162,6 +190,7 @@ async function scrivi(browser, html, nomeFile) {
     await scrivi(browser, FRAMMENTI_HTML, 'righe-frammentate.pdf');
     await scrivi(browser, MISTO_HTML, 'listino-misto.pdf');
     await scrivi(browser, listinoLungoHtml(12), 'listino-lungo-tempi.pdf');
+    await scrivi(browser, MISTO_MACCHINE_HTML, 'listino-misto-macchine.pdf');
     await scrivi(browser, SCANSIONE_HTML, 'listino-scansionato.pdf');
   } finally {
     await browser.close();
