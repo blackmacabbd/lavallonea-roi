@@ -438,7 +438,13 @@ function calcolaTotali(dati) {
 }
 
 // ── Middleware ─────────────────────────────────────
-app.use(express.json());
+// Nessun parser JSON globale: ogni rotta dichiara il proprio express.json()
+// con il limite giusto per il suo payload (2mb/5mb/10mb/15mb secondo i casi).
+// Un parser globale qui, girando per primo su OGNI richiesta col limite di
+// default di body-parser (100kb), soffocherebbe qualsiasi payload piu' grande
+// prima ancora che la rotta specifica abbia la possibilita' di applicare il
+// proprio limite piu' alto — esattamente il bug del listino da 1746 righe
+// (~164KB, sopra i 100kb di default, sotto i 10mb dichiarati dalla rotta).
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, filePath) => {
     // Mai cache "cieca" su JS/CSS/HTML: dopo un deploy il browser deve sempre
