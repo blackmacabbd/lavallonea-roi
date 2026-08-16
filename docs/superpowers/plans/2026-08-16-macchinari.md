@@ -218,8 +218,11 @@ In `lib/pdfclassifica.js`, sostituire il corpo di `classificaRighe`:
 function classificaRighe(input) {
   const grezze = Array.isArray(input) ? input : (input && input.righe) || [];
   const primaPassata = grezze.map((g, i) => ({ ...classificaRiga(g), indice: i }));
-  const { righe: senzaTempi, ripuliti } = togliColonnaTempi(primaPassata);
-  const righe = rivalutaMacchine(assegnaTipo(senzaTempi));
+  // L'ordine conta: il tipo va assegnato prima di togliere la colonna dei
+  // tempi, perche' quella funzione rivaluta il dubbio e per farlo deve sapere
+  // se la riga e' un esame o una macchina (i due tetti di prezzo differiscono).
+  const conTipo = rivalutaMacchine(assegnaTipo(primaPassata));
+  const { righe, ripuliti } = togliColonnaTempi(conTipo);
 
   const totaliTabellari = righe.filter(r => r.tabellare).length;
   const alta = righe.filter(r => !r.scartata && r.confidenza === 'alta').length;
@@ -260,8 +263,11 @@ In `togliColonnaTempi`, sostituire:
 ```
 con:
 ```javascript
-    const dubbio = motivoDubbio(nome, r.prezzo, r.nImporti || 1, r.tipo || 'esame');
+    const dubbio = motivoDubbio(nome, r.prezzo, r.nImporti || 1, r.tipo);
 ```
+
+Qui `r.tipo` e' gia' valorizzato: `classificaRighe` assegna il tipo prima di
+chiamare questa funzione (vedi Step 6).
 
 - [ ] **Step 7: Eseguire i test**
 
@@ -1206,7 +1212,21 @@ async function renderMacchinari() {
           <table>
             <thead><tr><th>Macchina</th><th>Provenienza</th><th style="width:120px">Prezzo</th><th style="width:150px"></th></tr></thead>
             <tbody>
-              ${elenco.length ? elenco.map(m => `<tr>
+              ${S.macchinaInModifica ? `<tr class="macc-riga-modifica">
+                <td><input class="roi-input" id="macc-nome" value="${escHtml(S.macchinaInModifica.nome)}"
+                           placeholder="Es. Analizzatore biochimico da banco" autocomplete="off"></td>
+                <td class="td-muted">${S.macchinaInModifica.concorrenteId
+                  ? escHtml((elenco.find(x => x.concorrenteId === S.macchinaInModifica.concorrenteId) || {}).concorrenteNome || 'Concorrente')
+                  : 'Mylav (mia)'}</td>
+                <td><input class="roi-input roi-num" id="macc-prezzo"
+                           value="${S.macchinaInModifica.prezzo === '' ? '' : escHtml(String(S.macchinaInModifica.prezzo))}"
+                           placeholder="0,00" inputmode="decimal"></td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn-primary" onclick="salvaMacchinaUI()">Salva</button>
+                  <button class="btn-outline" onclick="annullaModificaMacchina()">Annulla</button>
+                </td>
+              </tr>` : ''}
+              ${elenco.filter(m => !S.macchinaInModifica || m.id !== S.macchinaInModifica.id).map(m => `<tr>
                 <td>${escHtml(m.nome)}</td>
                 <td class="td-muted">${m.concorrenteNome ? escHtml(m.concorrenteNome) : 'Mylav (mia)'}</td>
                 <td class="td-num">${fmtEuro(m.prezzo)}</td>
@@ -1214,9 +1234,11 @@ async function renderMacchinari() {
                   <button class="btn-outline" onclick="modificaMacchina(${m.id})">Modifica</button>
                   <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
                 </td>
-              </tr>`).join('')
-                : `<tr><td colspan="4" class="td-muted" style="text-align:center;padding:26px">
-                     Nessun analizzatore in catalogo. Importa un listino PDF o aggiungine uno a mano.</td></tr>`}
+              </tr>`).join('')}
+              ${!elenco.length && !S.macchinaInModifica
+                ? `<tr><td colspan="4" class="td-muted" style="text-align:center;padding:26px">
+                     Nessun analizzatore in catalogo. Importa un listino PDF o aggiungine uno a mano.</td></tr>`
+                : ''}
             </tbody>
           </table>
         </div>
@@ -1234,36 +1256,48 @@ function importaPdfMacchine() {
   });
 }
 
-async function nuovaMacchina() {
-  const nome = prompt('Nome della macchina (es. "Analizzatore biochimico da banco")');
-  if (!nome || !nome.trim()) return;
-  const prezzo = prompt('Prezzo in euro (es. 8500 oppure 8.500,00)');
-  if (prezzo == null) return;
-  try {
-    await api('/api/macchine', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome: nome.trim(), prezzo: parseFloat(String(prezzo).replace(/\./g, '').replace(',', '.')) })
-    });
-    renderMacchinari();
-  } catch (e) { alert('Errore: ' + e.message); }
+// Inserimento e modifica avvengono nella riga stessa, come nel pannello piani e
+// nella mappatura concorrenti: il progetto non usa mai prompt(), e finestrelle
+// native stonerebbero in una interfaccia disegnata.
+function nuovaMacchina() {
+  S.macchinaInModifica = { id: null, nome: '', prezzo: '', concorrenteId: null };
+  renderMacchinari();
 }
 
-async function modificaMacchina(id) {
+function modificaMacchina(id) {
   const m = (S.macchine || []).find(x => x.id === id);
   if (!m) return;
-  const nome = prompt('Nome della macchina', m.nome);
-  if (!nome || !nome.trim()) return;
-  const prezzo = prompt('Prezzo in euro', String(m.prezzo));
-  if (prezzo == null) return;
+  S.macchinaInModifica = { id: m.id, nome: m.nome, prezzo: m.prezzo, concorrenteId: m.concorrenteId };
+  renderMacchinari();
+}
+
+function annullaModificaMacchina() {
+  S.macchinaInModifica = null;
+  renderMacchinari();
+}
+
+async function salvaMacchinaUI() {
+  const nome = (el('macc-nome') || {}).value || '';
+  const prezzoTesto = (el('macc-prezzo') || {}).value || '';
+  const prezzo = parseFloat(String(prezzoTesto).replace(/\./g, '').replace(',', '.'));
+  if (!nome.trim()) { alert('Inserisci il nome della macchina'); return; }
+  if (!Number.isFinite(prezzo) || prezzo < 0) { alert('Inserisci un prezzo valido'); return; }
+
+  const inModifica = S.macchinaInModifica || {};
+  const corpo = JSON.stringify({
+    nome: nome.trim(), prezzo, concorrenteId: inModifica.concorrenteId || null
+  });
   try {
-    await api(`/api/macchine/${id}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        nome: nome.trim(),
-        prezzo: parseFloat(String(prezzo).replace(/\./g, '').replace(',', '.')),
-        concorrenteId: m.concorrenteId
-      })
-    });
+    if (inModifica.id) {
+      await api(`/api/macchine/${inModifica.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: corpo
+      });
+    } else {
+      await api('/api/macchine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo
+      });
+    }
+    S.macchinaInModifica = null;
     renderMacchinari();
   } catch (e) { alert('Errore: ' + e.message); }
 }
@@ -1306,6 +1340,11 @@ In `public/style.css`, in fondo al file, aggiungere:
 /* Le colonne di importi si leggono incolonnate a destra. La classe non
    esisteva: qui viene definita una volta e riusata dal calcolatore. */
 .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* La riga in inserimento o modifica si distingue dalle altre senza uscire
+   dalla tabella: il progetto non usa finestre di dialogo native. */
+.macc-riga-modifica { background: var(--blue-tint); }
+.macc-riga-modifica .roi-input { width: 100%; }
 ```
 
 - [ ] **Step 6: Verificare nel browser**
@@ -1313,8 +1352,9 @@ In `public/style.css`, in fondo al file, aggiungere:
 Avviare il server, accedere, aprire la voce di menu **Macchinari** e verificare:
 - l'avviso e' visibile e riporta il testo esatto del vincolo;
 - la tabella e' vuota con il messaggio di stato vuoto;
-- «+ Aggiungi macchina» inserisce una riga che compare in tabella;
-- «Modifica» ne cambia il prezzo, «Elimina» la rimuove dopo conferma;
+- «+ Aggiungi macchina» apre una riga editabile in cima alla tabella; «Salva» la inserisce, «Annulla» la chiude senza scrivere;
+- «Modifica» riapre quella riga in forma editabile e «Salva» ne aggiorna il prezzo, «Elimina» la rimuove dopo conferma;
+- nessuna finestra di dialogo nativa del browser compare in questi flussi;
 - «Importa listino PDF» apre la finestra di import con destinazione macchina.
 
 - [ ] **Step 7: Commit**
