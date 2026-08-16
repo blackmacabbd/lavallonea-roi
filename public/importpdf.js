@@ -23,6 +23,11 @@
   const SCALE_MAX = 3;
   const SCALE_STEP = 0.25;
 
+  // Fascia, sopra e sotto la vista, di pagine tenute gia' disegnate.
+  const MARGINE_ANTEPRIMA = 800;
+  // Intervallo minimo fra due ricalcoli durante lo scorrimento.
+  const MS_RICALCOLO = 120;
+
   // Le quattro fasi mostrate all'operatore. Il progresso per pagina compare
   // dove il lavoro e' davvero per pagina: la preparazione dell'anteprima.
   // L'estrazione e il riconoscimento avvengono in un'unica chiamata server,
@@ -124,6 +129,9 @@
   }
 
   function chiudi() {
+    // Prima di smontare, via le superfici dei canvas: su un documento lungo
+    // resterebbero appesi decine di MB per ogni finestra aperta e chiusa.
+    liberaPagine();
     const ov = document.getElementById('imp-overlay');
     if (ov) ov.remove();
     document.body.classList.remove('imp-aperto');
@@ -226,6 +234,7 @@
       fase: 'carica', nota: '', percento: 4,
       buffer: null, analisi: null, righe: [], coord: new Map(),
       scala: 1.2, pdfDoc: null, selezionata: null,
+      pagine: [], dpr: 1,
       mostraScartate: false, inCorso: false
     };
     renderFasi();
@@ -390,6 +399,17 @@
     document.getElementById('imp-annulla').addEventListener('click', chiudiConVerifica);
     document.getElementById('imp-ok').addEventListener('change', aggiornaPiede);
     document.getElementById('imp-conferma').addEventListener('click', conferma);
+
+    // Scorrendo cambiano sia le pagine da tenere disegnate sia il numero
+    // mostrato. Il freno e' a tempo e non a frame: deve funzionare anche quando
+    // la scheda non sta componendo immagini.
+    let ultimo = 0, atteso = null;
+    document.getElementById('imp-pdf').addEventListener('scroll', () => {
+      const ora = Date.now();
+      if (ora - ultimo >= MS_RICALCOLO) { ultimo = ora; aggiornaVisibili(); return; }
+      if (atteso) return;
+      atteso = setTimeout(() => { atteso = null; ultimo = Date.now(); aggiornaVisibili(); }, MS_RICALCOLO);
+    });
 
     renderBanner();
     renderTabella();
@@ -675,22 +695,28 @@
   }
 
   // ── Rendering del PDF con evidenziazione ──────────────────────────────
+  //
+  // Le cornici di tutte le pagine esistono da subito, con i riquadri sopra:
+  // l'altezza della colonna e' quella definitiva e le evidenziazioni ci sono
+  // prima del disegno. Solo le pagine vicine alla vista vengono rasterizzate.
+  // Un listino di 117 pagine, disegnato tutto, occuperebbe centinaia di MB di
+  // canvas (~3 MB a pagina, di piu' sugli schermi ad alta densita') e secondi
+  // di attesa: cosi ne restano in memoria una manciata.
   async function renderPdf() {
     const lib = await pdfjs();
     const cont = document.getElementById('imp-pdf');
     if (!cont) return;
+    liberaPagine();          // lo zoom ridisegna: prima si liberano i canvas vecchi
     cont.innerHTML = '';
 
     if (!S.pdfDoc) S.pdfDoc = await lib.getDocument({ data: S.buffer.slice(0) }).promise;
 
     const dpr = window.devicePixelRatio || 1;
-    const daRendere = [];
+    S.pagine = [];
 
-    // Prima passata: cornici delle pagine e riquadri di evidenziazione. Le
-    // dimensioni sono note prima di disegnare, quindi l'operatore vede subito
-    // dove sono le righe riconosciute mentre le pagine si riempiono.
     for (let n = 1; n <= S.pdfDoc.numPages; n++) {
       const page = await S.pdfDoc.getPage(n);
+      if (!S) return;
       const vp = page.getViewport({ scale: S.scala });
 
       const wrap = document.createElement('div');
@@ -699,33 +725,76 @@
       wrap.style.width = `${vp.width}px`;
       wrap.style.height = `${vp.height}px`;
 
+      // Il canvas nasce senza superficie: la misura in CSS tiene fermo il
+      // layout, i pixel arrivano quando la pagina si avvicina alla vista.
       const canvas = document.createElement('canvas');
-      canvas.width = Math.floor(vp.width * dpr);
-      canvas.height = Math.floor(vp.height * dpr);
       canvas.style.width = `${vp.width}px`;
       canvas.style.height = `${vp.height}px`;
       wrap.appendChild(canvas);
       cont.appendChild(wrap);
 
-      daRendere.push({ page, vp, canvas });
+      S.pagine.push({ n, page, vp, wrap, canvas, disegnata: false, task: null });
     }
     aggiornaRiquadri();
-
-    // Seconda passata: rasterizzazione, una pagina alla volta. Qui il lavoro e'
-    // davvero per pagina, quindi qui si mostra "pagina X di N".
-    const totale = daRendere.length;
-    for (let i = 0; i < totale; i++) {
-      const { page, vp, canvas } = daRendere[i];
-      if (!S) return;
-      if (totale > 1) fase('pronto', `anteprima: pagina ${i + 1} di ${totale}`, 100);
-      await page.render({
-        canvasContext: canvas.getContext('2d'),
-        viewport: vp,
-        transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0]
-      }).promise;
-    }
-    if (S && totale > 1) fase('pronto', '', 100);
+    S.dpr = dpr;
+    aggiornaVisibili();
   }
+
+  // Decide quali pagine tenere disegnate: quelle nella vista piu' una fascia
+  // sopra e sotto, cosi scorrendo si trovano gia' pronte.
+  //
+  // Il calcolo e' diretto invece che affidato a un IntersectionObserver perche'
+  // il disegno non deve dipendere dallo scatto di un osservatore: se quello non
+  // arrivasse, l'anteprima resterebbe bianca per sempre. Qui la prima passata
+  // avviene subito e lo scorrimento aggiorna il resto.
+  function aggiornaVisibili() {
+    if (!S || !S.pagine || !S.pagine.length) return;
+    const cont = document.getElementById('imp-pdf');
+    if (!cont) return;
+
+    const alto = cont.scrollTop - MARGINE_ANTEPRIMA;
+    const basso = cont.scrollTop + cont.clientHeight + MARGINE_ANTEPRIMA;
+    let cima = 0;
+
+    for (const p of S.pagine) {
+      const inizio = p.wrap.offsetTop - cont.offsetTop;
+      const fine = inizio + p.wrap.offsetHeight;
+      if (fine > alto && inizio < basso) disegnaPagina(p, S.dpr);
+      else liberaPagina(p);
+      if (!cima && fine > cont.scrollTop + 4) cima = p.n;
+    }
+
+    if (S.pagine.length > 1) fase('pronto', `pagina ${cima || 1} di ${S.pagine.length}`, 100);
+  }
+
+  function liberaPagine() {
+    if (!S) return;
+    (S.pagine || []).forEach(liberaPagina);
+  }
+
+  function disegnaPagina(p, dpr) {
+    if (p.disegnata || p.task) return;
+    p.canvas.width = Math.floor(p.vp.width * dpr);
+    p.canvas.height = Math.floor(p.vp.height * dpr);
+    p.task = p.page.render({
+      canvasContext: p.canvas.getContext('2d'),
+      viewport: p.vp,
+      transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0]
+    });
+    p.task.promise.then(() => { p.disegnata = true; p.task = null; })
+      .catch(() => { p.task = null; });   // annullata perche' e' uscita di vista
+  }
+
+  function liberaPagina(p) {
+    if (p.task) { try { p.task.cancel(); } catch (_) {} p.task = null; }
+    if (!p.disegnata && p.canvas.width === 0) return;
+    // Azzerare le dimensioni libera la superficie del canvas; la misura in CSS
+    // resta, quindi il layout non si muove.
+    p.canvas.width = 0;
+    p.canvas.height = 0;
+    p.disegnata = false;
+  }
+
 
   // I riquadri seguono il modello editabile, non l'analisi: se l'operatore
   // toglie una riga l'evidenziazione sparisce, se ne recupera una compare.
@@ -801,6 +870,13 @@
     const rCont = cont.getBoundingClientRect();
     const y = cont.scrollTop + (rBox.top - rCont.top) - cont.clientHeight / 2 + rBox.height / 2;
     cont.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+
+    // Dopo un salto le pagine da tenere disegnate cambiano. Affidarsi al solo
+    // evento di scorrimento non basta: saltando a pagina 90 si arriverebbe su
+    // un foglio bianco. Si ricalcola subito e di nuovo a scorrimento concluso,
+    // perche' con l'animazione la posizione finale arriva dopo.
+    aggiornaVisibili();
+    setTimeout(aggiornaVisibili, 400);
   }
 
   window.ImportPdf = { avvia, chiudi };

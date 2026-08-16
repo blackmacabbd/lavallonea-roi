@@ -184,6 +184,10 @@ const upload = multer({
 });
 const uploadPdf = multer({
   storage,
+  // Un listino di 117 pagine sta in pochi MB: il tetto e' largo per i casi veri
+  // e stretto abbastanza da non far scrivere su disco file fuori scala. Il
+  // superamento arriva al client come messaggio leggibile, non come 500.
+  limits: { fileSize: 40 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/\.pdf$/i.test(file.originalname)) cb(null, true);
     else cb(new Error('Solo file PDF'));
@@ -1754,9 +1758,14 @@ app.delete('/api/strutture/:id', requireAuth, (req, res) => {
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
   if (!err) return next();
-  const stato = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 400);
+  const troppoGrande = err.code === 'LIMIT_FILE_SIZE';
+  const stato = err.status || (troppoGrande ? 413 : 400);
+  // Multer riporta "File too large": qui il messaggio arriva all'operatore.
+  const messaggio = troppoGrande
+    ? 'Il file supera i 40 MB: comprimilo o dividilo prima di caricarlo.'
+    : (err.message || 'Richiesta non valida');
   if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
-  res.status(stato).json({ error: err.message || 'Richiesta non valida' });
+  res.status(stato).json({ error: messaggio });
 });
 
 app.listen(PORT, () => {

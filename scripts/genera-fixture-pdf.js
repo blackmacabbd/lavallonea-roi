@@ -87,6 +87,50 @@ const MISTO_HTML = `
   </table>
 </body></html>`;
 
+// Listino lungo con la colonna "tempi di refertazione", come i listini reali
+// (CDVET: 117 pagine). Serve a provare due cose che le fixture corte non
+// toccano: il riconoscimento della colonna e il disegno delle sole pagine
+// vicine alla vista invece di tutte insieme.
+const ESAMI_LUNGO = [
+  'CORTISOLO/CREATININA URINARI', 'CHIMICA URINARIA (NA, K, CL, CA, P, UREA, CREA)',
+  'ESAME CITOLOGICO DEL SEDIMENTO URINARIO', 'ESAME URINE, PU/CU',
+  'GGT/CREATININA URINARI', 'VALUTAZIONE QUALITATIVA PROTEINURIA',
+  'RICERCA ORGANOFOSFORICI', 'PROFILO BIOCHIMICO COMPLETO',
+  'EMOCROMO CON FORMULA LEUCOCITARIA', 'TEMPO DI PROTROMBINA'
+];
+const TEMPI = ['4 h', '6 h', '24 h', '7 gg', '5/7 gg', 'in giornata', 'vedi singole analisi'];
+
+function listinoLungoHtml(pagine) {
+  const blocchi = [];
+  for (let p = 0; p < pagine; p++) {
+    const righe = ESAMI_LUNGO.map((nome, i) => {
+      const prezzo = (8 + ((p * 7 + i * 3) % 60) + 0.5).toFixed(2).replace('.', ',');
+      return `<tr><td>${nome} ${p + 1}/${i + 1}</td><td>${TEMPI[(p + i) % TEMPI.length]}</td><td class="n">€ ${prezzo}</td></tr>`;
+    }).join('');
+    blocchi.push(`
+      <div class="${p ? 'salto' : ''}">
+        <div class="tit">LISTINO PREZZI — sezione ${p + 1}</div>
+        <table>
+          <tr><th>Esame</th><th>Tempi</th><th class="n">Prezzo</th></tr>
+          ${righe}
+        </table>
+        <div class="piede">Pagina ${p + 1} di ${pagine}</div>
+      </div>`);
+  }
+  return `
+<html><head><meta charset="utf-8"><style>
+  @page { size: A4; margin: 16mm 14mm; }
+  body { font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt; color: #26262a; }
+  .salto { page-break-before: always; }
+  .tit { font-size: 11pt; font-weight: bold; margin-bottom: 4mm; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 8.5pt; border-bottom: 1px solid #0f76bc; padding: 2mm 0; }
+  td { padding: 1.4mm 0; }
+  .n { text-align: right; }
+  .piede { font-size: 7pt; color: #999; margin-top: 5mm; }
+</style></head><body>${blocchi.join('')}</body></html>`;
+}
+
 // PDF di sola immagine (nessun testo incorporato): simula uno scansionato.
 // PNG 2x2 grigio in data URI, ingrandito a tutta pagina.
 const PNG_2X2 =
@@ -117,6 +161,7 @@ async function scrivi(browser, html, nomeFile) {
     await scrivi(browser, LISTINO_HTML, 'listino-testo.pdf');
     await scrivi(browser, FRAMMENTI_HTML, 'righe-frammentate.pdf');
     await scrivi(browser, MISTO_HTML, 'listino-misto.pdf');
+    await scrivi(browser, listinoLungoHtml(12), 'listino-lungo-tempi.pdf');
     await scrivi(browser, SCANSIONE_HTML, 'listino-scansionato.pdf');
   } finally {
     await browser.close();
