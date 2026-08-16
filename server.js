@@ -1563,7 +1563,7 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       });
     }
 
-    const { valide, ignorate } = importbozze.normalizzaRighe(righe);
+    const { valide, ignorate, duplicate } = importbozze.normalizzaRighe(righe);
     if (!valide.length) {
       annota('rifiutato', 'nessuna riga importabile');
       return res.status(400).json({ error: 'Nessuna riga importabile nell\'elenco confermato' });
@@ -1595,8 +1595,10 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     const confermata = importbozze.confermaBozza(db, bozza.id, req.user.id, valide);
     if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
 
-    annota('confermato', `${valide.length} righe importate, ${ignorate} ignorate`, { nRighe: valide.length });
-    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, ...risultato });
+    annota('confermato',
+      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
+      { nRighe: valide.length });
+    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1737,6 +1739,18 @@ app.delete('/api/strutture/:id', requireAuth, (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Gli errori sollevati dai middleware — in pratica il filtro sui tipi di file di
+// multer — arriverebbero al gestore predefinito di Express, che risponde una
+// pagina HTML: il client si aspetta JSON e mostrerebbe "Errore 500" al posto del
+// motivo vero. Qui il motivo torna leggibile.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (!err) return next();
+  const stato = err.status || (err.code === 'LIMIT_FILE_SIZE' ? 413 : 400);
+  if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
+  res.status(stato).json({ error: err.message || 'Richiesta non valida' });
 });
 
 app.listen(PORT, () => {

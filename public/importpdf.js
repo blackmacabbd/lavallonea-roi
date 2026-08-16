@@ -42,9 +42,25 @@
 
   const eur = n => Number(n).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+  // Interpreta un prezzo scritto a mano in formato italiano o anglosassone.
+  // Deve restare allineata a parsePrezzo di lib/pdfclassifica.js: qui decide
+  // cosa viene inviato, la' cosa viene salvato. "1.234,56" vale 1234.56.
   const numero = v => {
-    if (typeof v === 'number') return v;
-    const n = parseFloat(String(v == null ? '' : v).replace(/\s/g, '').replace(',', '.'));
+    if (typeof v === 'number') return Number.isFinite(v) ? v : NaN;
+    let t = String(v == null ? '' : v).replace(/[\s €]/g, '');
+    if (!t) return NaN;
+    const ultimaVirgola = t.lastIndexOf(',');
+    const ultimoPunto = t.lastIndexOf('.');
+    if (ultimaVirgola >= 0 && ultimoPunto >= 0) {
+      t = ultimaVirgola > ultimoPunto
+        ? t.replace(/\./g, '').replace(',', '.')
+        : t.replace(/,/g, '');
+    } else if (ultimaVirgola >= 0) {
+      t = (t.match(/,/g) || []).length > 1 ? t.replace(/,/g, '') : t.replace(',', '.');
+    } else if (ultimoPunto >= 0 && /^\d{1,3}(\.\d{3})+$/.test(t)) {
+      t = t.replace(/\./g, '');
+    }
+    const n = parseFloat(t);
     return Number.isFinite(n) ? n : NaN;
   };
 
@@ -383,7 +399,6 @@
     const a = S.analisi;
     const persi = scartateTabellari().length;
     const incerte = S.righe.filter(r => r.confidenza === 'incerta' && !r.modificata).length;
-    const daImportare = S.righe.length;
     const conf = Math.round((a.confidenzaComplessiva || 0) * 100);
 
     let tipo = 'ok', titolo, messaggio, azioni = '';
@@ -420,7 +435,7 @@
     const vi = document.getElementById('imp-vai-incerta');
     if (vi) vi.addEventListener('click', () => {
       const r = S.righe.find(x => x.confidenza === 'incerta' && !x.modificata);
-      if (r) selezionaRiga(r.indice != null ? r.indice : null, false, r.id);
+      if (r) selezionaRiga(r.indice != null ? r.indice : null, 'banner', r.id);
     });
     const vs = document.getElementById('imp-vedi-scartate');
     if (vs) vs.addEventListener('click', () => {
@@ -460,7 +475,10 @@
     cont.querySelectorAll('[data-riga]').forEach(tr => {
       tr.addEventListener('click', e => {
         if (e.target.closest('input,button')) return;
-        selezionaRiga(Number(tr.dataset.riga), false, Number(tr.dataset.id));
+        // Una riga aggiunta a mano non viene dal PDF e ha data-riga vuoto:
+        // Number('') vale 0 e selezionerebbe il riquadro di un'altra riga.
+        const idx = tr.dataset.riga === '' ? null : Number(tr.dataset.riga);
+        selezionaRiga(idx, 'tabella', Number(tr.dataset.id));
       });
     });
     aggiornaConteggio();
@@ -639,11 +657,19 @@
       const alFine = S.alFine;
       const esito = dati;
       chiudi();
-      alert(`Import completato: ${esito.importate} righe salvate${esito.ignorate ? `, ${esito.ignorate} ignorate` : ''}.`);
+      const dettagli = [
+        esito.ignorate ? `${esito.ignorate} ignorate` : null,
+        esito.duplicate ? `${esito.duplicate} duplicate accorpate` : null
+      ].filter(Boolean);
+      alert(`Import completato: ${esito.importate} righe salvate${dettagli.length ? ' (' + dettagli.join(', ') + ')' : ''}.`);
       if (alFine) alFine(esito);
     } catch (err) {
-      S.inCorso = false;
-      aggiornaPiede();
+      // La finestra puo' essere stata chiusa durante l'invio: senza questa
+      // guardia il ripristino del piede fallirebbe su uno stato inesistente.
+      if (S) {
+        S.inCorso = false;
+        aggiornaPiede();
+      }
       alert('Import non riuscito: ' + err.message);
     }
   }
@@ -724,10 +750,11 @@
       box.style.width = `${c.w * S.scala}px`;
       box.style.height = `${c.h * S.scala}px`;
       box.title = `${r.nome} — ${Number.isFinite(numero(r.prezzo)) ? eur(numero(r.prezzo)) : '?'}${r.motivo ? ' · ' + r.motivo : ''}`;
-      box.addEventListener('click', () => selezionaRiga(r.indice, true, r.id));
+      box.addEventListener('click', () => selezionaRiga(r.indice, 'pdf', r.id));
       wrap.appendChild(box);
     }
-    if (S.selezionata != null) evidenzia(S.selezionata, false);
+    // Ridisegnati i riquadri, si ripristina la selezione senza spostare nulla.
+    if (S.selezionata != null) evidenzia(S.selezionata, null, null);
   }
 
   async function zoom(direzione) {
@@ -739,31 +766,31 @@
     await renderPdf();
   }
 
-  // Click su una riga della tabella: porta il visore sulla posizione nel PDF.
-  // Click su un riquadro del PDF: porta la tabella sulla riga corrispondente.
-  function selezionaRiga(indice, daPdf, idRiga) {
+  // Si scorre sempre il lato da cui NON e' arrivato il click: chi clicca una
+  // riga vuole vedere il punto nel PDF, chi clicca un riquadro vuole la riga,
+  // e chi arriva dal banner vuole entrambi, perche' non e' su nessuno dei due.
+  function selezionaRiga(indice, origine, idRiga) {
     S.selezionata = indice;
-    evidenzia(indice, !daPdf, idRiga);
-    if (!daPdf) return;
-    const tr = idRiga != null ? document.querySelector(`[data-id="${idRiga}"]`) : null;
-    if (tr) tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    evidenzia(indice, idRiga, { pdf: origine !== 'pdf', tabella: origine !== 'tabella' });
   }
 
-  function evidenzia(indice, portaIlPdf, idRiga) {
+  function evidenzia(indice, idRiga, scorri) {
+    const vai = scorri || { pdf: false, tabella: false };
     document.querySelectorAll('.imp-sel').forEach(e => e.classList.remove('imp-sel'));
 
+    // Ricerca ristretta alle righe: data-id sta anche sui campi di testo.
     const tr = idRiga != null
-      ? document.querySelector(`[data-id="${idRiga}"]`)
-      : document.querySelector(`[data-riga="${indice}"]`);
-    if (tr) tr.classList.add('imp-sel');
+      ? document.querySelector(`tr[data-id="${idRiga}"]`)
+      : (indice == null ? null : document.querySelector(`tr[data-riga="${indice}"]`));
+    if (tr) {
+      tr.classList.add('imp-sel');
+      if (vai.tabella) tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }
 
     const box = indice == null ? null : document.querySelector(`.imp-box[data-indice="${indice}"]`);
-    if (!box) {
-      if (tr && !portaIlPdf) tr.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      return;
-    }
+    if (!box) return;
     box.classList.add('imp-sel');
-    if (!portaIlPdf) return;
+    if (!vai.pdf) return;
 
     const cont = document.getElementById('imp-pdf');
     if (!cont) return;
