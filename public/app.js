@@ -12,6 +12,9 @@ const S = {
   charts:    {},
   piani:     [],
   concorrenti: [],
+  macchine:  [],
+  macchinaInModifica: null,
+  confrontoMacchine: null,
   foglio: { dati: null, totali: null, file: null, foglio: null, fileId: null },
   roi: {
     struttura: '',
@@ -1692,8 +1695,14 @@ function renderCalcolatoreMacchine() {
   if (!mie.length || !loro.length) {
     // Il consiglio deve dire cosa manca davvero: "importa dal concorrente" non
     // risolve nulla se a mancare sono proprio le macchine tue, e viceversa.
+    // Da ospite, poi, i pulsanti di import qui sopra non sono nemmeno
+    // disegnati (vedi renderMacchinari): consigliarli sarebbe un consiglio
+    // che non si puo' seguire, quindi l'ospite ha un messaggio a parte.
+    const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
     let messaggio;
-    if (!mie.length && !loro.length) {
+    if (!loggato) {
+      messaggio = `Accedi per gestire i tuoi macchinari: da ospite il catalogo macchine non è disponibile.`;
+    } else if (!mie.length && !loro.length) {
       messaggio = `Non ci sono ancora macchine in catalogo, né tue né di un concorrente.
         Importa un listino PDF qui sopra per le tue, o in Gestione concorrenti per quelle
         del concorrente (oppure aggiungile a mano).`;
@@ -1738,7 +1747,8 @@ function renderCalcolatoreMacchine() {
       <td class="td-num">${fmtEuro(a.prezzo)}</td>
       <td class="td-num">${fmtEuro(b.prezzo)}</td>
       <td class="td-num ${diff <= 0 ? 'macc-meglio' : 'macc-peggio'}">${diff <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diff))}</td>
-      <td><button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button></td>
+      <td>${S.confrontoMacchine.length > 1
+        ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -1782,9 +1792,13 @@ function aggiungiConfrontoMacchina() {
 }
 
 function togliConfrontoMacchina(i) {
+  // Il pulsante "✕" non compare piu' sull'unica riga rimasta (vedi il
+  // template della riga qui sopra): un pulsante che, cliccato, fa ricomparire
+  // subito una riga identica sembra non funzionare, ed e' meno onesto verso
+  // chi guarda di un pulsante assente. L'invariante "sempre almeno una riga
+  // quando ci sono macchine da entrambi i lati" resta cosi' la stessa usata
+  // per le righe che puntano a id spariti (vedi renderCalcolatoreMacchine).
   S.confrontoMacchine.splice(i, 1);
-  // Se questa era l'ultima riga, renderCalcolatoreMacchine() ne rimette una
-  // di default (stessa garanzia usata per le righe che puntano a id spariti).
   renderCalcolatoreMacchine();
 }
 

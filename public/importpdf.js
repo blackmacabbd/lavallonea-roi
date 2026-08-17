@@ -265,7 +265,9 @@
     }
     if (!S) return; // finestra chiusa durante l'attesa
 
-    fase('riconosci', `${S.analisi.classificate} esami su ${S.analisi.totaliTabellari} righe con prezzo`, 72);
+    // "righe riconosciute", non "esami": il totale comprende anche le macchine,
+    // e su un listino di soli analizzatori dire "esami" sarebbe falso.
+    fase('riconosci', `${S.analisi.classificate} righe riconosciute su ${S.analisi.totaliTabellari} righe con prezzo`, 72);
     costruisciModello();
 
     await localePronto;
@@ -431,10 +433,15 @@
     const nMacchine = S.righe.filter(r => r.tipo === 'macchina').length;
     const nEsami = S.righe.length - nMacchine;
 
+    // "righe riconosciute", non "esami": il conteggio comprende anche le
+    // macchine, e ripeterlo con parole diverse nel gruppo Esami/Macchine e
+    // nella riga "Riconosciuti N esami e M analizzatori" qui sotto farebbe
+    // vedere tre numeri diversi per la stessa cosa. Su un listino di soli
+    // analizzatori, poi, "esami" sarebbe proprio falso.
     let tipo = 'ok', titolo, messaggio, azioni = '';
     if (persi > 0 || incerte > 0) {
       tipo = 'rivedi';
-      titolo = `Estratti ${a.classificate} esami su ${a.totaliTabellari} righe con prezzo rilevate`;
+      titolo = `Estratte ${a.classificate} righe riconosciute su ${a.totaliTabellari} righe con prezzo rilevate`;
       const pezzi = [];
       if (persi > 0) pezzi.push(persi === 1
         ? `<strong>1</strong> riga con prezzo non è stata classificata`
@@ -444,7 +451,7 @@
       if (incerte > 0) azioni += `<button type="button" class="imp-link" id="imp-vai-incerta">Vai alla prima da rivedere</button>`;
       if (persi > 0) azioni += `<button type="button" class="imp-link" id="imp-vedi-scartate">${S.mostraScartate ? 'Nascondi' : 'Mostra'} le righe scartate</button>`;
     } else {
-      titolo = `Estratti ${a.classificate} esami su ${a.totaliTabellari} righe con prezzo rilevate`;
+      titolo = `Estratte ${a.classificate} righe riconosciute su ${a.totaliTabellari} righe con prezzo rilevate`;
       messaggio = 'Nessuna riga con prezzo è rimasta fuori e nessuna è dubbia.';
     }
 
@@ -458,6 +465,13 @@
         ? 'tutte le righe finiranno fra gli analizzatori, nella sezione Macchinari'
         : 'gli analizzatori andranno nella sezione Macchinari';
       messaggio += `<div class="imp-banner-dest">Riconosciuti <b>${nEsami}</b> esami e <b>${nMacchine}</b> analizzatori: ${destinazioneAnalizzatori}.</div>`;
+    } else if (S.entita === 'macchina' && nEsami > 0) {
+      // Qui dentro il caso e' l'opposto di sopra: si e' partiti da Macchinari,
+      // che dichiara di accettare solo analizzatori, ma tutto cio' che e' stato
+      // riconosciuto e' classificato esame. Non blocca l'operatore (la sezione
+      // forza comunque ogni riga fra le macchine alla conferma, vedi
+      // gruppoHtml), ma avvisa che il documento sembra il listino sbagliato.
+      messaggio += `<div class="imp-banner-dest">Nessun analizzatore riconosciuto: questo documento sembra un listino di esami, mentre qui si importano solo analizzatori. Puoi proseguire comunque, se e' quello che intendevi.</div>`;
     }
 
     document.getElementById('imp-banner').innerHTML = `
@@ -643,19 +657,27 @@
     const r = trova(id);
     if (!r) return;
     r.tipo = r.tipo === 'macchina' ? 'esame' : 'macchina';
-    r.modificata = true;
+    // Non r.modificata = true: spostare cambia solo la destinazione, nome e
+    // prezzo restano quelli di prima, non controllati da nessuno. Marcarla
+    // "modificata" la toglierebbe dal conteggio "da rivedere" senza che
+    // qualcuno l'abbia davvero rivista.
     renderTabella();
     renderBanner();
   }
 
   function aggiungiRiga() {
+    const id = ++contatoreRighe;
     S.righe.push({
-      id: ++contatoreRighe, indice: null, nome: '', prezzo: '',
+      id, indice: null, nome: '', prezzo: '',
       confidenza: 'alta', motivo: null, tipo: 'esame',
       origine: 'manuale', modificata: false
     });
     renderTabella();
-    const inp = document.querySelector('.imp-tabella-edit tbody tr:last-child [data-campo="nome"]');
+    // Per id, non per posizione: con due gruppi in pagina la riga appena
+    // creata non e' detto sia l'ultima nell'ordine del documento (oggi lo e'
+    // sempre, perche' le righe nuove nascono come esame, ma non deve dipendere
+    // da questo).
+    const inp = document.querySelector(`[data-id="${id}"][data-campo="nome"]`);
     if (inp) inp.focus();
     aggiornaPiede();
   }
@@ -663,10 +685,11 @@
   function recuperaRiga(indice) {
     const orig = S.analisi.righe.find(r => r.indice === indice);
     if (!orig) return;
+    const id = ++contatoreRighe;
     // Dell'analisi si tiene solo l'importo trovato: il nome va scritto a mano,
     // perche' proprio il nome e' cio' che ha fatto scartare la riga.
     S.righe.push({
-      id: ++contatoreRighe, indice,
+      id, indice,
       // Senza nome utilizzabile si parte dal testo della riga meno l'importo
       // finale (ed eventuale simbolo di percentuale), che l'operatore correggera.
       nome: orig.nome || orig.testo.replace(/\s*€?\s*[\d.,]+\s*%?\s*$/, '').trim(),
@@ -677,7 +700,11 @@
     renderTabella();
     aggiornaRiquadri();
     renderBanner();
-    const tr = document.querySelector('.imp-tabella-edit tbody tr:last-child [data-campo="nome"]');
+    // Per id, non per posizione: con i gruppi Esami e Macchine entrambi in
+    // pagina, l'ultima riga del documento e' quella del primo gruppo (Esami),
+    // non necessariamente quella appena recuperata. Selezionare per posizione
+    // farebbe scrivere il nome sopra una riga diversa da quella recuperata.
+    const tr = document.querySelector(`[data-id="${id}"][data-campo="nome"]`);
     if (tr) tr.focus();
   }
 
@@ -749,7 +776,12 @@
       const alFine = S.alFine;
       const esito = dati;
       chiudi();
+      // Quando entrambi i totali sono positivi l'import ha scritto in due
+      // cataloghi diversi (esami e macchine): e' il momento di chiuderlo,
+      // dopo che il banner lo aveva gia' annunciato prima della conferma.
       const dettagli = [
+        (esito.esamiImportati > 0 && esito.macchineImportate > 0)
+          ? `${esito.esamiImportati} negli esami e ${esito.macchineImportate} nelle macchine` : null,
         esito.ignorate ? `${esito.ignorate} ignorate` : null,
         esito.duplicate ? `${esito.duplicate} duplicate accorpate` : null
       ].filter(Boolean);
