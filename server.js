@@ -11,6 +11,7 @@ const concorrenti = require('./lib/concorrenti');
 const pdfestrazione = require('./lib/pdfestrazione');
 const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
+const macchineLib = require('./lib/macchine');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -138,6 +139,9 @@ addColIfMissing('concorrenti', 'user_id', 'INTEGER');
 
 // ── Bozze di import PDF e audit ─────────────────────
 importbozze.ensureSchema(db);
+
+// ── Catalogo analizzatori ───────────────────────────
+macchineLib.ensureSchema(db);
 
 // ── Autenticazione ──────────────────────────────────
 auth.ensureSchema(db);
@@ -1526,6 +1530,10 @@ app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), asyn
       righe: cls.righe,
       totaliTabellari: cls.totaliTabellari,
       classificate: cls.classificate,
+      // Conteggi per tipo, cosi' l'operatore vede prima della conferma che un
+      // solo import scrivera' in due destinazioni diverse.
+      esami: cls.esami,
+      macchine: cls.macchine,
       alta: cls.alta,
       incerte: cls.incerte,
       scartate: cls.scartate,
@@ -1581,22 +1589,49 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
 
     // La destinazione e' quella fissata all'analisi, non quella che arriva ora:
     // il client non puo' dirottare l'import su un'altra entita dopo la revisione.
-    let risultato;
-    if (bozza.entita === 'concorrente') {
+    // Un solo import puo' scrivere in due posti: gli esami nel catalogo scelto,
+    // le macchine nella sezione Macchinari.
+    const perTipo = { esame: [], macchina: [] };
+    for (const r of valide) perTipo[r.tipo].push(r);
+
+    // Importando dalla sezione Macchinari l'operatore ha gia' dichiarato che
+    // il documento e' un listino di analizzatori: tutto e' macchina.
+    if (bozza.entita === 'macchina') {
+      perTipo.macchina.push(...perTipo.esame.splice(0));
+    }
+
+    let risultato = {};
+    let concorrenteId = null;
+
+    if (bozza.entita === 'concorrente' || (bozza.entita === 'macchina' && nome)) {
       const nomeConc = String(nome || '').trim();
-      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente' });
-      risultato = concorrenti.upsertConcorrente(
-        db, nomeConc,
-        valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
-        req.user.id
-      );
-    } else {
+      if (bozza.entita === 'concorrente' && !nomeConc) {
+        return res.status(400).json({ error: 'Manca il nome del concorrente' });
+      }
+      if (nomeConc) {
+        const esito = concorrenti.upsertConcorrente(
+          db, nomeConc,
+          perTipo.esame.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
+          req.user.id
+        );
+        concorrenteId = esito.concorrenteId;
+        risultato = esito;
+      }
+    } else if (perTipo.esame.length) {
       // Aggiorna i prezzi base della PROPRIA copia del catalogo: upsert per nome,
       // nessuna cancellazione degli esami assenti dal PDF e nessun piano toccato.
       risultato = piani.upsertFromJson(db, {
-        exams_base_price: Object.fromEntries(valide.map(r => [r.nome, r.prezzo])),
+        exams_base_price: Object.fromEntries(perTipo.esame.map(r => [r.nome, r.prezzo])),
         plans: {}
       }, req.user.id);
+    }
+
+    if (perTipo.macchina.length) {
+      macchineLib.upsertMacchine(db, {
+        userId: req.user.id,
+        concorrenteId,
+        righe: perTipo.macchina.map(r => ({ nome: r.nome, prezzo: r.prezzo, note: null }))
+      });
     }
 
     // Scrittura prima della conferma: gli upsert sono idempotenti per nome,
@@ -1606,9 +1641,50 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
 
     annota('confermato',
-      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
+      `${perTipo.esame.length} esami, ${perTipo.macchina.length} macchine, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
       { nRighe: valide.length });
-    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
+    res.json({
+      success: true, entita: bozza.entita,
+      importate: valide.length,
+      esamiImportati: perTipo.esame.length,
+      macchineImportate: perTipo.macchina.length,
+      ignorate, duplicate, ...risultato
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Macchinari (analizzatori) ──────────────────────
+app.get('/api/macchine', requireAuth, (req, res) => {
+  try { res.json(macchineLib.listaMacchine(db, req.user.id)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/macchine', requireAuth, express.json(), (req, res) => {
+  try {
+    const { nome, prezzo, note, concorrenteId } = req.body || {};
+    const esito = macchineLib.salvaMacchina(db, {
+      userId: req.user.id, concorrenteId: concorrenteId || null, nome, prezzo, note
+    });
+    res.json({ success: true, ...esito });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.put('/api/macchine/:id', requireAuth, express.json(), (req, res) => {
+  try {
+    const { nome, prezzo, note, concorrenteId } = req.body || {};
+    const esito = macchineLib.salvaMacchina(db, {
+      id: req.params.id, userId: req.user.id,
+      concorrenteId: concorrenteId || null, nome, prezzo, note
+    });
+    res.json({ success: true, ...esito });
+  } catch (err) { res.status(400).json({ error: err.message }); }
+});
+
+app.delete('/api/macchine/:id', requireAuth, (req, res) => {
+  try {
+    const ok = macchineLib.eliminaMacchina(db, req.params.id, req.user.id);
+    if (!ok) return res.status(404).json({ error: 'Macchina non trovata' });
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
