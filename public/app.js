@@ -115,10 +115,10 @@ function buildSidebar() {
 
   let html = `
     <div class="nav-upload" onclick="openUploadModal()">
-      <span class="nav-icon">+</span> Carica file Excel
+      <span class="nav-icon">+</span> ${t('menu.upload')}
     </div>
     <div class="nav-item ${isActive('dashboard')}" onclick="navigate('dashboard')">
-      <span class="nav-icon">📊</span> Dashboard
+      <span class="nav-icon">📊</span> ${t('menu.dashboard')}
     </div>
     <div class="nav-divider">Strutture</div>
   `;
@@ -168,23 +168,23 @@ function buildSidebar() {
   html += `
     <div class="nav-divider" style="margin-top:8px">Gestione</div>
     <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
-      <span class="nav-icon">💰</span> Gestione piani
+      <span class="nav-icon">💰</span> ${t('menu.piani')}
     </div>
     <div class="nav-item ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
-      <span class="nav-icon">🏷️</span> Gestione concorrenti
+      <span class="nav-icon">🏷️</span> ${t('menu.concorrenti')}
     </div>
     <div class="nav-item ${isActive('macchinari')}" onclick="navigate('macchinari')">
-      <span class="nav-icon">🔬</span> Macchinari
+      <span class="nav-icon">🔬</span> ${t('menu.macchinari')}
     </div>
     <div class="nav-item ${isActive('confronto-macchine')}" onclick="navigate('confronto-macchine')">
-      <span class="nav-icon">🆚</span> Confronto macchine
+      <span class="nav-icon">🆚</span> ${t('menu.confrontoMacchine')}
     </div>
   `;
 
   if (S.strutture.length >= 2) {
     html += `
       <div class="nav-item ${isActive('confronto')}" onclick="navigate('confronto')">
-        <span class="nav-icon">⚖️</span> Confronto strutture
+        <span class="nav-icon">⚖️</span> ${t('menu.confrontoStrutture')}
       </div>
     `;
   }
@@ -200,7 +200,7 @@ function buildSidebar() {
       </div>
       <div class="struttura-children ${altroOpen}">
         <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">Risparmio totale strutture</div>
-        <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">Cronologia file</div>
+        <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">${t('menu.cronologia')}</div>
         <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">Debug Excel</div>
       </div>
     </div>
@@ -293,6 +293,7 @@ async function navigateToStruttura(strutturaId, foglio) {
 // ── Navigation ─────────────────────────────────────
 function navigate(view, params = {}) {
   window._currentView        = view;
+  window._currentParams      = params;
   window._currentStrutturaId = params.strutturaId || null;
   window._currentFoglio      = params.foglio      || null;
   window._currentFileId      = params.fileId      || null;
@@ -320,6 +321,14 @@ function navigate(view, params = {}) {
   buildSidebar();
 }
 
+// Cambio lingua a caldo: si riusa la navigazione esistente invece di un
+// secondo percorso di disegno, cosi' ogni vista resta l'unica responsabile
+// del proprio markup. Se la vista corrente azzera stato al suo ingresso
+// (es. 'macchinari' chiude il listino aperto), l'effetto e' accettato.
+window.ridisegnaTutto = function () {
+  navigate(window._currentView || 'dashboard', window._currentParams || {});
+};
+
 // ── Dashboard ──────────────────────────────────────
 async function renderDashboard() {
   let data;
@@ -337,7 +346,7 @@ async function renderDashboard() {
   if (strutture_count === 0) {
     setMain(`
       <div class="page-header">
-        <div><div class="page-title">Dashboard</div></div>
+        <div><div class="page-title">${t('pagina.dashboard.titolo')}</div></div>
       </div>
       <div class="page-body">
         <div class="empty-state" style="margin-bottom:24px">
@@ -1127,8 +1136,8 @@ async function renderCronologia() {
 
   setMain(`
     <div class="page-header">
-      <div><div class="page-title">Cronologia file</div>
-        <div class="page-subtitle">Tutti i file caricati</div>
+      <div><div class="page-title">${t('pagina.cronologia.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.cronologia.sottotitolo')}</div>
       </div>
     </div>
     <div class="page-body">
@@ -1231,8 +1240,8 @@ async function renderConfronto() {
 
   setMain(`
     <div class="page-header">
-      <div><div class="page-title">Confronto strutture</div>
-        <div class="page-subtitle">${data.length} strutture nel database</div>
+      <div><div class="page-title">${t('pagina.confrontoStrutture.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.confrontoStrutture.sottotitolo', { n: data.length })}</div>
       </div>
     </div>
     <div class="page-body">
@@ -1478,8 +1487,8 @@ async function renderPiani() {
   const admin = !!(S.auth && S.auth.token && !S.auth.guest);
   setMain(`
     <div class="page-header">
-      <div><div class="page-title">Gestione piani di scontistica</div>
-        <div class="page-subtitle">${elenco.length} piani (attivi e disattivati)</div>
+      <div><div class="page-title">${t('pagina.piani.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.piani.sottotitolo', { n: elenco.length })}</div>
       </div>
       <div class="page-actions">
         ${admin ? `<label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
@@ -1654,8 +1663,8 @@ function disegnaMacchinari() {
 
   setMain(`
     <div class="page-header">
-      <div><div class="page-title">Macchinari</div>
-        <div class="page-subtitle">${mie.length} tuoi · ${loro.length} della concorrenza</div>
+      <div><div class="page-title">${t('pagina.macchinari.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.macchinari.sottotitolo', { mie: mie.length, loro: loro.length })}</div>
       </div>
     </div>
     <div class="page-body">
@@ -1930,8 +1939,8 @@ async function renderConfrontoMacchine() {
 
   setMain(`
     <div class="page-header">
-      <div><div class="page-title">Confronto macchine</div>
-        <div class="page-subtitle">${mie.length} tue · ${loro.length} della concorrenza</div>
+      <div><div class="page-title">${t('pagina.confrontoMacchine.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.confrontoMacchine.sottotitolo', { mie: mie.length, loro: loro.length })}</div>
       </div>
     </div>
     <div class="page-body">
@@ -2070,8 +2079,8 @@ async function renderConcorrentiAdmin() {
 
   setMain(`
     <div class="page-header">
-      <div><div class="page-title">Gestione concorrenti</div>
-        <div class="page-subtitle">${elenco.length} concorrenti importati</div>
+      <div><div class="page-title">${t('pagina.concorrenti.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.concorrenti.sottotitolo', { n: elenco.length })}</div>
       </div>
       <div class="page-actions">
         <label class="btn-outline" for="concorrenti-import-input">📥 Importa listino Excel</label>
@@ -3266,6 +3275,9 @@ async function avviaApp() {
 }
 
 async function boot() {
+  document.documentElement.lang = I18n.lingua();
+  const selettore = el('selettore-lingua');
+  if (selettore) selettore.innerHTML = I18n.selettoreHtml();
   if (S.auth.token) {
     try {
       const me = await fetch('/api/auth/me', { headers: authHeaders() }).then(r => r.ok ? r.json() : null);
