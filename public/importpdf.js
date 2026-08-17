@@ -487,10 +487,17 @@
     const incerte = S.righe.filter(r => r.confidenza === 'incerta' && !r.modificata).length;
     const conf = Math.round((a.confidenzaComplessiva || 0) * 100);
 
+    // Un import ha una sola destinazione: per piano e concorrente le righe
+    // sono esami, per macchina sono macchine. Le parole del banner devono
+    // dirlo, non parlare genericamente di "righe" come quando l'import era
+    // misto.
+    const entitaPlurale = S.entita === 'macchina' ? 'macchine' : 'esami';
+    const estratte = S.entita === 'macchina' ? 'Estratte' : 'Estratti';
+
     let tipo = 'ok', titolo, messaggio, azioni = '';
+    titolo = `${estratte} ${a.classificate} ${entitaPlurale} su ${a.totaliTabellari} righe con prezzo rilevate`;
     if (persi > 0 || incerte > 0) {
       tipo = 'rivedi';
-      titolo = `Estratte ${a.classificate} righe riconosciute su ${a.totaliTabellari} righe con prezzo rilevate`;
       const pezzi = [];
       if (persi > 0) pezzi.push(persi === 1
         ? `<strong>1</strong> riga con prezzo non è stata classificata`
@@ -500,7 +507,6 @@
       if (incerte > 0) azioni += `<button type="button" class="imp-link" id="imp-vai-incerta">Vai alla prima da rivedere</button>`;
       if (persi > 0) azioni += `<button type="button" class="imp-link" id="imp-vedi-scartate">${S.mostraScartate ? 'Nascondi' : 'Mostra'} le righe scartate</button>`;
     } else {
-      titolo = `Estratte ${a.classificate} righe riconosciute su ${a.totaliTabellari} righe con prezzo rilevate`;
       messaggio = 'Nessuna riga con prezzo è rimasta fuori e nessuna è dubbia.';
     }
 
@@ -542,11 +548,12 @@
     const cont = document.getElementById('imp-tab');
     if (!cont) return;
     const scartate = scartateTabellari();
+    const colonnaNome = S.entita === 'macchina' ? 'Macchina' : 'Esame';
 
     cont.innerHTML = `
       <table class="imp-tabella imp-tabella-edit">
         <thead><tr>
-          <th style="width:30px">#</th><th>Nome</th>
+          <th style="width:30px">#</th><th>${colonnaNome}</th>
           <th style="width:96px">Prezzo</th><th style="width:104px">Stato</th><th style="width:34px"></th>
         </tr></thead>
         <tbody>

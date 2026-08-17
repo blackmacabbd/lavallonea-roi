@@ -174,7 +174,7 @@ function buildSidebar() {
       <span class="nav-icon">🔬</span> Macchinari
     </div>
     <div class="nav-item ${isActive('confronto-macchine')}" onclick="navigate('confronto-macchine')">
-      <span class="nav-icon">⚖️</span> Confronto macchine
+      <span class="nav-icon">🆚</span> Confronto macchine
     </div>
   `;
 
@@ -307,8 +307,8 @@ function navigate(view, params = {}) {
     case 'piani':      renderPiani();                                  break;
     case 'concorrenti': renderConcorrentiAdmin();                      break;
     // Si arriva qui dalla voce di menu, mai da nuovaMacchina/modificaMacchina
-    // (che ridisegnano chiamando renderMacchinari() direttamente): azzerare la
-    // riga in modifica quando si entra nella sezione da un'altra pagina non
+    // (che ridisegnano chiamando renderListinoMacchine() direttamente): azzerare
+    // la riga in modifica quando si entra nella sezione da un'altra pagina non
     // rompe il flusso di modifica, e toglie uno stato residuo che l'operatore
     // non ha piu' motivo di ritrovare aperto.
     case 'macchinari': S.macchinaInModifica = null; S.listinoAperto = null; renderMacchinari();  break;
@@ -1665,7 +1665,7 @@ async function renderMacchinari() {
                 </td>
               </tr>`).join('')}
               ${!listini.length ? `<tr><td colspan="5" class="td-muted" style="text-align:center;padding:26px">
-                Nessun listino importato. Usa «Importa listino PDF» per aggiungerne uno.</td></tr>` : ''}
+                ${loggato ? 'Nessun listino importato. Usa «Importa listino PDF» per aggiungerne uno.' : 'Accedi per importare un listino.'}</td></tr>` : ''}
             </tbody>
           </table>
         </div>
@@ -1683,7 +1683,7 @@ function importaPdfMacchine() {
 async function eliminaListinoUI(id) {
   const l = (S.listiniMacchine || []).find(x => x.id === id);
   const quante = l ? l.nMacchine : 0;
-  if (!confirm(`Eliminare il listino "${l ? l.nome : ''}" e le sue ${quante} macchine?`)) return;
+  if (!confirm(`Eliminare il listino "${l ? l.nome : ''}" e le sue ${quante} macchine? L'operazione non è reversibile.`)) return;
   try {
     await api(`/api/listini-macchine/${id}`, { method: 'DELETE' });
     renderMacchinari();
@@ -1798,7 +1798,7 @@ async function salvaMacchinaUI() {
 async function eliminaMacchinaUI(id) {
   const l = S.listinoAperto;
   const m = l ? l.macchine.find(x => x.id === id) : null;
-  if (!confirm(`Eliminare "${m ? m.nome : 'questa macchina'}" dal listino?`)) return;
+  if (!confirm(`Eliminare "${m ? m.nome : 'questa macchina'}" dal listino? L'operazione non è reversibile.`)) return;
   try {
     await api(`/api/macchine/${id}`, { method: 'DELETE' });
     await renderMacchinari();
@@ -1825,25 +1825,30 @@ async function renderConfrontoMacchine() {
   const mie = elenco.filter(m => !m.concorrenteId);
   const loro = elenco.filter(m => m.concorrenteId);
 
+  // La riga di default nasce solo qui, al primo ingresso nella sezione (mai in
+  // renderCorpoConfrontoMacchine, che ridisegna a ogni modifica): altrimenti
+  // "Rimuovi tutto" verrebbe vanificato dal ridisegno immediato che segue.
+  if (S.confrontoMacchine == null && mie.length && loro.length) {
+    S.confrontoMacchine = [{ mia: mie[0].id, sua: loro[0].id }];
+  }
+
   setMain(`
     <div class="page-header">
       <div><div class="page-title">Confronto macchine</div>
-        <div class="page-subtitle">Mylav vs concorrenza</div>
+        <div class="page-subtitle">${mie.length} tue · ${loro.length} della concorrenza</div>
       </div>
     </div>
     <div class="page-body">
-      <div class="roi-toolbar">
-        <div>
-          <div class="roi-toolbar-title">Confronto macchine</div>
-          <div class="roi-toolbar-sub">${mie.length} tue · ${loro.length} della concorrenza</div>
+      <div class="section-card">
+        <div class="roi-toolbar" style="justify-content:flex-end">
+          <div class="roi-toolbar-controls">
+            ${mie.length && loro.length ? `<button class="btn-outline" onclick="aggiungiConfrontoMacchina()" style="font-size:12px">+ Aggiungi riga</button>
+            <button class="btn-outline" onclick="rimuoviTuttoConfrontoMacchine()" style="font-size:12px">🗑️ Rimuovi tutto</button>` : ''}
+            <button class="btn-outline" onclick="navigate('macchinari')" style="font-size:12px">🔬 Gestisci macchinari</button>
+          </div>
         </div>
-        <div class="roi-toolbar-controls">
-          ${mie.length && loro.length ? `<button class="btn-outline" onclick="aggiungiConfrontoMacchina()" style="font-size:12px">+ Aggiungi riga</button>
-          <button class="btn-outline" onclick="rimuoviTuttoConfrontoMacchine()" style="font-size:12px">🗑️ Rimuovi tutto</button>` : ''}
-          <button class="btn-outline" onclick="navigate('macchinari')" style="font-size:12px">🔬 Gestisci macchinari</button>
-        </div>
+        <div id="confronto-macchine-corpo"></div>
       </div>
-      <div id="confronto-macchine-corpo"></div>
     </div>
   `);
   renderCorpoConfrontoMacchine();
@@ -1852,37 +1857,46 @@ async function renderConfrontoMacchine() {
 function renderCorpoConfrontoMacchine() {
   const wrap = el('confronto-macchine-corpo');
   if (!wrap) return;
+  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
   const mie = (S.macchine || []).filter(m => !m.concorrenteId);
   const loro = (S.macchine || []).filter(m => m.concorrenteId);
 
   if (!mie.length || !loro.length) {
-    const manca = !mie.length && !loro.length
-      ? 'Non ci sono ancora macchine in catalogo. Importa un listino di analizzatori nella sezione Macchinari: uno con le tue macchine e uno con quelle del concorrente.'
-      : !mie.length
-        ? 'Mancano le tue macchine: quelle della concorrenza ci sono già. Importa un listino con provenienza «Le mie macchine» nella sezione Macchinari.'
-        : 'Manca il termine di paragone: le tue macchine ci sono già. Importa un listino indicando il concorrente a cui appartiene, nella sezione Macchinari.';
+    const manca = !loggato
+      ? 'Accedi per importare i listini di analizzatori nella sezione Macchinari: uno con le tue macchine e uno con quelle del concorrente.'
+      : !mie.length && !loro.length
+        ? 'Non ci sono ancora macchine in catalogo. Importa un listino di analizzatori nella sezione Macchinari: uno con le tue macchine e uno con quelle del concorrente.'
+        : !mie.length
+          ? 'Mancano le tue macchine: quelle della concorrenza ci sono già. Importa un listino con provenienza «Le mie macchine» nella sezione Macchinari.'
+          : 'Manca il termine di paragone: le tue macchine ci sono già. Importa un listino indicando il concorrente a cui appartiene, nella sezione Macchinari.';
     wrap.innerHTML = `
-      <div class="section-card">
-        <div class="td-muted" style="padding:6px 0;line-height:1.5">${manca}</div>
-        <button class="btn-primary" style="margin-top:12px" onclick="navigate('macchinari')">Vai a Macchinari</button>
-      </div>`;
+      <div class="td-muted" style="padding:6px 0;line-height:1.5">${manca}</div>
+      <button class="btn-primary" style="margin-top:12px" onclick="navigate('macchinari')">${loggato ? 'Vai a Macchinari' : 'Accedi'}</button>`;
     return;
   }
 
-  if (!Array.isArray(S.confrontoMacchine) || !S.confrontoMacchine.length) {
-    S.confrontoMacchine = [{ mia: mie[0].id, sua: loro[0].id }];
-  }
   // Una riga che punta a una macchina non piu' esistente direbbe una cosa
-  // diversa da quella scelta: si scarta invece di ripiegare su un'altra.
-  S.confrontoMacchine = S.confrontoMacchine.filter(r =>
-    mie.some(m => m.id === r.mia) && loro.some(m => m.id === r.sua));
-  if (!S.confrontoMacchine.length) S.confrontoMacchine = [{ mia: mie[0].id, sua: loro[0].id }];
+  // diversa da quella scelta: si scarta invece di ripiegare su un'altra. Non
+  // viene ricreata una riga di ripiego: quella di default nasce solo al primo
+  // ingresso nella sezione, in renderConfrontoMacchine.
+  const righe = Array.isArray(S.confrontoMacchine)
+    ? S.confrontoMacchine.filter(r => mie.some(m => m.id === r.mia) && loro.some(m => m.id === r.sua))
+    : [];
+  S.confrontoMacchine = righe;
+
+  if (!righe.length) {
+    wrap.innerHTML = `
+      <div class="td-muted" style="padding:16px 0;line-height:1.5;text-align:center">
+        Nessuna riga di confronto. Usa «+ Aggiungi riga» qui sopra per aggiungerne una.
+      </div>`;
+    return;
+  }
 
   const opzioni = (lista, sel) => lista
     .map(m => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('');
 
   let totMia = 0, totSua = 0;
-  const righe = S.confrontoMacchine.map((r, i) => {
+  const righeHtml = righe.map((r, i) => {
     const a = mie.find(m => m.id === r.mia);
     const b = loro.find(m => m.id === r.sua);
     totMia += a.prezzo; totSua += b.prezzo;
@@ -1893,30 +1907,28 @@ function renderCorpoConfrontoMacchine() {
       <td class="td-num">${fmtEuro(a.prezzo)}</td>
       <td class="td-num">${fmtEuro(b.prezzo)}</td>
       <td class="td-num ${diff <= 0 ? 'macc-meglio' : 'macc-peggio'}">${diff <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diff))}</td>
-      <td>${S.confrontoMacchine.length > 1 ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button>` : ''}</td>
+      <td>${righe.length > 1 ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button>` : ''}</td>
     </tr>`;
   }).join('');
 
   const diffTot = totMia - totSua;
   wrap.innerHTML = `
-    <div class="table-card">
-      <div class="table-scroll">
-        <table class="macc-confronto">
-          <thead><tr>
-            <th>La mia macchina</th><th>Della concorrenza</th>
-            <th style="width:110px">Mylav</th><th style="width:110px">Concorrenza</th>
-            <th style="width:120px">Differenza</th><th style="width:40px"></th>
-          </tr></thead>
-          <tbody>${righe}</tbody>
-          <tfoot><tr>
-            <td colspan="2"><b>Totale</b></td>
-            <td class="td-num"><b>${fmtEuro(totMia)}</b></td>
-            <td class="td-num"><b>${fmtEuro(totSua)}</b></td>
-            <td class="td-num ${diffTot <= 0 ? 'macc-meglio' : 'macc-peggio'}"><b>${diffTot <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diffTot))}</b></td>
-            <td></td>
-          </tr></tfoot>
-        </table>
-      </div>
+    <div class="table-scroll">
+      <table class="macc-confronto">
+        <thead><tr>
+          <th>La mia macchina</th><th>Della concorrenza</th>
+          <th style="width:110px">Mylav</th><th style="width:110px">Concorrenza</th>
+          <th style="width:120px">Differenza</th><th style="width:40px"></th>
+        </tr></thead>
+        <tbody>${righeHtml}</tbody>
+        <tfoot><tr>
+          <td colspan="2"><b>Totale</b></td>
+          <td class="td-num"><b>${fmtEuro(totMia)}</b></td>
+          <td class="td-num"><b>${fmtEuro(totSua)}</b></td>
+          <td class="td-num ${diffTot <= 0 ? 'macc-meglio' : 'macc-peggio'}"><b>${diffTot <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diffTot))}</b></td>
+          <td></td>
+        </tr></tfoot>
+      </table>
     </div>`;
 }
 
@@ -1943,7 +1955,7 @@ function togliConfrontoMacchina(i) {
 
 function rimuoviTuttoConfrontoMacchine() {
   if (!confirm('Svuotare il confronto?')) return;
-  S.confrontoMacchine = null;
+  S.confrontoMacchine = [];
   renderCorpoConfrontoMacchine();
 }
 
@@ -2093,7 +2105,11 @@ async function confermaImportConcorrente() {
 async function eliminaConcorrenteUI(id) {
   const c = S.concorrenti.find(x => x.id === id);
   const nome = c ? c.nome : 'questo concorrente';
-  if (!confirm(`Eliminare "${nome}" e tutti i suoi esami? L'operazione non è reversibile.`)) return;
+  // I listini di analizzatori di questo concorrente (e le loro macchine)
+  // vengono eliminati insieme a lui: l'operatore deve saperlo prima di
+  // confermare, non scoprirlo dopo.
+  const esami = c && c.n_esami != null ? `i suoi ${c.n_esami} esami` : 'tutti i suoi esami';
+  if (!confirm(`Eliminare "${nome}", ${esami} e i listini di analizzatori importati per questo concorrente? L'operazione non è reversibile.`)) return;
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     await loadConcorrenti();
@@ -3137,9 +3153,11 @@ async function avviaApp() {
   S.listinoAperto = null;
   // Le coppie del confronto macchine sono accoppiate per id, e gli id sono
   // globali ma appartengono al catalogo di un account: quelli salvati
-  // dall'account precedente quasi certamente non esistono in questo catalogo,
-  // percio' ogni riga cadrebbe sul ripiego della prima macchina disponibile e
-  // tutte le righe collasserebbero sulla stessa coppia, gonfiando il totale.
+  // dall'account precedente quasi certamente non esistono in questo catalogo.
+  // Il redraw scarta da solo le righe che puntano a macchine non piu'
+  // esistenti, ma azzerare qui evita di trascinarsi dietro un confronto
+  // dell'account precedente: la sezione ripartira' dalla riga di default
+  // sulle macchine del nuovo account, alla prossima visita.
   S.confrontoMacchine = null;
   // loadStrutture/loadConcorrenti richiedono un account (dati privati per utente):
   // in modalita' ospite falliscono con 401, atteso. Non deve bloccare il boot.

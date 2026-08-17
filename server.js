@@ -1530,9 +1530,9 @@ app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), asyn
       righe: cls.righe,
       totaliTabellari: cls.totaliTabellari,
       classificate: cls.classificate,
-      // Conteggi per tipo, cosi' l'operatore vede prima della conferma che un
-      // solo import scrivera' in due destinazioni diverse.
-      esami: cls.esami,
+      // Il conteggio delle macchine serve solo all'avviso mostrato in
+      // revisione: se un import verso Macchinari non riconosce nessun
+      // analizzatore, il documento sembra invece un listino di esami.
       macchine: cls.macchine,
       alta: cls.alta,
       incerte: cls.incerte,
@@ -1591,6 +1591,11 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     // Macchinari: uno smistamento automatico spostava righe in una sezione che
     // l'operatore non aveva scelto, e una singola riga riconosciuta male bastava
     // a tipizzare male tutte le successive.
+    //
+    // Il catalogo si scrive prima di confermare la bozza: gli upsert sono
+    // idempotenti (ripetere la scrittura non crea doppioni), mentre l'ordine
+    // inverso rischierebbe di segnare la bozza come confermata senza che il
+    // catalogo sia stato davvero aggiornato, se la scrittura fallisse dopo.
     let risultato = {};
     if (bozza.entita === 'concorrente') {
       const nomeConc = String(nome || '').trim();
@@ -1629,7 +1634,7 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
       { nRighe: valide.length });
     res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message }); }
 });
 
 // ── Macchinari (analizzatori) ──────────────────────
