@@ -210,15 +210,15 @@ function buildSidebar() {
     <div class="sidebar-account">
       <button class="account-btn" onclick="toggleAccountMenu()" title="Account">
         <span class="account-ico">👤</span>
-        <span class="account-email">${S.auth.guest ? 'Ospite' : (S.auth.email || 'Account')}</span>
+        <span class="account-email">${S.auth.guest ? t('comune.ospite') : (S.auth.email || 'Account')}</span>
       </button>
       <div id="account-menu" class="account-menu" style="display:none">
         ${S.auth.guest || !S.auth.token ? `
           <div onclick="mostraAuthScreen('login')">${t('comune.accedi')}</div>
           <div onclick="mostraAuthScreen('register')">${t('auth.registrati')}</div>
           <div onclick="authGuest()">${t('auth.ospiteEntra')}</div>` : `
-          <div onclick="authLogout()">Logout</div>
-          <div onclick="mostraAuthScreen('login')">Cambia account</div>`}
+          <div onclick="authLogout()">${t('comune.esci')}</div>
+          <div onclick="mostraAuthScreen('login')">${t('auth.cambiaAccount')}</div>`}
       </div>
     </div>`;
 
@@ -2013,7 +2013,7 @@ function renderCorpoConfrontoMacchine() {
       <td class="td-num">${fmtEuro(a.prezzo)}</td>
       <td class="td-num">${fmtEuro(b.prezzo)}</td>
       <td class="td-num ${diff <= 0 ? 'macc-meglio' : 'macc-peggio'}">${diff <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diff))}</td>
-      <td>${righe.length > 1 ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button>` : ''}</td>
+      <td>${righe.length > 1 ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="${t('confronto.togliRiga')}">✕</button>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -3444,9 +3444,9 @@ function renderAuthBody(vista) {
         <label class="auth-label">${t('auth.password')}</label>
         <input class="auth-input" type="password" id="auth-reg-pass" required autocomplete="new-password">
         <ul class="auth-rules" id="auth-rules">
-          <li data-rule="lunghezza">Almeno 8 caratteri</li>
-          <li data-rule="cifra">Almeno un numero</li>
-          <li data-rule="speciale">Almeno un carattere speciale</li>
+          <li data-rule="lunghezza">${t('auth.regola.lunghezza')}</li>
+          <li data-rule="cifra">${t('auth.regola.cifra')}</li>
+          <li data-rule="speciale">${t('auth.regola.speciale')}</li>
         </ul>
         <button type="submit" class="btn-primary auth-submit">${t('auth.registrati')}</button>
       </form>`;
@@ -3463,7 +3463,7 @@ function renderAuthBody(vista) {
       authErr('');
       const email = el('auth-reg-email').value.trim();
       const pass = passInp.value;
-      if (!passwordOk(pass)) return authErr('La password non rispetta i requisiti richiesti');
+      if (!passwordOk(pass)) return authErr(t('auth.passwordNonConforme'));
       try {
         const recoveryCode = await authRegister(email, pass);
         renderCodiceRecupero(recoveryCode);
@@ -3588,10 +3588,10 @@ function renderCodiceRecupero(recoveryCode) {
   authErr('');
   const body = el('auth-body');
   body.innerHTML = `
-    <div class="auth-form-title">Salva il tuo codice di recupero</div>
-    <div class="auth-hint">Questo codice è l'unico modo per recuperare l'account se perdi email e password. Conservalo in un posto sicuro: non verrà mostrato di nuovo.</div>
+    <div class="auth-form-title">${t('auth.codiceRecupero.titolo')}</div>
+    <div class="auth-hint">${t('auth.codiceRecupero.avviso')}</div>
     <div class="auth-code">${escHtml(recoveryCode)}</div>
-    <button type="button" class="btn-primary auth-submit" id="auth-code-continua">Ho salvato il codice, continua</button>`;
+    <button type="button" class="btn-primary auth-submit" id="auth-code-continua">${t('auth.codiceRecupero.continua')}</button>`;
   el('auth-code-continua').addEventListener('click', () => {
     nascondiAuthScreen();
     avviaApp();
