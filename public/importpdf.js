@@ -565,7 +565,7 @@
                    inputmode="decimal" value="${esc(prezzoDaMostrare(r.prezzo))}"></td>
         <td><span class="imp-tag imp-tag-${stato.cls}" ${stato.tip ? `title="${esc(stato.tip)}"` : ''}>${stato.txt}</span></td>
         <td class="imp-azioni-riga">
-          <button type="button" class="imp-x-riga" data-sposta="${r.id}"
+          <button type="button" class="imp-x-riga imp-x-sposta" data-sposta="${r.id}"
                   title="${r.tipo === 'macchina' ? 'Sposta fra gli esami' : 'Sposta fra le macchine'}">⇄</button>
           <button type="button" class="imp-x-riga" data-elimina="${r.id}" title="Togli questa riga">✕</button>
         </td>
