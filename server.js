@@ -1654,6 +1654,22 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
 });
 
 // ── Macchinari (analizzatori) ──────────────────────
+
+// lib/macchine.js (salvaMacchina) solleva errori applicativi generici con
+// new Error(...): non un tipo dedicato, quindi qui distinguiamo i due casi
+// dal testo del messaggio. "Macchina non trovata" e "Concorrente non
+// trovato" significano che l'id indicato non esiste per QUESTO account (o
+// non esiste affatto) e vanno risposti 404, come fa gia' la DELETE poco
+// sotto e come fanno le rotte di /api/concorrenti. Tutti gli altri errori
+// (nome o prezzo non validi, nome duplicato) restano 400: e' un problema
+// dei dati mandati dal client, non dell'id. Costante condivisa fra POST e
+// PUT cosi' il confronto sta in un solo posto invece che duplicato uguale
+// (o peggio, disallineato) nei due catch.
+const ERRORI_MACCHINA_NON_TROVATA = new Set(['Macchina non trovata', 'Concorrente non trovato']);
+function statusErroreMacchina(err) {
+  return ERRORI_MACCHINA_NON_TROVATA.has(err.message) ? 404 : 400;
+}
+
 app.get('/api/macchine', requireAuth, (req, res) => {
   try { res.json(macchineLib.listaMacchine(db, req.user.id)); }
   catch (err) { res.status(500).json({ error: err.message }); }
@@ -1666,7 +1682,7 @@ app.post('/api/macchine', requireAuth, express.json(), (req, res) => {
       userId: req.user.id, concorrenteId: concorrenteId || null, nome, prezzo, note
     });
     res.json({ success: true, ...esito });
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) { res.status(statusErroreMacchina(err)).json({ error: err.message }); }
 });
 
 app.put('/api/macchine/:id', requireAuth, express.json(), (req, res) => {
@@ -1677,7 +1693,7 @@ app.put('/api/macchine/:id', requireAuth, express.json(), (req, res) => {
       concorrenteId: concorrenteId || null, nome, prezzo, note
     });
     res.json({ success: true, ...esito });
-  } catch (err) { res.status(400).json({ error: err.message }); }
+  } catch (err) { res.status(statusErroreMacchina(err)).json({ error: err.message }); }
 });
 
 app.delete('/api/macchine/:id', requireAuth, (req, res) => {
