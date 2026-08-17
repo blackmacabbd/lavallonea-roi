@@ -354,7 +354,7 @@
     let html = `<option value="">Le mie macchine</option>`;
     if (p.stato === 'pronto') {
       html += p.lista.length
-        ? p.lista.map(c => `<option value="${esc(c.nome)}">${esc(c.nome)}</option>`).join('')
+        ? p.lista.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
         : `<option value="" disabled>Nessun concorrente in archivio</option>`;
     }
     // Stato 'carico' o 'errore': nessuna opzione in piu', il selettore degrada
@@ -387,7 +387,6 @@
       prezzo: r.prezzo,
       confidenza: r.confidenza,
       motivo: r.motivo,
-      tipo: r.tipo === 'macchina' ? 'macchina' : 'esame',
       origine: 'estratta',
       modificata: false
     }));
@@ -487,14 +486,7 @@
     const persi = scartateTabellari().length;
     const incerte = S.righe.filter(r => r.confidenza === 'incerta' && !r.modificata).length;
     const conf = Math.round((a.confidenzaComplessiva || 0) * 100);
-    const nMacchine = S.righe.filter(r => r.tipo === 'macchina').length;
-    const nEsami = S.righe.length - nMacchine;
 
-    // "righe riconosciute", non "esami": il conteggio comprende anche le
-    // macchine, e ripeterlo con parole diverse nel gruppo Esami/Macchine e
-    // nella riga "Riconosciuti N esami e M analizzatori" qui sotto farebbe
-    // vedere tre numeri diversi per la stessa cosa. Su un listino di soli
-    // analizzatori, poi, "esami" sarebbe proprio falso.
     let tipo = 'ok', titolo, messaggio, azioni = '';
     if (persi > 0 || incerte > 0) {
       tipo = 'rivedi';
@@ -512,23 +504,11 @@
       messaggio = 'Nessuna riga con prezzo è rimasta fuori e nessuna è dubbia.';
     }
 
-    // Quando il documento contiene entrambe le cose, dirlo prima della conferma:
-    // scrivere in due sezioni senza dichiararlo sarebbe uno spostamento
-    // silenzioso di dati. Da Macchinari il server sposta pero' anche le righe
-    // classificate esame (vedi gruppoHtml): qui la frase deve dirlo, non solo
-    // l'etichetta del gruppo, altrimenti le due si contraddicono.
-    if (nMacchine > 0) {
-      const destinazioneAnalizzatori = S.entita === 'macchina'
-        ? 'tutte le righe finiranno fra gli analizzatori, nella sezione Macchinari'
-        : 'gli analizzatori andranno nella sezione Macchinari';
-      messaggio += `<div class="imp-banner-dest">Riconosciuti <b>${nEsami}</b> esami e <b>${nMacchine}</b> analizzatori: ${destinazioneAnalizzatori}.</div>`;
-    } else if (S.entita === 'macchina' && nEsami > 0) {
-      // Qui dentro il caso e' l'opposto di sopra: si e' partiti da Macchinari,
-      // che dichiara di accettare solo analizzatori, ma tutto cio' che e' stato
-      // riconosciuto e' classificato esame. Non blocca l'operatore (la sezione
-      // forza comunque ogni riga fra le macchine alla conferma, vedi
-      // gruppoHtml), ma avvisa che il documento sembra il listino sbagliato.
-      messaggio += `<div class="imp-banner-dest">Nessun analizzatore riconosciuto: questo documento sembra un listino di esami, mentre qui si importano solo analizzatori. Puoi proseguire comunque, se e' quello che intendevi.</div>`;
+    // Unico uso rimasto del tipo di riga: se in un import verso Macchinari non
+    // si riconosce nessun analizzatore, quel PDF sembra un listino di esami.
+    // Avvisa senza bloccare: la scelta resta dell'operatore.
+    if (S.entita === 'macchina' && S.analisi.macchine === 0) {
+      messaggio += `<div class="imp-banner-dest">Nessun analizzatore riconosciuto: questo documento sembra un listino di esami, mentre qui si importano solo analizzatori. Puoi proseguire comunque, se è quello che intendevi.</div>`;
     }
 
     document.getElementById('imp-banner').innerHTML = `
@@ -562,25 +542,24 @@
     const cont = document.getElementById('imp-tab');
     if (!cont) return;
     const scartate = scartateTabellari();
-    const esami = S.righe.filter(r => r.tipo !== 'macchina');
-    const macchine = S.righe.filter(r => r.tipo === 'macchina');
 
-    // Due blocchi separati: un import puo' scrivere in due destinazioni, e chi
-    // conferma deve vedere cosa va dove prima di farlo.
-    const blocchi = [];
-    if (esami.length || !macchine.length) blocchi.push(gruppoHtml('esame', 'Esami', esami));
-    if (macchine.length) blocchi.push(gruppoHtml('macchina', 'Macchine', macchine));
-
-    cont.innerHTML = blocchi.join('') + (S.mostraScartate ? bloccoScartateHtml(scartate) : '');
+    cont.innerHTML = `
+      <table class="imp-tabella imp-tabella-edit">
+        <thead><tr>
+          <th style="width:30px">#</th><th>Nome</th>
+          <th style="width:96px">Prezzo</th><th style="width:104px">Stato</th><th style="width:34px"></th>
+        </tr></thead>
+        <tbody>
+          ${S.righe.length ? S.righe.map((r, i) => rigaHtml(r, i)).join('')
+            : `<tr><td colspan="5" class="imp-vuoto">Nessuna riga. Usa «+ Riga» per aggiungerne a mano.</td></tr>`}
+        </tbody>
+      </table>` + (S.mostraScartate ? bloccoScartateHtml(scartate) : '');
 
     cont.querySelectorAll('[data-campo]').forEach(inp => {
       inp.addEventListener('input', () => modificaCampo(Number(inp.dataset.id), inp.dataset.campo, inp.value));
     });
     cont.querySelectorAll('[data-elimina]').forEach(b => {
       b.addEventListener('click', e => { e.stopPropagation(); eliminaRiga(Number(b.dataset.elimina)); });
-    });
-    cont.querySelectorAll('[data-sposta]').forEach(b => {
-      b.addEventListener('click', e => { e.stopPropagation(); spostaRiga(Number(b.dataset.sposta)); });
     });
     cont.querySelectorAll('[data-recupera]').forEach(b => {
       b.addEventListener('click', () => recuperaRiga(Number(b.dataset.recupera)));
@@ -595,32 +574,6 @@
       });
     });
     aggiornaConteggio();
-  }
-
-  function gruppoHtml(tipo, titolo, righe) {
-    // Importando dalla sezione Macchinari il server forza comunque ogni riga
-    // (anche quelle classificate "esame") nel catalogo macchine alla conferma:
-    // l'etichetta deve dire dove finiranno davvero, non dove sembra dal tipo.
-    const destinazione = (tipo === 'macchina' || S.entita === 'macchina')
-      ? 'andranno nella sezione Macchinari'
-      : (S.entita === 'concorrente' ? 'andranno nel catalogo del concorrente' : 'andranno nel tuo catalogo esami');
-    return `
-      <div class="imp-gruppo" data-gruppo="${tipo}">
-        <div class="imp-gruppo-tit">
-          <span>${titolo} <b>${righe.length}</b></span>
-          <span class="imp-gruppo-dove">${destinazione}</span>
-        </div>
-        <table class="imp-tabella imp-tabella-edit">
-          <thead><tr>
-            <th style="width:30px">#</th><th>Nome</th>
-            <th style="width:96px">Prezzo</th><th style="width:104px">Stato</th><th style="width:62px"></th>
-          </tr></thead>
-          <tbody>
-            ${righe.length ? righe.map((r, i) => rigaHtml(r, i)).join('')
-              : `<tr><td colspan="5" class="imp-vuoto">Nessuna riga. Usa «+ Riga» per aggiungerne a mano.</td></tr>`}
-          </tbody>
-        </table>
-      </div>`;
   }
 
   // Il prezzo si mostra in formato italiano; quello digitato a mano si lascia
@@ -651,8 +604,6 @@
                    inputmode="decimal" value="${esc(prezzoDaMostrare(r.prezzo))}"></td>
         <td><span class="imp-tag imp-tag-${stato.cls}" ${stato.tip ? `title="${esc(stato.tip)}"` : ''}>${stato.txt}</span></td>
         <td class="imp-azioni-riga">
-          <button type="button" class="imp-x-riga imp-x-sposta" data-sposta="${r.id}"
-                  title="${r.tipo === 'macchina' ? 'Sposta fra gli esami' : 'Sposta fra le macchine'}">⇄</button>
           <button type="button" class="imp-x-riga" data-elimina="${r.id}" title="Togli questa riga">✕</button>
         </td>
       </tr>`;
@@ -708,32 +659,17 @@
     renderBanner();
   }
 
-  // Il riconoscimento a sezioni puo' sbagliare su un documento con capitoli
-  // insoliti: spostare una riga evita di rifare tutto l'import.
-  function spostaRiga(id) {
-    const r = trova(id);
-    if (!r) return;
-    r.tipo = r.tipo === 'macchina' ? 'esame' : 'macchina';
-    // Non r.modificata = true: spostare cambia solo la destinazione, nome e
-    // prezzo restano quelli di prima, non controllati da nessuno. Marcarla
-    // "modificata" la toglierebbe dal conteggio "da rivedere" senza che
-    // qualcuno l'abbia davvero rivista.
-    renderTabella();
-    renderBanner();
-  }
-
   function aggiungiRiga() {
     const id = ++contatoreRighe;
     S.righe.push({
       id, indice: null, nome: '', prezzo: '',
-      confidenza: 'alta', motivo: null, tipo: 'esame',
+      confidenza: 'alta', motivo: null,
       origine: 'manuale', modificata: false
     });
     renderTabella();
-    // Per id, non per posizione: con due gruppi in pagina la riga appena
-    // creata non e' detto sia l'ultima nell'ordine del documento (oggi lo e'
-    // sempre, perche' le righe nuove nascono come esame, ma non deve dipendere
-    // da questo).
+    // Per id, non per posizione: la riga appena creata e' comunque l'ultima
+    // dell'elenco, ma selezionare per id resta corretto anche se in futuro
+    // l'ordine cambiasse.
     const inp = document.querySelector(`[data-id="${id}"][data-campo="nome"]`);
     if (inp) inp.focus();
     aggiornaPiede();
@@ -751,29 +687,23 @@
       // finale (ed eventuale simbolo di percentuale), che l'operatore correggera.
       nome: orig.nome || orig.testo.replace(/\s*€?\s*[\d.,]+\s*%?\s*$/, '').trim(),
       prezzo: orig.prezzo != null ? orig.prezzo : '',
-      tipo: orig.tipo === 'macchina' ? 'macchina' : 'esame',
       confidenza: 'incerta', motivo: orig.motivo, origine: 'recuperata', modificata: false
     });
     renderTabella();
     aggiornaRiquadri();
     renderBanner();
-    // Per id, non per posizione: con i gruppi Esami e Macchine entrambi in
-    // pagina, l'ultima riga del documento e' quella del primo gruppo (Esami),
-    // non necessariamente quella appena recuperata. Selezionare per posizione
-    // farebbe scrivere il nome sopra una riga diversa da quella recuperata.
+    // Per id, non per posizione: le righe scartate possono essere recuperate
+    // in un ordine diverso da quello del documento, quindi la piu' recente
+    // non e' detto sia l'ultima in tabella.
     const tr = document.querySelector(`[data-id="${id}"][data-campo="nome"]`);
     if (tr) tr.focus();
   }
 
-  // Il tipo va con la riga fino alla conferma: e' cio' che decide se finisce
-  // nel catalogo esami o in quello macchine, e lo spostamento a mano deve
-  // avere effetto reale, non solo sul gruppo mostrato in revisione.
   function valide() {
     return S.righe
       .map(r => ({
         nome: String(r.nome || '').trim(),
-        prezzo: numero(r.prezzo),
-        tipo: r.tipo === 'macchina' ? 'macchina' : 'esame'
+        prezzo: numero(r.prezzo)
       }))
       .filter(r => r.nome && Number.isFinite(r.prezzo) && r.prezzo >= 0);
   }
@@ -810,15 +740,15 @@
     const righe = valide();
     if (!righe.length) return;
     // Per l'entita' 'concorrente' il nome e' testo libero digitato
-    // dall'operatore. Per 'macchina' e' invece la scelta del selettore di
-    // provenienza: vuoto per "Le mie macchine", il nome del concorrente
-    // scelto altrimenti (il server fa l'upsert per nome, come nel ramo
-    // 'concorrente'). Nessun altro caso invia un nome.
+    // dall'operatore. Per 'macchina' la provenienza scelta nel selettore vale
+    // come concorrenteId: vuoto per "Le mie macchine", l'id del concorrente
+    // scelto altrimenti. Nessun altro caso invia questi due campi.
     const nomeConc = S.entita === 'concorrente'
       ? String((document.getElementById('imp-nome-conc') || {}).value || '').trim()
-      : S.entita === 'macchina'
-        ? String((document.getElementById('imp-provenienza') || {}).value || '').trim()
-        : '';
+      : '';
+    const concorrenteId = S.entita === 'macchina'
+      ? (String((document.getElementById('imp-provenienza') || {}).value || '').trim() || null)
+      : null;
     if (S.entita === 'concorrente' && !nomeConc) {
       alert('Inserisci il nome del concorrente prima di importare.');
       const i = document.getElementById('imp-nome-conc');
@@ -832,7 +762,7 @@
       const resp = await fetch(`/api/import-pdf/${S.analisi.importId}/conferma`, {
         method: 'POST',
         headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-        body: JSON.stringify({ nome: nomeConc, righe, confermaCompletezza: true })
+        body: JSON.stringify({ nome: nomeConc, righe, confermaCompletezza: true, concorrenteId })
       });
       const dati = await resp.json().catch(() => null);
       if (!resp.ok) throw new Error((dati && dati.error) || `Errore ${resp.status}`);
@@ -840,12 +770,7 @@
       const alFine = S.alFine;
       const esito = dati;
       chiudi();
-      // Quando entrambi i totali sono positivi l'import ha scritto in due
-      // cataloghi diversi (esami e macchine): e' il momento di chiuderlo,
-      // dopo che il banner lo aveva gia' annunciato prima della conferma.
       const dettagli = [
-        (esito.esamiImportati > 0 && esito.macchineImportate > 0)
-          ? `${esito.esamiImportati} negli esami e ${esito.macchineImportate} nelle macchine` : null,
         esito.ignorate ? `${esito.ignorate} ignorate` : null,
         esito.duplicate ? `${esito.duplicate} duplicate accorpate` : null
       ].filter(Boolean);

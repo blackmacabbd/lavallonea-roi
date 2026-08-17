@@ -1587,88 +1587,79 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       return res.status(400).json({ error: 'Nessuna riga importabile nell\'elenco confermato' });
     }
 
-    // La destinazione e' quella fissata all'analisi, non quella che arriva ora:
-    // il client non puo' dirottare l'import su un'altra entita dopo la revisione.
-    // Un solo import puo' scrivere in due posti: gli esami nel catalogo scelto,
-    // le macchine nella sezione Macchinari.
-    const perTipo = { esame: [], macchina: [] };
-    for (const r of valide) perTipo[r.tipo].push(r);
-
-    // Importando dalla sezione Macchinari l'operatore ha gia' dichiarato che
-    // il documento e' un listino di analizzatori: tutto e' macchina.
-    if (bozza.entita === 'macchina') {
-      perTipo.macchina.push(...perTipo.esame.splice(0));
-    }
-
+    // Una sola destinazione per import. Le macchine entrano solo dalla sezione
+    // Macchinari: uno smistamento automatico spostava righe in una sezione che
+    // l'operatore non aveva scelto, e una singola riga riconosciuta male bastava
+    // a tipizzare male tutte le successive.
     let risultato = {};
-    let concorrenteId = null;
-
-    if (bozza.entita === 'concorrente' || (bozza.entita === 'macchina' && nome)) {
+    if (bozza.entita === 'concorrente') {
       const nomeConc = String(nome || '').trim();
-      if (bozza.entita === 'concorrente' && !nomeConc) {
-        return res.status(400).json({ error: 'Manca il nome del concorrente' });
-      }
-      if (nomeConc) {
-        const esito = concorrenti.upsertConcorrente(
-          db, nomeConc,
-          perTipo.esame.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
-          req.user.id
-        );
-        concorrenteId = esito.concorrenteId;
-        risultato = esito;
-      }
-    } else if (perTipo.esame.length) {
+      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente' });
+      risultato = concorrenti.upsertConcorrente(
+        db, nomeConc,
+        valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
+        req.user.id
+      );
+    } else if (bozza.entita === 'macchina') {
+      // Ogni import crea il suo listino: il nome del file lo identifica, la
+      // provenienza scelta dall'operatore dice di chi sono quelle macchine.
+      const listino = macchineLib.creaListino(db, {
+        userId: req.user.id,
+        nome: bozza.nomeFile,
+        concorrenteId: req.body && req.body.concorrenteId
+      });
+      macchineLib.upsertMacchine(db, {
+        listinoId: listino.id, userId: req.user.id,
+        righe: valide.map(r => ({ nome: r.nome, prezzo: r.prezzo, note: null }))
+      });
+      risultato = { listinoId: listino.id };
+    } else {
       // Aggiorna i prezzi base della PROPRIA copia del catalogo: upsert per nome,
       // nessuna cancellazione degli esami assenti dal PDF e nessun piano toccato.
       risultato = piani.upsertFromJson(db, {
-        exams_base_price: Object.fromEntries(perTipo.esame.map(r => [r.nome, r.prezzo])),
+        exams_base_price: Object.fromEntries(valide.map(r => [r.nome, r.prezzo])),
         plans: {}
       }, req.user.id);
     }
 
-    if (perTipo.macchina.length) {
-      macchineLib.upsertMacchine(db, {
-        userId: req.user.id,
-        concorrenteId,
-        righe: perTipo.macchina.map(r => ({ nome: r.nome, prezzo: r.prezzo, note: null }))
-      });
-    }
-
-    // Scrittura prima della conferma: gli upsert sono idempotenti per nome,
-    // quindi una doppia richiesta non duplica nulla, mentre l'ordine inverso
-    // rischierebbe una bozza segnata confermata con il catalogo non aggiornato.
     const confermata = importbozze.confermaBozza(db, bozza.id, req.user.id, valide);
     if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
 
     annota('confermato',
-      `${perTipo.esame.length} esami, ${perTipo.macchina.length} macchine, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
+      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
       { nRighe: valide.length });
-    res.json({
-      success: true, entita: bozza.entita,
-      importate: valide.length,
-      esamiImportati: perTipo.esame.length,
-      macchineImportate: perTipo.macchina.length,
-      ignorate, duplicate, ...risultato
-    });
+    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // ── Macchinari (analizzatori) ──────────────────────
-
-// lib/macchine.js (salvaMacchina) solleva errori applicativi generici con
-// new Error(...): non un tipo dedicato, quindi qui distinguiamo i due casi
-// dal testo del messaggio. "Macchina non trovata" e "Concorrente non
-// trovato" significano che l'id indicato non esiste per QUESTO account (o
-// non esiste affatto) e vanno risposti 404, come fa gia' la DELETE poco
-// sotto e come fanno le rotte di /api/concorrenti. Tutti gli altri errori
-// (nome o prezzo non validi, nome duplicato) restano 400: e' un problema
-// dei dati mandati dal client, non dell'id. Costante condivisa fra POST e
-// PUT cosi' il confronto sta in un solo posto invece che duplicato uguale
-// (o peggio, disallineato) nei due catch.
-const ERRORI_MACCHINA_NON_TROVATA = new Set(['Macchina non trovata', 'Concorrente non trovato']);
-function statusErroreMacchina(err) {
-  return ERRORI_MACCHINA_NON_TROVATA.has(err.message) ? 404 : 400;
+// Un errore che dice "non trovato" e' una risorsa inesistente per questo
+// account: 404. Gli altri sono dati non validi: 400.
+const ERRORI_NON_TROVATO = /non trovat/i;
+function statoErroreMacchina(err) {
+  return ERRORI_NON_TROVATO.test(String(err && err.message)) ? 404 : 400;
 }
+
+app.get('/api/listini-macchine', requireAuth, (req, res) => {
+  try { res.json(macchineLib.listaListini(db, req.user.id)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/listini-macchine/:id', requireAuth, (req, res) => {
+  try {
+    const listino = macchineLib.getListino(db, req.params.id, req.user.id);
+    if (!listino) return res.status(404).json({ error: 'Listino non trovato' });
+    res.json({ ...listino, macchine: macchineLib.macchineDiListino(db, req.params.id, req.user.id) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/listini-macchine/:id', requireAuth, (req, res) => {
+  try {
+    const ok = macchineLib.eliminaListino(db, req.params.id, req.user.id);
+    if (!ok) return res.status(404).json({ error: 'Listino non trovato' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 app.get('/api/macchine', requireAuth, (req, res) => {
   try { res.json(macchineLib.listaMacchine(db, req.user.id)); }
@@ -1677,23 +1668,16 @@ app.get('/api/macchine', requireAuth, (req, res) => {
 
 app.post('/api/macchine', requireAuth, express.json(), (req, res) => {
   try {
-    const { nome, prezzo, note, concorrenteId } = req.body || {};
-    const esito = macchineLib.salvaMacchina(db, {
-      userId: req.user.id, concorrenteId: concorrenteId || null, nome, prezzo, note
-    });
-    res.json({ success: true, ...esito });
-  } catch (err) { res.status(statusErroreMacchina(err)).json({ error: err.message }); }
+    const { listinoId, nome, prezzo, note } = req.body || {};
+    res.json({ success: true, ...macchineLib.salvaMacchina(db, { userId: req.user.id, listinoId, nome, prezzo, note }) });
+  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message }); }
 });
 
 app.put('/api/macchine/:id', requireAuth, express.json(), (req, res) => {
   try {
-    const { nome, prezzo, note, concorrenteId } = req.body || {};
-    const esito = macchineLib.salvaMacchina(db, {
-      id: req.params.id, userId: req.user.id,
-      concorrenteId: concorrenteId || null, nome, prezzo, note
-    });
-    res.json({ success: true, ...esito });
-  } catch (err) { res.status(statusErroreMacchina(err)).json({ error: err.message }); }
+    const { listinoId, nome, prezzo, note } = req.body || {};
+    res.json({ success: true, ...macchineLib.salvaMacchina(db, { id: req.params.id, userId: req.user.id, listinoId, nome, prezzo, note }) });
+  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message }); }
 });
 
 app.delete('/api/macchine/:id', requireAuth, (req, res) => {

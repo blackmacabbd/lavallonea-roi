@@ -1650,10 +1650,6 @@ body.imp-aperto { overflow: hidden; }
   font-size: 12px; padding: 3px 5px; border-radius: 5px; line-height: 1;
 }
 .imp-x-riga:hover { color: var(--red); background: var(--red-tint); }
-/* Il pulsante sposta (⇄) riusa .imp-x-riga per forma e misura, ma spostare
-   una riga fra i due gruppi non e' un'azione distruttiva come eliminare:
-   niente rosso, solo l'azzurro delle azioni normali del progetto. */
-.imp-x-riga.imp-x-sposta:hover { color: var(--blue); background: var(--blue-tint); }
 
 /* Righe con un importo che l'analisi non ha classificato: sono il divario di
    completezza, quindi vanno viste e recuperabili, non nascoste. */
@@ -1679,30 +1675,6 @@ body.imp-aperto { overflow: hidden; }
 .imp-foot-nota { font-size: 12px; color: var(--muted); }
 .imp-foot .btn-primary:disabled { opacity: .45; cursor: not-allowed; }
 
-/* Revisione a due gruppi: esami e analizzatori nello stesso import */
-.imp-gruppo {
-  /* Altezza fissa del titolo di gruppo: e' il valore che l'intestazione di
-     colonna usa come "top" qui sotto, cosi le due barre sticky (titolo di
-     gruppo e intestazione .imp-tabella) si impilano invece di sovrapporsi.
-     Cambiando questo numero va cambiato anche l'altro, sono lo stesso valore. */
-  --imp-gruppo-tit-h: 36px;
-}
-.imp-gruppo + .imp-gruppo { border-top: 8px solid var(--bg); }
-.imp-gruppo-tit {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
-  padding: 8px 12px; background: var(--bg-subtle); border-bottom: 1px solid var(--line);
-  font-size: 12px; font-weight: 650; color: var(--ink);
-  height: var(--imp-gruppo-tit-h);
-  position: sticky; top: 0; z-index: 2;
-}
-/* Dentro un gruppo l'intestazione di colonna (anch'essa sticky a top:0 nella
-   regola base di .imp-tabella) deve fermarsi subito sotto il titolo di
-   gruppo, non alla stessa quota: altrimenti, avendo z-index piu' basso,
-   scorrendo finirebbe nascosta dietro di esso. Fuori dai gruppi (es. la
-   tabella delle righe scartate, che non ha nemmeno un thead) resta top:0
-   come prima, perche' il selettore qui sotto e' scoped a .imp-gruppo. */
-.imp-gruppo .imp-tabella thead th { top: var(--imp-gruppo-tit-h); }
-.imp-gruppo-dove { font-weight: 400; font-size: 11.5px; color: var(--muted); }
 .imp-banner-dest { margin-top: 6px; font-size: 12.5px; color: var(--ink-soft); }
 .imp-azioni-riga { display: flex; gap: 2px; }
 
