@@ -509,7 +509,7 @@ async function renderFoglio(fileId, foglio) {
     resp = await api(`/api/file/${fileId}/dati?foglio=${encodeURIComponent(foglio)}`);
   } catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
     return;
   }
 
@@ -518,8 +518,8 @@ async function renderFoglio(fileId, foglio) {
 
   if (!dati.length) {
     setMain(`<div class="empty-state"><div class="empty-icon">📭</div>
-      <div class="empty-title">Nessun dato</div>
-      <div class="empty-sub">Nessuna riga trovata per ${foglio}.</div></div>`);
+      <div class="empty-title">${window.t('foglio.nessunDato')}</div>
+      <div class="empty-sub">${window.t('foglio.nessunaRigaPerFoglio', { foglio })}</div></div>`);
     return;
   }
 
@@ -534,7 +534,7 @@ async function renderFoglio(fileId, foglio) {
       </div>
       <div class="page-actions export-bar">
         <button class="btn-outline" onclick="downloadPdf(${fileId},'${foglio}','dottore')">
-          📄 Resoconto struttura
+          ${window.t('foglio.resocontoStruttura')}
         </button>
       </div>
     </div>
@@ -543,45 +543,45 @@ async function renderFoglio(fileId, foglio) {
       <!-- KPI 4 card -->
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card kpi-yellow">
-          <div class="kpi-label">Paghi con Mylav</div>
+          <div class="kpi-label">${window.t('foglio.paghiConMylav')}</div>
           <div class="kpi-value">${euro(t.totale_scontato_lav)}</div>
-          <div class="kpi-sub">Prezzo scontato Mylav</div>
+          <div class="kpi-sub">${window.t('foglio.kpi.paghiSub')}</div>
         </div>
         <div class="kpi-card kpi-red">
-          <div class="kpi-label">Pagheresti con concorrenza</div>
+          <div class="kpi-label">${window.t('foglio.kpi.pagherestiLabel')}</div>
           <div class="kpi-value">${euro(t.prezzo_scontato_concorrenza)}</div>
-          <div class="kpi-sub">Prezzo scontato mercato</div>
+          <div class="kpi-sub">${window.t('foglio.kpi.pagherestiSub')}</div>
         </div>
         <div class="kpi-card kpi-green">
-          <div class="kpi-label">Risparmi scegliendo noi</div>
+          <div class="kpi-label">${window.t('foglio.kpi.risparmiLabel')}</div>
           <div class="kpi-value">${euro(t.risparmio_totale_dottore)}</div>
-          <div class="kpi-sub">vs prezzo concorrenza</div>
+          <div class="kpi-sub">${window.t('foglio.kpi.risparmiSub')}</div>
         </div>
         <div class="kpi-card kpi-blue">
-          <div class="kpi-label">% risparmio</div>
+          <div class="kpi-label">${window.t('foglio.kpi.pctLabel')}</div>
           <div class="kpi-value">${rispPct}%</div>
-          <div class="kpi-sub">Sul prezzo di mercato</div>
+          <div class="kpi-sub">${window.t('foglio.kpi.pctSub')}</div>
         </div>
       </div>
 
       <!-- Banner: riapri nel calcolatore -->
-      <div class="roi-edit-banner" onclick="modificaNelCalcolatore()" title="Riapri questo file nel Calcolatore ROI">
+      <div class="roi-edit-banner" onclick="modificaNelCalcolatore()" title="${escHtml(window.t('foglio.banner.titleAttr'))}">
         <span class="roi-edit-ico">✏️</span>
         <div class="roi-edit-txt">
-          <div class="roi-edit-title">Modifica nel Calcolatore ROI</div>
-          <div class="roi-edit-sub">Riapri questo file nel calcolatore per aggiornare esami, prezzi o piano</div>
+          <div class="roi-edit-title">${window.t('foglio.banner.titolo')}</div>
+          <div class="roi-edit-sub">${window.t('foglio.banner.sub')}</div>
         </div>
         <span class="roi-edit-arrow">→</span>
       </div>
 
       <!-- Vista toggle -->
       <div class="vista-toggle-bar">
-        <span class="vista-label">Vista:</span>
+        <span class="vista-label">${window.t('foglio.vistaLabel')}</span>
         <div class="vista-toggle">
           <button class="vista-btn ${S.vistaMia ? 'active' : ''}" id="btn-mia"
-                  onclick="setVista(true)">Mia</button>
+                  onclick="setVista(true)">${window.t('foglio.vistaMia')}</button>
           <button class="vista-btn ${!S.vistaMia ? 'active' : ''}" id="btn-dottore"
-                  onclick="setVista(false)">Dottore</button>
+                  onclick="setVista(false)">${window.t('foglio.vistaDottore')}</button>
         </div>
       </div>
 
@@ -589,7 +589,7 @@ async function renderFoglio(fileId, foglio) {
       <div class="charts-row">
         <!-- Donut -->
         <div class="chart-card">
-          <div class="chart-title" id="donut-title">Confronto prezzi totali</div>
+          <div class="chart-title" id="donut-title">${window.t('foglio.donutTitolo')}</div>
           <div id="donut-legend" class="chart-legend"></div>
           <div class="donut-wrap">
             <canvas id="chart-donut" height="220"></canvas>
@@ -602,7 +602,7 @@ async function renderFoglio(fileId, foglio) {
 
         <!-- Barre orizzontali -->
         <div class="chart-card">
-          <div class="chart-title" id="barre-title">Confronto per esame</div>
+          <div class="chart-title" id="barre-title">${window.t('foglio.barreTitolo')}</div>
           <div id="barre-legend" class="chart-legend"></div>
           <div class="chart-canvas-wrap" style="overflow:auto;max-height:320px">
             <canvas id="chart-barre"></canvas>
@@ -613,7 +613,7 @@ async function renderFoglio(fileId, foglio) {
       <!-- Tabella -->
       <div class="table-card">
         <div class="table-header">
-          <div class="table-title" id="table-title">Dettaglio esami</div>
+          <div class="table-title" id="table-title">${window.t('foglio.tabellaTitolo')}</div>
         </div>
         <div class="table-scroll">
           <table>
@@ -720,13 +720,19 @@ function renderDonutMia(t) {
   const totale = v1 + v2 + v3 + v4;
   const base   = t.totale_concorrenza || 1;
 
+  const labels = [
+    window.t('foglio.legendaDonutMia.prezzoMylavDottore'),
+    window.t('foglio.legendaDonutMia.scontoMylavApplicato'),
+    window.t('foglio.legendaDonutMia.risparmioDottoreVsConc'),
+    window.t('foglio.legendaDonutMia.scontoConcorrenzaApplicato')
+  ];
   el('donut-cv').textContent = euro(t.risparmio_totale_dottore);
-  el('donut-cl').textContent = 'Risparmio';
+  el('donut-cl').textContent = window.t('comune.risparmio');
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Prezzo Mylav al dottore', color: '#0f76bc' },
-    { label: 'Sconto Mylav applicato',  color: '#9cc8e8' },
-    { label: 'Risparmio dottore vs concorrenza', color: '#26262a' },
-    { label: 'Sconto concorrenza applicato', color: '#ce181e' }
+    { label: labels[0], color: '#0f76bc' },
+    { label: labels[1], color: '#9cc8e8' },
+    { label: labels[2], color: '#26262a' },
+    { label: labels[3], color: '#ce181e' }
   ]);
 
   const canvas = el('chart-donut');
@@ -737,12 +743,7 @@ function renderDonutMia(t) {
     type: 'doughnut',
     plugins: [whiteBgPlugin],
     data: {
-      labels: [
-        'Prezzo Mylav al dottore',
-        'Sconto Mylav applicato',
-        'Risparmio dottore vs concorrenza',
-        'Sconto concorrenza applicato'
-      ],
+      labels,
       datasets: [{
         data: totale > 0 ? [v1, v2, v3, v4] : [1, 1, 1, 1],
         backgroundColor: ['#0f76bc', '#9cc8e8', '#26262a', '#ce181e'],
@@ -753,10 +754,10 @@ function renderDonutMia(t) {
     options: makeDonutOptions({
       title: items => items[0]?.label || '',
       label: ctx => {
-        if (totale === 0) return '  Nessun dato';
+        if (totale === 0) return '  ' + window.t('foglio.nessunDato');
         const v   = ctx.raw;
         const pct = base > 0 ? ((v / base) * 100).toFixed(1) : 0;
-        return [`  € ${(Number(v)||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, `  ${pct}% del listino concorrenza`];
+        return [`  € ${(Number(v)||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, '  ' + window.t('foglio.donutMia.tooltipPct', { pct })];
       }
     })
   });
@@ -769,11 +770,12 @@ function renderDonutDottore(t) {
   const totale = v1 + v2;
   const pct = t.risparmio_pct || 0;
 
+  const labels = [window.t('foglio.paghiConMylav'), window.t('foglio.risparmioVsMercato')];
   el('donut-cv').textContent = `${pct}%`;
-  el('donut-cl').textContent = 'Risparmi';
+  el('donut-cl').textContent = window.t('foglio.donutDottore.cl');
   el('donut-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Mylav', color: '#0f76bc' },
-    { label: 'Risparmio vs mercato', color: '#26262a' }
+    { label: labels[0], color: '#0f76bc' },
+    { label: labels[1], color: '#26262a' }
   ]);
 
   const canvas = el('chart-donut');
@@ -786,7 +788,7 @@ function renderDonutDottore(t) {
     type: 'doughnut',
     plugins: [whiteBgPlugin],
     data: {
-      labels: ['Paghi con Mylav', 'Risparmio vs mercato'],
+      labels,
       datasets: [{
         data: totale > 0 ? [v1, v2] : [1, 1],
         backgroundColor: ['#0f76bc', '#26262a'],
@@ -797,14 +799,14 @@ function renderDonutDottore(t) {
     options: makeDonutOptions({
       title: items => items[0]?.label || '',
       label: ctx => {
-        if (totale === 0) return '  Nessun dato';
+        if (totale === 0) return '  ' + window.t('foglio.nessunDato');
         if (ctx.dataIndex === 0) return [
-          `  Paghi con Mylav: ${euro(ctx.raw)}`,
-          `  Invece di: ${euro(concBase)} (concorrenza)`
+          '  ' + window.t('foglio.tooltip.paghiMylavImporto', { importo: euro(ctx.raw) }),
+          '  ' + window.t('foglio.tooltip.invece', { importo: euro(concBase) })
         ];
         return [
-          `  Risparmio: ${euro(ctx.raw)}`,
-          `  Percentuale: ${pct}%`
+          '  ' + window.t('foglio.tooltip.risparmioImporto', { importo: euro(ctx.raw) }),
+          '  ' + window.t('foglio.tooltip.percentuale', { pct })
         ];
       }
     })
@@ -813,9 +815,11 @@ function renderDonutDottore(t) {
 
 // ─── BARRE Vista MIA (stacked: giallo=Lav + verde=risparmio = totale concorrenza) ──
 function renderBarreMia(dati) {
+  const labelPago = t('foglio.paghiConMylav');
+  const labelRisp = t('chart.risparmioDottore');
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Mylav', color: '#0f76bc' },
-    { label: 'Risparmio dottore',    color: '#26262a' }
+    { label: labelPago, color: '#0f76bc' },
+    { label: labelRisp,    color: '#26262a' }
   ]);
 
   const canvas = el('chart-barre');
@@ -832,13 +836,13 @@ function renderBarreMia(dati) {
       labels: dati.map(d => d.esame),
       datasets: [
         {
-          label: 'Paghi con Mylav',
+          label: labelPago,
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
           backgroundColor: '#0f76bc',
           borderRadius: 0
         },
         {
-          label: 'Risparmio dottore',
+          label: labelRisp,
           data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
           backgroundColor: '#26262a',
           borderRadius: { topRight: 4, bottomRight: 4 }
@@ -853,15 +857,15 @@ function renderBarreMia(dati) {
       label: ctx => {
         const d = dati[ctx.dataIndex];
         if (!d) return '';
-        if (ctx.datasetIndex === 0) return `  Paghi con Mylav: ${euro(d.totale_scontato_lav)}`;
+        if (ctx.datasetIndex === 0) return '  ' + t('foglio.tooltip.paghiMylavImporto', { importo: euro(d.totale_scontato_lav) });
         const pct = d.prezzo_scontato_concorrenza > 0
           ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
-        return `  Risparmio: ${euro(d.risparmio_dottore)} (${pct}%)`;
+        return '  ' + t('foglio.tooltip.risparmioPct', { importo: euro(d.risparmio_dottore), pct });
       },
       afterBody: items => {
         const d = dati[items[0]?.dataIndex];
         if (!d) return [];
-        return [`  Totale barra = prezzo concorrenza: ${euro(d.prezzo_scontato_concorrenza)}`];
+        return ['  ' + t('foglio.tooltip.totaleBarraMia', { importo: euro(d.prezzo_scontato_concorrenza) })];
       }
     })
   });
@@ -869,9 +873,11 @@ function renderBarreMia(dati) {
 
 // ─── BARRE Vista DOTTORE (stacked: giallo=Lav + verde=risparmio) ──
 function renderBarreDottore(dati) {
+  const labelPago = t('foglio.paghiConMylav');
+  const labelRisp = t('foglio.risparmioVsMercato');
   el('barre-legend').innerHTML = legendHtml([
-    { label: 'Paghi con Mylav', color: '#0f76bc' },
-    { label: 'Risparmio vs mercato', color: '#26262a' }
+    { label: labelPago, color: '#0f76bc' },
+    { label: labelRisp, color: '#26262a' }
   ]);
 
   const canvas = el('chart-barre');
@@ -888,13 +894,13 @@ function renderBarreDottore(dati) {
       labels: dati.map(d => d.esame),
       datasets: [
         {
-          label: 'Paghi con Mylav',
+          label: labelPago,
           data: dati.map(d => Math.max(0, d.totale_scontato_lav || 0)),
           backgroundColor: '#0f76bc',
           borderRadius: 0
         },
         {
-          label: 'Risparmio vs mercato',
+          label: labelRisp,
           data: dati.map(d => Math.max(0, d.risparmio_dottore || 0)),
           backgroundColor: '#26262a',
           borderRadius: { topRight: 4, bottomRight: 4 }
@@ -906,15 +912,15 @@ function renderBarreDottore(dati) {
       label: ctx => {
         const d = dati[ctx.dataIndex];
         if (!d) return '';
-        if (ctx.datasetIndex === 0) return `  Prezzo Mylav: ${euro(d.totale_scontato_lav)}`;
+        if (ctx.datasetIndex === 0) return '  ' + t('foglio.tooltip.prezzoMylavImporto', { importo: euro(d.totale_scontato_lav) });
         const pct = d.prezzo_scontato_concorrenza > 0
           ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
-        return `  Risparmi: ${euro(d.risparmio_dottore)} (${pct}%)`;
+        return '  ' + t('foglio.tooltip.risparmiPct', { importo: euro(d.risparmio_dottore), pct });
       },
       afterBody: items => {
         const d = dati[items[0]?.dataIndex];
         if (!d) return [];
-        return [`  Prezzo di mercato: ${euro(d.prezzo_scontato_concorrenza)}`];
+        return ['  ' + t('foglio.tooltip.prezzoMercatoImporto', { importo: euro(d.prezzo_scontato_concorrenza) })];
       }
     })
   });
@@ -966,10 +972,10 @@ function renderFoglioTable(dati) {
 
   if (S.vistaMia) {
     head.innerHTML = `<tr>
-      <th>Esame</th><th>N.</th>
-      <th>Listino conc.</th><th>Scontato conc.</th>
-      <th>Listino Lav</th><th>Scontato Lav</th>
-      <th>Risparmio €</th><th>Risparmio %</th>
+      <th>${t('piani.tabella.esame')}</th><th>${t('roi.tabella.n')}</th>
+      <th>${t('comune.listinoConc')}</th><th>${t('comune.scontatoConc')}</th>
+      <th>${t('foglio.tabella.listinoLav')}</th><th>${t('confrontoStrutture.tabella.scontatoLav')}</th>
+      <th>${t('foglio.tabella.risparmioEuro')}</th><th>${t('foglio.tabella.risparmioPct')}</th>
     </tr>`;
     body.innerHTML = dati.map(d => {
       const risp = d.risparmio_dottore || 0;
@@ -988,9 +994,9 @@ function renderFoglioTable(dati) {
     }).join('');
   } else {
     head.innerHTML = `<tr>
-      <th>Esame</th><th>N.</th>
-      <th>Prezzo mercato</th><th>Prezzo Mylav</th>
-      <th>Risparmi €</th><th>Risparmi %</th>
+      <th>${t('piani.tabella.esame')}</th><th>${t('roi.tabella.n')}</th>
+      <th>${t('foglio.tabella.prezzoMercato')}</th><th>${t('foglio.tabella.prezzoMylav')}</th>
+      <th>${t('foglio.tabella.risparmiEuro')}</th><th>${t('foglio.tabella.risparmiPct')}</th>
     </tr>`;
     body.innerHTML = dati.map(d => {
       const risp = d.risparmio_dottore || 0;
