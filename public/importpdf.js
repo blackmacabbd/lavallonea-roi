@@ -1,11 +1,12 @@
 /* Import PDF condiviso — analisi guidata, revisione e conferma.
  *
- * Componente unico usato da Gestione piani e Gestione concorrenti. Il PDF non
- * viene mai riscaricato dal server: il browser rende il file locale scelto
- * dall'utente, mentre le coordinate delle righe riconosciute arrivano
- * dall'analisi lato server (punti PDF a scala 1, origine in alto a sinistra).
+ * Componente unico usato da Gestione piani, Gestione concorrenti e Macchinari.
+ * Il PDF non viene mai riscaricato dal server: il browser rende il file
+ * locale scelto dall'utente, mentre le coordinate delle righe riconosciute
+ * arrivano dall'analisi lato server (punti PDF a scala 1, origine in alto a
+ * sinistra).
  *
- * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente', nomeDefault, file, alFine })
+ * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'macchina', nomeDefault, file, alFine })
  * Senza `file` il documento viene chiesto all'utente; con `file` si usa quello
  * (serve quando il documento e' gia' stato scelto da un input della pagina).
  * `alFine` viene chiamata dopo un import confermato con successo.
@@ -22,6 +23,12 @@
   const SCALE_MIN = 0.5;
   const SCALE_MAX = 3;
   const SCALE_STEP = 0.25;
+
+  // Deve restare allineata a ENTITA in lib/importbozze.js: e' il server, non
+  // qui, a decidere dove finiscono le righe. Un valore fuori da questa lista
+  // (o assente, come nelle chiamate storiche di Gestione piani) ricade su
+  // 'piano', il comportamento di sempre.
+  const ENTITA_VALIDE = ['piano', 'concorrente', 'macchina'];
 
   // Fascia, sopra e sotto la vista, di pagine tenute gia' disegnate.
   const MARGINE_ANTEPRIMA = 800;
@@ -222,7 +229,7 @@
   // ── Avvio ─────────────────────────────────────────────────────────────
   async function avvia(opzioni) {
     const opts = opzioni || {};
-    const entita = opts.entita === 'concorrente' ? 'concorrente' : 'piano';
+    const entita = ENTITA_VALIDE.includes(opts.entita) ? opts.entita : 'piano';
     const file = opts.file || await scegliFile();
     if (!file) return;
 
@@ -515,7 +522,10 @@
   }
 
   function gruppoHtml(tipo, titolo, righe) {
-    const destinazione = tipo === 'macchina'
+    // Importando dalla sezione Macchinari il server forza comunque ogni riga
+    // (anche quelle classificate "esame") nel catalogo macchine alla conferma:
+    // l'etichetta deve dire dove finiranno davvero, non dove sembra dal tipo.
+    const destinazione = (tipo === 'macchina' || S.entita === 'macchina')
       ? 'andranno nella sezione Macchinari'
       : (S.entita === 'concorrente' ? 'andranno nel catalogo del concorrente' : 'andranno nel tuo catalogo esami');
     return `

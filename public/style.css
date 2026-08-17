@@ -1705,3 +1705,22 @@ body.imp-aperto { overflow: hidden; }
 .imp-gruppo-dove { font-weight: 400; font-size: 11.5px; color: var(--muted); }
 .imp-banner-dest { margin-top: 6px; font-size: 12.5px; color: var(--ink-soft); }
 .imp-azioni-riga { display: flex; gap: 2px; }
+
+/* Sezione Macchinari: l'avviso dice a cosa serve la pagina, prima che
+   qualcuno ci carichi il listino sbagliato. */
+.macc-avviso {
+  display: flex; align-items: flex-start; gap: 11px;
+  padding: 12px 16px; margin-bottom: 14px;
+  background: var(--blue-tint); border: 1px solid var(--blue-line);
+  border-radius: 10px; font-size: 13px; color: var(--ink-soft); line-height: 1.45;
+}
+.macc-avviso-ico { font-size: 18px; line-height: 1.2; }
+
+/* Le colonne di importi si leggono incolonnate a destra. La classe non
+   esisteva: qui viene definita una volta e riusata dal calcolatore. */
+.td-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* La riga in inserimento o modifica si distingue dalle altre senza uscire
+   dalla tabella: il progetto non usa finestre di dialogo native. */
+.macc-riga-modifica { background: var(--blue-tint); }
+.macc-riga-modifica .roi-input { width: 100%; }

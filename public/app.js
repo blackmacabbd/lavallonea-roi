@@ -46,6 +46,9 @@ function fmtDate(d) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
+function fmtEuro(n) {
+  return Number(n || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
 function authHeaders(extra = {}) {
   const h = { ...extra };
   if (S.auth && S.auth.token) h['Authorization'] = 'Bearer ' + S.auth.token;
@@ -160,6 +163,9 @@ function buildSidebar() {
     </div>
     <div class="nav-item ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
       <span class="nav-icon">🏷️</span> Gestione concorrenti
+    </div>
+    <div class="nav-item ${isActive('macchinari')}" onclick="navigate('macchinari')">
+      <span class="nav-icon">🔬</span> Macchinari
     </div>
   `;
 
@@ -291,6 +297,7 @@ function navigate(view, params = {}) {
     case 'risparmio-totale': renderRisparmioTotale();                  break;
     case 'piani':      renderPiani();                                  break;
     case 'concorrenti': renderConcorrentiAdmin();                      break;
+    case 'macchinari': renderMacchinari();                             break;
   }
   buildSidebar();
 }
@@ -1592,6 +1599,142 @@ async function importaPianiJson(inputEl) {
     alert('Import completato.');
   } catch (e) { alert('Errore import: ' + e.message); }
   inputEl.value = '';
+}
+
+// ── Macchinari (analizzatori) ──
+async function renderMacchinari() {
+  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
+  let elenco = [];
+  if (loggato) {
+    try { elenco = await api('/api/macchine'); }
+    catch (e) {
+      setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+        <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+      return;
+    }
+  }
+  S.macchine = elenco;
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">Macchinari</div>
+        <div class="page-subtitle">${elenco.length} analizzatori in catalogo</div>
+      </div>
+      <div class="page-actions">
+        ${loggato ? `<button class="btn-outline" onclick="importaPdfMacchine()">📄 Importa listino PDF</button>
+        <button class="btn-primary" onclick="nuovaMacchina()">+ Aggiungi macchina</button>` : ''}
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="macc-avviso">
+        <span class="macc-avviso-ico">🔬</span>
+        <div>Carica qui solo listini di analizzatori. I listini di esami vanno in Gestione piani o Gestione concorrenti.</div>
+      </div>
+      ${loggato ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
+        <div class="empty-sub">🔒 Accedi per gestire i tuoi macchinari.</div>
+      </div>`}
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Macchina</th><th>Provenienza</th><th style="width:120px">Prezzo</th><th style="width:150px"></th></tr></thead>
+            <tbody>
+              ${S.macchinaInModifica ? `<tr class="macc-riga-modifica">
+                <td><input class="roi-input" id="macc-nome" value="${escHtml(S.macchinaInModifica.nome)}"
+                           placeholder="Es. Analizzatore biochimico da banco" autocomplete="off"></td>
+                <td class="td-muted">${S.macchinaInModifica.concorrenteId
+                  ? escHtml((elenco.find(x => x.concorrenteId === S.macchinaInModifica.concorrenteId) || {}).concorrenteNome || 'Concorrente')
+                  : 'Mylav (mia)'}</td>
+                <td><input class="roi-input roi-num" id="macc-prezzo"
+                           value="${S.macchinaInModifica.prezzo === '' ? '' : escHtml(String(S.macchinaInModifica.prezzo))}"
+                           placeholder="0,00" inputmode="decimal"></td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn-primary" onclick="salvaMacchinaUI()">Salva</button>
+                  <button class="btn-outline" onclick="annullaModificaMacchina()">Annulla</button>
+                </td>
+              </tr>` : ''}
+              ${elenco.filter(m => !S.macchinaInModifica || m.id !== S.macchinaInModifica.id).map(m => `<tr>
+                <td>${escHtml(m.nome)}</td>
+                <td class="td-muted">${m.concorrenteNome ? escHtml(m.concorrenteNome) : 'Mylav (mia)'}</td>
+                <td class="td-num">${fmtEuro(m.prezzo)}</td>
+                <td style="display:flex;gap:6px">
+                  <button class="btn-outline" onclick="modificaMacchina(${m.id})">Modifica</button>
+                  <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
+                </td>
+              </tr>`).join('')}
+              ${!elenco.length && !S.macchinaInModifica
+                ? `<tr><td colspan="4" class="td-muted" style="text-align:center;padding:26px">
+                     Nessun analizzatore in catalogo. Importa un listino PDF o aggiungine uno a mano.</td></tr>`
+                : ''}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div id="macchinari-calcolatore"></div>
+    </div>
+  `);
+}
+
+function importaPdfMacchine() {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  ImportPdf.avvia({
+    entita: 'macchina',
+    alFine: () => renderMacchinari()
+  });
+}
+
+// Inserimento e modifica avvengono nella riga stessa, come nel pannello piani e
+// nella mappatura concorrenti: il progetto non usa mai prompt(), e finestrelle
+// native stonerebbero in una interfaccia disegnata.
+function nuovaMacchina() {
+  S.macchinaInModifica = { id: null, nome: '', prezzo: '', concorrenteId: null };
+  renderMacchinari();
+}
+
+function modificaMacchina(id) {
+  const m = (S.macchine || []).find(x => x.id === id);
+  if (!m) return;
+  S.macchinaInModifica = { id: m.id, nome: m.nome, prezzo: m.prezzo, concorrenteId: m.concorrenteId };
+  renderMacchinari();
+}
+
+function annullaModificaMacchina() {
+  S.macchinaInModifica = null;
+  renderMacchinari();
+}
+
+async function salvaMacchinaUI() {
+  const nome = (el('macc-nome') || {}).value || '';
+  const prezzoTesto = (el('macc-prezzo') || {}).value || '';
+  const prezzo = parseFloat(String(prezzoTesto).replace(/\./g, '').replace(',', '.'));
+  if (!nome.trim()) { alert('Inserisci il nome della macchina'); return; }
+  if (!Number.isFinite(prezzo) || prezzo < 0) { alert('Inserisci un prezzo valido'); return; }
+
+  const inModifica = S.macchinaInModifica || {};
+  const corpo = JSON.stringify({
+    nome: nome.trim(), prezzo, concorrenteId: inModifica.concorrenteId || null
+  });
+  try {
+    if (inModifica.id) {
+      await api(`/api/macchine/${inModifica.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: corpo
+      });
+    } else {
+      await api('/api/macchine', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo
+      });
+    }
+    S.macchinaInModifica = null;
+    renderMacchinari();
+  } catch (e) { alert('Errore: ' + e.message); }
+}
+
+async function eliminaMacchinaUI(id) {
+  const m = (S.macchine || []).find(x => x.id === id);
+  if (!confirm(`Eliminare "${m ? m.nome : 'questa macchina'}" dal catalogo?`)) return;
+  try {
+    await api(`/api/macchine/${id}`, { method: 'DELETE' });
+    renderMacchinari();
+  } catch (e) { alert('Errore: ' + e.message); }
 }
 
 // ══════════════════════════════════════════════════
