@@ -326,6 +326,7 @@
       prezzo: r.prezzo,
       confidenza: r.confidenza,
       motivo: r.motivo,
+      tipo: r.tipo === 'macchina' ? 'macchina' : 'esame',
       origine: 'estratta',
       modificata: false
     }));
@@ -420,6 +421,8 @@
     const persi = scartateTabellari().length;
     const incerte = S.righe.filter(r => r.confidenza === 'incerta' && !r.modificata).length;
     const conf = Math.round((a.confidenzaComplessiva || 0) * 100);
+    const nMacchine = S.righe.filter(r => r.tipo === 'macchina').length;
+    const nEsami = S.righe.length - nMacchine;
 
     let tipo = 'ok', titolo, messaggio, azioni = '';
     if (persi > 0 || incerte > 0) {
@@ -436,6 +439,13 @@
     } else {
       titolo = `Estratti ${a.classificate} esami su ${a.totaliTabellari} righe con prezzo rilevate`;
       messaggio = 'Nessuna riga con prezzo è rimasta fuori e nessuna è dubbia.';
+    }
+
+    // Quando il documento contiene entrambe le cose, dirlo prima della conferma:
+    // scrivere in due sezioni senza dichiararlo sarebbe uno spostamento
+    // silenzioso di dati.
+    if (nMacchine > 0) {
+      messaggio += `<div class="imp-banner-dest">Riconosciuti <b>${nEsami}</b> esami e <b>${nMacchine}</b> analizzatori: gli analizzatori andranno nella sezione Macchinari.</div>`;
     }
 
     document.getElementById('imp-banner').innerHTML = `
@@ -469,25 +479,25 @@
     const cont = document.getElementById('imp-tab');
     if (!cont) return;
     const scartate = scartateTabellari();
+    const esami = S.righe.filter(r => r.tipo !== 'macchina');
+    const macchine = S.righe.filter(r => r.tipo === 'macchina');
 
-    cont.innerHTML = `
-      <table class="imp-tabella imp-tabella-edit">
-        <thead><tr>
-          <th style="width:30px">#</th><th>Esame</th>
-          <th style="width:96px">Prezzo</th><th style="width:104px">Stato</th><th style="width:34px"></th>
-        </tr></thead>
-        <tbody>
-          ${S.righe.length ? S.righe.map((r, i) => rigaHtml(r, i)).join('')
-            : `<tr><td colspan="5" class="imp-vuoto">Nessuna riga da importare. Usa «+ Riga» per aggiungerne a mano.</td></tr>`}
-        </tbody>
-      </table>
-      ${S.mostraScartate ? bloccoScartateHtml(scartate) : ''}`;
+    // Due blocchi separati: un import puo' scrivere in due destinazioni, e chi
+    // conferma deve vedere cosa va dove prima di farlo.
+    const blocchi = [];
+    if (esami.length || !macchine.length) blocchi.push(gruppoHtml('esame', 'Esami', esami));
+    if (macchine.length) blocchi.push(gruppoHtml('macchina', 'Macchine', macchine));
+
+    cont.innerHTML = blocchi.join('') + (S.mostraScartate ? bloccoScartateHtml(scartate) : '');
 
     cont.querySelectorAll('[data-campo]').forEach(inp => {
       inp.addEventListener('input', () => modificaCampo(Number(inp.dataset.id), inp.dataset.campo, inp.value));
     });
     cont.querySelectorAll('[data-elimina]').forEach(b => {
       b.addEventListener('click', e => { e.stopPropagation(); eliminaRiga(Number(b.dataset.elimina)); });
+    });
+    cont.querySelectorAll('[data-sposta]').forEach(b => {
+      b.addEventListener('click', e => { e.stopPropagation(); spostaRiga(Number(b.dataset.sposta)); });
     });
     cont.querySelectorAll('[data-recupera]').forEach(b => {
       b.addEventListener('click', () => recuperaRiga(Number(b.dataset.recupera)));
@@ -502,6 +512,29 @@
       });
     });
     aggiornaConteggio();
+  }
+
+  function gruppoHtml(tipo, titolo, righe) {
+    const destinazione = tipo === 'macchina'
+      ? 'andranno nella sezione Macchinari'
+      : (S.entita === 'concorrente' ? 'andranno nel catalogo del concorrente' : 'andranno nel tuo catalogo esami');
+    return `
+      <div class="imp-gruppo" data-gruppo="${tipo}">
+        <div class="imp-gruppo-tit">
+          <span>${titolo} <b>${righe.length}</b></span>
+          <span class="imp-gruppo-dove">${destinazione}</span>
+        </div>
+        <table class="imp-tabella imp-tabella-edit">
+          <thead><tr>
+            <th style="width:30px">#</th><th>Nome</th>
+            <th style="width:96px">Prezzo</th><th style="width:104px">Stato</th><th style="width:62px"></th>
+          </tr></thead>
+          <tbody>
+            ${righe.length ? righe.map((r, i) => rigaHtml(r, i)).join('')
+              : `<tr><td colspan="5" class="imp-vuoto">Nessuna riga. Usa «+ Riga» per aggiungerne a mano.</td></tr>`}
+          </tbody>
+        </table>
+      </div>`;
   }
 
   // Il prezzo si mostra in formato italiano; quello digitato a mano si lascia
@@ -531,7 +564,11 @@
         <td><input class="imp-inp imp-inp-num" data-id="${r.id}" data-campo="prezzo"
                    inputmode="decimal" value="${esc(prezzoDaMostrare(r.prezzo))}"></td>
         <td><span class="imp-tag imp-tag-${stato.cls}" ${stato.tip ? `title="${esc(stato.tip)}"` : ''}>${stato.txt}</span></td>
-        <td><button type="button" class="imp-x-riga" data-elimina="${r.id}" title="Togli questa riga">✕</button></td>
+        <td class="imp-azioni-riga">
+          <button type="button" class="imp-x-riga" data-sposta="${r.id}"
+                  title="${r.tipo === 'macchina' ? 'Sposta fra gli esami' : 'Sposta fra le macchine'}">⇄</button>
+          <button type="button" class="imp-x-riga" data-elimina="${r.id}" title="Togli questa riga">✕</button>
+        </td>
       </tr>`;
   }
 
@@ -585,10 +622,22 @@
     renderBanner();
   }
 
+  // Il riconoscimento a sezioni puo' sbagliare su un documento con capitoli
+  // insoliti: spostare una riga evita di rifare tutto l'import.
+  function spostaRiga(id) {
+    const r = trova(id);
+    if (!r) return;
+    r.tipo = r.tipo === 'macchina' ? 'esame' : 'macchina';
+    r.modificata = true;
+    renderTabella();
+    renderBanner();
+  }
+
   function aggiungiRiga() {
     S.righe.push({
       id: ++contatoreRighe, indice: null, nome: '', prezzo: '',
-      confidenza: 'alta', motivo: null, origine: 'manuale', modificata: false
+      confidenza: 'alta', motivo: null, tipo: 'esame',
+      origine: 'manuale', modificata: false
     });
     renderTabella();
     const inp = document.querySelector('.imp-tabella-edit tbody tr:last-child [data-campo="nome"]');
@@ -607,6 +656,7 @@
       // finale (ed eventuale simbolo di percentuale), che l'operatore correggera.
       nome: orig.nome || orig.testo.replace(/\s*€?\s*[\d.,]+\s*%?\s*$/, '').trim(),
       prezzo: orig.prezzo != null ? orig.prezzo : '',
+      tipo: orig.tipo === 'macchina' ? 'macchina' : 'esame',
       confidenza: 'incerta', motivo: orig.motivo, origine: 'recuperata', modificata: false
     });
     renderTabella();
@@ -616,9 +666,16 @@
     if (tr) tr.focus();
   }
 
+  // Il tipo va con la riga fino alla conferma: e' cio' che decide se finisce
+  // nel catalogo esami o in quello macchine, e lo spostamento a mano deve
+  // avere effetto reale, non solo sul gruppo mostrato in revisione.
   function valide() {
     return S.righe
-      .map(r => ({ nome: String(r.nome || '').trim(), prezzo: numero(r.prezzo) }))
+      .map(r => ({
+        nome: String(r.nome || '').trim(),
+        prezzo: numero(r.prezzo),
+        tipo: r.tipo === 'macchina' ? 'macchina' : 'esame'
+      }))
       .filter(r => r.nome && Number.isFinite(r.prezzo) && r.prezzo >= 0);
   }
 
