@@ -1649,9 +1649,7 @@ async function renderMacchinari() {
               ${S.macchinaInModifica ? `<tr class="macc-riga-modifica">
                 <td><input class="roi-input" id="macc-nome" value="${escHtml(S.macchinaInModifica.nome)}"
                            placeholder="Es. Analizzatore biochimico da banco" autocomplete="off"></td>
-                <td class="td-muted">${S.macchinaInModifica.concorrenteId
-                  ? escHtml((elenco.find(x => x.concorrenteId === S.macchinaInModifica.concorrenteId) || {}).concorrenteNome || 'Concorrente')
-                  : 'Mylav (mia)'}</td>
+                <td>${provenienzaMacchinaSelectHtml(S.macchinaInModifica.concorrenteId)}</td>
                 <td><input class="roi-input roi-num" id="macc-prezzo"
                            value="${S.macchinaInModifica.prezzo === '' ? '' : escHtml(String(S.macchinaInModifica.prezzo))}"
                            placeholder="0,00" inputmode="decimal"></td>
@@ -1816,6 +1814,22 @@ function importaPdfMacchine() {
   });
 }
 
+// Selettore di provenienza per la riga in inserimento/modifica: "Mylav (mia)"
+// o uno dei concorrenti gia' in archivio (S.concorrenti, gia' caricato
+// all'avvio da loadConcorrenti — nessuna chiamata in piu' serve qui). Se non
+// c'e' nessun concorrente, una voce non selezionabile lo dichiara e "Mylav
+// (mia)" resta l'unica scelta possibile.
+function provenienzaMacchinaSelectHtml(concorrenteIdSelezionato) {
+  const lista = S.concorrenti || [];
+  const opzioni = lista.length
+    ? lista.map(c => `<option value="${c.id}" ${concorrenteIdSelezionato && Number(concorrenteIdSelezionato) === c.id ? 'selected' : ''}>${escHtml(c.nome)}</option>`).join('')
+    : `<option value="" disabled>Nessun concorrente in archivio</option>`;
+  return `<select class="roi-input" id="macc-concorrente">
+    <option value="" ${concorrenteIdSelezionato ? '' : 'selected'}>Mylav (mia)</option>
+    ${opzioni}
+  </select>`;
+}
+
 // Inserimento e modifica avvengono nella riga stessa, come nel pannello piani e
 // nella mappatura concorrenti: il progetto non usa mai prompt(), e finestrelle
 // native stonerebbero in una interfaccia disegnata.
@@ -1841,12 +1855,13 @@ async function salvaMacchinaUI() {
   const nome = (el('macc-nome') || {}).value || '';
   const prezzoTesto = (el('macc-prezzo') || {}).value || '';
   const prezzo = parseFloat(String(prezzoTesto).replace(/\./g, '').replace(',', '.'));
+  const concorrenteSel = (el('macc-concorrente') || {}).value || '';
   if (!nome.trim()) { alert('Inserisci il nome della macchina'); return; }
   if (!Number.isFinite(prezzo) || prezzo < 0) { alert('Inserisci un prezzo valido'); return; }
 
   const inModifica = S.macchinaInModifica || {};
   const corpo = JSON.stringify({
-    nome: nome.trim(), prezzo, concorrenteId: inModifica.concorrenteId || null
+    nome: nome.trim(), prezzo, concorrenteId: concorrenteSel ? Number(concorrenteSel) : null
   });
   // Stesso pattern di S.inCorso in importpdf.js: senza il blocco un doppio
   // click rapido su una macchina nuova invia due POST e crea una riga duplicata.
