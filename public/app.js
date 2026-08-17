@@ -173,6 +173,9 @@ function buildSidebar() {
     <div class="nav-item ${isActive('macchinari')}" onclick="navigate('macchinari')">
       <span class="nav-icon">🔬</span> Macchinari
     </div>
+    <div class="nav-item ${isActive('confronto-macchine')}" onclick="navigate('confronto-macchine')">
+      <span class="nav-icon">⚖️</span> Confronto macchine
+    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -309,6 +312,7 @@ function navigate(view, params = {}) {
     // rompe il flusso di modifica, e toglie uno stato residuo che l'operatore
     // non ha piu' motivo di ritrovare aperto.
     case 'macchinari': S.macchinaInModifica = null; S.listinoAperto = null; renderMacchinari();  break;
+    case 'confronto-macchine': renderConfrontoMacchine();               break;
   }
   buildSidebar();
 }
@@ -1802,54 +1806,77 @@ async function eliminaMacchinaUI(id) {
   } catch (e) { alert('Errore: ' + e.message); }
 }
 
-// Confronto fra le proprie macchine e quelle di un concorrente.
-// L'accoppiamento e' scelto dall'operatore riga per riga: nessuna mappatura
-// persistente e nessun algoritmo di somiglianza, perche' non e' stato chiesto.
-function renderCalcolatoreMacchine() {
-  const wrap = el('macchinari-calcolatore');
+// ── Confronto macchine ──
+// Sezione propria, con la stessa barra di comandi del simulatore esami.
+// L'accoppiamento fra una macchina propria e una del concorrente e' scelto a
+// mano riga per riga: nessuna mappatura salvata, nessun algoritmo di somiglianza.
+async function renderConfrontoMacchine() {
+  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
+  let elenco = [];
+  if (loggato) {
+    try { elenco = await api('/api/macchine'); }
+    catch (e) {
+      setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+        <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+      return;
+    }
+  }
+  S.macchine = elenco;
+  const mie = elenco.filter(m => !m.concorrenteId);
+  const loro = elenco.filter(m => m.concorrenteId);
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">Confronto macchine</div>
+        <div class="page-subtitle">Mylav vs concorrenza</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="roi-toolbar">
+        <div>
+          <div class="roi-toolbar-title">Confronto macchine</div>
+          <div class="roi-toolbar-sub">${mie.length} tue · ${loro.length} della concorrenza</div>
+        </div>
+        <div class="roi-toolbar-controls">
+          ${mie.length && loro.length ? `<button class="btn-outline" onclick="aggiungiConfrontoMacchina()" style="font-size:12px">+ Aggiungi riga</button>
+          <button class="btn-outline" onclick="rimuoviTuttoConfrontoMacchine()" style="font-size:12px">🗑️ Rimuovi tutto</button>` : ''}
+          <button class="btn-outline" onclick="navigate('macchinari')" style="font-size:12px">🔬 Gestisci macchinari</button>
+        </div>
+      </div>
+      <div id="confronto-macchine-corpo"></div>
+    </div>
+  `);
+  renderCorpoConfrontoMacchine();
+}
+
+function renderCorpoConfrontoMacchine() {
+  const wrap = el('confronto-macchine-corpo');
   if (!wrap) return;
   const mie = (S.macchine || []).filter(m => !m.concorrenteId);
   const loro = (S.macchine || []).filter(m => m.concorrenteId);
 
   if (!mie.length || !loro.length) {
-    // Il consiglio deve dire cosa manca davvero: "importa dal concorrente" non
-    // risolve nulla se a mancare sono proprio le macchine tue, e viceversa.
-    // Da ospite, poi, i pulsanti di import qui sopra non sono nemmeno
-    // disegnati (vedi renderMacchinari): consigliarli sarebbe un consiglio
-    // che non si puo' seguire, quindi l'ospite ha un messaggio a parte.
-    const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
-    let messaggio;
-    if (!loggato) {
-      messaggio = `Accedi per gestire i tuoi macchinari: da ospite il catalogo macchine non è disponibile.`;
-    } else if (!mie.length && !loro.length) {
-      messaggio = `Non ci sono ancora macchine in catalogo, né tue né di un concorrente.
-        Importa un listino PDF qui sopra per le tue, o in Gestione concorrenti per quelle
-        del concorrente (oppure aggiungile a mano).`;
-    } else if (!mie.length) {
-      messaggio = `Mancano le tue macchine: quelle del concorrente ci sono già.
-        Importa un listino PDF o aggiungine una a mano con i pulsanti qui sopra.`;
-    } else {
-      messaggio = `Manca il termine di paragone: le tue macchine ci sono già.
-        Importa un listino di un concorrente in Gestione concorrenti.`;
-    }
+    const manca = !mie.length && !loro.length
+      ? 'Non ci sono ancora macchine in catalogo. Importa un listino di analizzatori nella sezione Macchinari: uno con le tue macchine e uno con quelle del concorrente.'
+      : !mie.length
+        ? 'Mancano le tue macchine: quelle della concorrenza ci sono già. Importa un listino con provenienza «Le mie macchine» nella sezione Macchinari.'
+        : 'Manca il termine di paragone: le tue macchine ci sono già. Importa un listino indicando il concorrente a cui appartiene, nella sezione Macchinari.';
     wrap.innerHTML = `
       <div class="section-card">
-        <div class="section-card-title">Confronto macchine</div>
-        <div class="td-muted" style="padding:6px 0">${messaggio}</div>
+        <div class="td-muted" style="padding:6px 0;line-height:1.5">${manca}</div>
+        <button class="btn-primary" style="margin-top:12px" onclick="navigate('macchinari')">Vai a Macchinari</button>
       </div>`;
     return;
   }
 
-  // Le righe salvate puntano a id di macchine: se il catalogo e' cambiato
-  // (cambio di account nella stessa scheda, o una macchina accoppiata e' stata
-  // eliminata) quegli id possono non esistere piu' in questo catalogo. Tenerle
-  // e ripiegare in silenzio sulla prima macchina disponibile farebbe dire alla
-  // riga un accoppiamento diverso da quello scelto dall'operatore: si scarta
-  // la riga invece, garantendo pero' che ne resti sempre almeno una quando ci
-  // sono macchine da entrambi i lati.
-  const righeValide = (S.confrontoMacchine || []).filter(r =>
+  if (!Array.isArray(S.confrontoMacchine) || !S.confrontoMacchine.length) {
+    S.confrontoMacchine = [{ mia: mie[0].id, sua: loro[0].id }];
+  }
+  // Una riga che punta a una macchina non piu' esistente direbbe una cosa
+  // diversa da quella scelta: si scarta invece di ripiegare su un'altra.
+  S.confrontoMacchine = S.confrontoMacchine.filter(r =>
     mie.some(m => m.id === r.mia) && loro.some(m => m.id === r.sua));
-  S.confrontoMacchine = righeValide.length ? righeValide : [{ mia: mie[0].id, sua: loro[0].id }];
+  if (!S.confrontoMacchine.length) S.confrontoMacchine = [{ mia: mie[0].id, sua: loro[0].id }];
 
   const opzioni = (lista, sel) => lista
     .map(m => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('');
@@ -1866,20 +1893,18 @@ function renderCalcolatoreMacchine() {
       <td class="td-num">${fmtEuro(a.prezzo)}</td>
       <td class="td-num">${fmtEuro(b.prezzo)}</td>
       <td class="td-num ${diff <= 0 ? 'macc-meglio' : 'macc-peggio'}">${diff <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diff))}</td>
-      <td>${S.confrontoMacchine.length > 1
-        ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button>` : ''}</td>
+      <td>${S.confrontoMacchine.length > 1 ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button>` : ''}</td>
     </tr>`;
   }).join('');
 
   const diffTot = totMia - totSua;
   wrap.innerHTML = `
-    <div class="section-card">
-      <div class="section-card-title">Confronto macchine</div>
+    <div class="table-card">
       <div class="table-scroll">
         <table class="macc-confronto">
           <thead><tr>
-            <th>La mia macchina</th><th>Del concorrente</th>
-            <th style="width:110px">Mylav</th><th style="width:110px">Concorrente</th>
+            <th>La mia macchina</th><th>Della concorrenza</th>
+            <th style="width:110px">Mylav</th><th style="width:110px">Concorrenza</th>
             <th style="width:120px">Differenza</th><th style="width:40px"></th>
           </tr></thead>
           <tbody>${righe}</tbody>
@@ -1892,33 +1917,34 @@ function renderCalcolatoreMacchine() {
           </tr></tfoot>
         </table>
       </div>
-      <button class="btn-outline" style="margin-top:12px" onclick="aggiungiConfrontoMacchina()">+ Aggiungi riga</button>
     </div>`;
 }
 
 function cambiaConfrontoMacchina(i, lato, valore) {
   if (!S.confrontoMacchine || !S.confrontoMacchine[i]) return;
   S.confrontoMacchine[i][lato] = Number(valore);
-  renderCalcolatoreMacchine();
+  renderCorpoConfrontoMacchine();
 }
 
 function aggiungiConfrontoMacchina() {
   const mie = (S.macchine || []).filter(m => !m.concorrenteId);
   const loro = (S.macchine || []).filter(m => m.concorrenteId);
   if (!mie.length || !loro.length) return;
+  if (!Array.isArray(S.confrontoMacchine)) S.confrontoMacchine = [];
   S.confrontoMacchine.push({ mia: mie[0].id, sua: loro[0].id });
-  renderCalcolatoreMacchine();
+  renderCorpoConfrontoMacchine();
 }
 
 function togliConfrontoMacchina(i) {
-  // Il pulsante "✕" non compare piu' sull'unica riga rimasta (vedi il
-  // template della riga qui sopra): un pulsante che, cliccato, fa ricomparire
-  // subito una riga identica sembra non funzionare, ed e' meno onesto verso
-  // chi guarda di un pulsante assente. L'invariante "sempre almeno una riga
-  // quando ci sono macchine da entrambi i lati" resta cosi' la stessa usata
-  // per le righe che puntano a id spariti (vedi renderCalcolatoreMacchine).
+  if (!S.confrontoMacchine) return;
   S.confrontoMacchine.splice(i, 1);
-  renderCalcolatoreMacchine();
+  renderCorpoConfrontoMacchine();
+}
+
+function rimuoviTuttoConfrontoMacchine() {
+  if (!confirm('Svuotare il confronto?')) return;
+  S.confrontoMacchine = null;
+  renderCorpoConfrontoMacchine();
 }
 
 // ══════════════════════════════════════════════════
