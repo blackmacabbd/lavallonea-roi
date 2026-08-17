@@ -297,7 +297,12 @@ function navigate(view, params = {}) {
     case 'risparmio-totale': renderRisparmioTotale();                  break;
     case 'piani':      renderPiani();                                  break;
     case 'concorrenti': renderConcorrentiAdmin();                      break;
-    case 'macchinari': renderMacchinari();                             break;
+    // Si arriva qui dalla voce di menu, mai da nuovaMacchina/modificaMacchina
+    // (che ridisegnano chiamando renderMacchinari() direttamente): azzerare la
+    // riga in modifica quando si entra nella sezione da un'altra pagina non
+    // rompe il flusso di modifica, e toglie uno stato residuo che l'operatore
+    // non ha piu' motivo di ritrovare aperto.
+    case 'macchinari': S.macchinaInModifica = null; renderMacchinari();  break;
   }
   buildSidebar();
 }
@@ -1648,7 +1653,7 @@ async function renderMacchinari() {
                            value="${S.macchinaInModifica.prezzo === '' ? '' : escHtml(String(S.macchinaInModifica.prezzo))}"
                            placeholder="0,00" inputmode="decimal"></td>
                 <td style="display:flex;gap:6px">
-                  <button class="btn-primary" onclick="salvaMacchinaUI()">Salva</button>
+                  <button class="btn-primary" id="macc-btn-salva" onclick="salvaMacchinaUI()">Salva</button>
                   <button class="btn-outline" onclick="annullaModificaMacchina()">Annulla</button>
                 </td>
               </tr>` : ''}
@@ -1676,6 +1681,12 @@ async function renderMacchinari() {
 
 function importaPdfMacchine() {
   if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  // Se una riga era aperta in modifica, i suoi valori sono stati catturati
+  // prima di questo import: se sopravvivesse, un "Salva" dopo l'import
+  // riscriverebbe silenziosamente il prezzo appena importato con quello
+  // vecchio. L'import puo' aggiornare proprio la macchina in modifica
+  // (l'upsert avviene per nome), quindi la riga va abbandonata prima di avviarlo.
+  S.macchinaInModifica = null;
   ImportPdf.avvia({
     entita: 'macchina',
     alFine: () => renderMacchinari()
@@ -1703,6 +1714,7 @@ function annullaModificaMacchina() {
 }
 
 async function salvaMacchinaUI() {
+  if (S.macchinaSalvando) return;
   const nome = (el('macc-nome') || {}).value || '';
   const prezzoTesto = (el('macc-prezzo') || {}).value || '';
   const prezzo = parseFloat(String(prezzoTesto).replace(/\./g, '').replace(',', '.'));
@@ -1713,6 +1725,11 @@ async function salvaMacchinaUI() {
   const corpo = JSON.stringify({
     nome: nome.trim(), prezzo, concorrenteId: inModifica.concorrenteId || null
   });
+  // Stesso pattern di S.inCorso in importpdf.js: senza il blocco un doppio
+  // click rapido su una macchina nuova invia due POST e crea una riga duplicata.
+  S.macchinaSalvando = true;
+  const bottone = el('macc-btn-salva');
+  if (bottone) bottone.disabled = true;
   try {
     if (inModifica.id) {
       await api(`/api/macchine/${inModifica.id}`, {
@@ -1725,7 +1742,13 @@ async function salvaMacchinaUI() {
     }
     S.macchinaInModifica = null;
     renderMacchinari();
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) {
+    alert('Errore: ' + e.message);
+  } finally {
+    S.macchinaSalvando = false;
+    const bottoneFine = el('macc-btn-salva');
+    if (bottoneFine) bottoneFine.disabled = false;
+  }
 }
 
 async function eliminaMacchinaUI(id) {
@@ -2918,6 +2941,12 @@ function roiMsg(msg, tipo) {
 
 // ── Init ───────────────────────────────────────────
 async function avviaApp() {
+  // Chiamata a ogni login/registrazione/accesso ospite e a ogni avvio con
+  // sessione valida: una riga macchina in modifica catturata dall'account
+  // precedente (o da un avvio interrotto) non appartiene a questa sessione,
+  // e se sopravvivesse un "Salva" successivo scriverebbe dati vecchi sopra
+  // al catalogo dell'account ora attivo.
+  S.macchinaInModifica = null;
   // loadStrutture/loadConcorrenti richiedono un account (dati privati per utente):
   // in modalita' ospite falliscono con 401, atteso. Non deve bloccare il boot.
   await loadStrutture().catch(() => { S.strutture = []; });
@@ -2973,6 +3002,10 @@ async function authLogout(silent) {
   if (S.auth.token) { try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (_) {} }
   S.auth = { token: null, email: null, isAdmin: false, guest: false };
   localStorage.removeItem('authToken'); localStorage.removeItem('authEmail'); localStorage.removeItem('authIsAdmin');
+  // La riga in modifica appartiene all'account che sta uscendo: valori
+  // catturati prima del logout non devono ripresentarsi (e finire salvati)
+  // sotto l'account che accedera' dopo.
+  S.macchinaInModifica = null;
   mostraAuthScreen();
 }
 

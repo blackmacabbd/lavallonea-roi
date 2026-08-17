@@ -450,9 +450,14 @@
 
     // Quando il documento contiene entrambe le cose, dirlo prima della conferma:
     // scrivere in due sezioni senza dichiararlo sarebbe uno spostamento
-    // silenzioso di dati.
+    // silenzioso di dati. Da Macchinari il server sposta pero' anche le righe
+    // classificate esame (vedi gruppoHtml): qui la frase deve dirlo, non solo
+    // l'etichetta del gruppo, altrimenti le due si contraddicono.
     if (nMacchine > 0) {
-      messaggio += `<div class="imp-banner-dest">Riconosciuti <b>${nEsami}</b> esami e <b>${nMacchine}</b> analizzatori: gli analizzatori andranno nella sezione Macchinari.</div>`;
+      const destinazioneAnalizzatori = S.entita === 'macchina'
+        ? 'tutte le righe finiranno fra gli analizzatori, nella sezione Macchinari'
+        : 'gli analizzatori andranno nella sezione Macchinari';
+      messaggio += `<div class="imp-banner-dest">Riconosciuti <b>${nEsami}</b> esami e <b>${nMacchine}</b> analizzatori: ${destinazioneAnalizzatori}.</div>`;
     }
 
     document.getElementById('imp-banner').innerHTML = `
