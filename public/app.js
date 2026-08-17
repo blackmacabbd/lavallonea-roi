@@ -16,6 +16,8 @@ const S = {
   listinoAperto: null,
   macchinaInModifica: null,
   filtroMacchine: '',
+  filtroListiniMie: '',
+  filtroListiniLoro: '',
   salvataggioMacchinaInCorso: false,
   macchine: [],
   confrontoMacchine: null,
@@ -1630,16 +1632,30 @@ async function renderMacchinari() {
         <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
       return;
     }
+    // Il blocco concorrenza deve sapere quali concorrenti esistono per il suo
+    // pulsante di import: se non sono ancora in memoria si caricano qui,
+    // riusando loadConcorrenti invece di duplicare la chiamata all'API.
+    if (!S.concorrenti || !S.concorrenti.length) {
+      try { await loadConcorrenti(); } catch (e) { /* resta vuoto, il blocco lo segnala */ }
+    }
   }
   S.listiniMacchine = listini;
+  disegnaMacchinari();
+}
+
+// Disegno sincrono su S.listiniMacchine gia' in memoria: le due ricerche lo
+// richiamano a ogni carattere digitato, quindi non deve mai ricaricare dal
+// server (a differenza di renderMacchinari, che e' async e lo fa).
+function disegnaMacchinari() {
+  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
+  const listini = S.listiniMacchine || [];
+  const mie = listini.filter(l => !l.concorrenteId);
+  const loro = listini.filter(l => l.concorrenteId);
 
   setMain(`
     <div class="page-header">
       <div><div class="page-title">Macchinari</div>
-        <div class="page-subtitle">${listini.length} ${listini.length === 1 ? 'listino importato' : 'listini importati'}</div>
-      </div>
-      <div class="page-actions">
-        ${loggato ? `<button class="btn-primary" onclick="importaPdfMacchine()">📄 Importa listino PDF</button>` : ''}
+        <div class="page-subtitle">${mie.length} tuoi · ${loro.length} della concorrenza</div>
       </div>
     </div>
     <div class="page-body">
@@ -1650,14 +1666,42 @@ async function renderMacchinari() {
       ${loggato ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
         <div class="empty-sub">🔒 Accedi per gestire i tuoi macchinari.</div>
       </div>`}
-      <div class="table-card">
+      ${bloccoListiniHtml('mie', 'Le mie macchine', 'Analizzatori del listino Mylav', mie, loggato)}
+      ${bloccoListiniHtml('loro', 'Macchine della concorrenza', 'Analizzatori dei listini dei concorrenti', loro, loggato)}
+      <div id="listino-macchine-wrap"></div>
+    </div>
+  `);
+}
+
+// Due blocchi distinti dai colori che nel progetto hanno gia' un significato:
+// blu Mylav, rosso concorrenza. Ogni blocco ha il suo import e la sua ricerca,
+// cosi' il comando dichiara da se' dove finiranno le macchine.
+function bloccoListiniHtml(lato, titolo, sottotitolo, listini, loggato) {
+  const filtro = lato === 'mie' ? (S.filtroListiniMie || '') : (S.filtroListiniLoro || '');
+  const visibili = listini.filter(l => Ricerca.corrisponde(l.nome, filtro));
+  const funzioneFiltro = lato === 'mie' ? 'filtraListiniMie' : 'filtraListiniLoro';
+  const funzioneImport = lato === 'mie' ? 'importaPdfMacchineMie' : 'importaPdfMacchineConcorrente';
+  const etichettaImport = lato === 'mie' ? '📄 Importa listino PDF' : '📄 Importa listino concorrente';
+
+  return `
+    <div class="macc-blocco macc-blocco-${lato}">
+      <div class="macc-blocco-testa">
+        <div>
+          <div class="macc-blocco-tit">${escHtml(titolo)}</div>
+          <div class="macc-blocco-sub">${escHtml(sottotitolo)}</div>
+        </div>
+        ${loggato ? `<button class="btn-outline" onclick="${funzioneImport}()">${etichettaImport}</button>` : ''}
+      </div>
+      <div class="macc-blocco-corpo">
+        <input class="roi-input dett-search" placeholder="🔍 Cerca listino…" value="${escHtml(filtro)}"
+               oninput="${funzioneFiltro}(this.value)" autocomplete="off" style="margin-bottom:10px">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Listino</th><th>Provenienza</th><th style="width:110px">Macchine</th><th style="width:120px">Importato</th><th style="width:190px"></th></tr></thead>
+            <thead><tr><th>Listino</th>${lato === 'loro' ? '<th>Concorrente</th>' : ''}<th style="width:100px">Macchine</th><th style="width:110px">Importato</th><th style="width:190px"></th></tr></thead>
             <tbody>
-              ${listini.map(l => `<tr>
+              ${visibili.map(l => `<tr>
                 <td>${escHtml(l.nome)}</td>
-                <td class="td-muted">${l.concorrenteNome ? escHtml(l.concorrenteNome) : 'Mylav (mie)'}</td>
+                ${lato === 'loro' ? `<td class="td-muted">${escHtml(l.concorrenteNome || '')}</td>` : ''}
                 <td class="td-muted">${l.nMacchine}</td>
                 <td class="td-muted">${fmtDate(l.dataImport)}</td>
                 <td style="display:flex;gap:6px">
@@ -1665,20 +1709,33 @@ async function renderMacchinari() {
                   <button class="btn-outline" onclick="eliminaListinoUI(${l.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
                 </td>
               </tr>`).join('')}
-              ${!listini.length ? `<tr><td colspan="5" class="td-muted" style="text-align:center;padding:26px">
-                ${loggato ? 'Nessun listino importato. Usa «Importa listino PDF» per aggiungerne uno.' : 'Accedi per importare un listino.'}</td></tr>` : ''}
+              ${!visibili.length ? `<tr><td colspan="${lato === 'loro' ? 5 : 4}" class="td-muted" style="text-align:center;padding:22px">
+                ${listini.length
+                  ? 'Nessun listino corrisponde alla ricerca.'
+                  : (loggato ? 'Nessun listino importato. Usa il pulsante qui sopra per aggiungerne uno.' : 'Accedi per importare i tuoi listini.')}
+              </td></tr>` : ''}
             </tbody>
           </table>
         </div>
       </div>
-      <div id="listino-macchine-wrap"></div>
-    </div>
-  `);
+    </div>`;
 }
 
-function importaPdfMacchine() {
+function filtraListiniMie(v) { S.filtroListiniMie = v; disegnaMacchinari(); }
+function filtraListiniLoro(v) { S.filtroListiniLoro = v; disegnaMacchinari(); }
+
+function importaPdfMacchineMie() {
   if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
-  ImportPdf.avvia({ entita: 'macchina', alFine: () => renderMacchinari() });
+  ImportPdf.avvia({ entita: 'macchina', lato: 'mie', alFine: () => renderMacchinari() });
+}
+
+function importaPdfMacchineConcorrente() {
+  if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  if (!S.concorrenti || !S.concorrenti.length) {
+    alert('Nessun concorrente in archivio: importa prima un listino esami in Gestione concorrenti.');
+    return;
+  }
+  ImportPdf.avvia({ entita: 'macchina', lato: 'concorrente', alFine: () => renderMacchinari() });
 }
 
 async function eliminaListinoUI(id) {

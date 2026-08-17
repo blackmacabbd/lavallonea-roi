@@ -1709,3 +1709,25 @@ body.imp-aperto { overflow: hidden; }
 .macc-confronto tfoot td { border-bottom: none; border-top: 2px solid var(--line); }
 .macc-meglio { color: var(--blue); }
 .macc-peggio { color: var(--red); }
+
+/* Macchinari: due blocchi distinti dal colore. Blu = Mylav, rosso =
+   concorrenza, la stessa convenzione usata nei calcolatori. */
+.macc-blocco {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 18px;
+}
+.macc-blocco-testa {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 16px;
+  border-left: 4px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.macc-blocco-mie  .macc-blocco-testa { border-left-color: var(--blue); background: var(--blue-tint); }
+.macc-blocco-loro .macc-blocco-testa { border-left-color: var(--red);  background: var(--red-tint); }
+.macc-blocco-tit { font-size: 14px; font-weight: 650; color: var(--ink); }
+.macc-blocco-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.macc-blocco-corpo { padding: 12px 16px 4px; }
+.macc-blocco-corpo .dett-search { width: 100%; max-width: 340px; }

@@ -6,7 +6,9 @@
  * arrivano dall'analisi lato server (punti PDF a scala 1, origine in alto a
  * sinistra).
  *
- * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'macchina', nomeDefault, file, alFine })
+ * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'macchina', lato, nomeDefault, file, alFine })
+ * `lato` conta solo per entita' 'macchina': 'mie' o 'concorrente' (qualunque
+ * altro valore, o assente, vale 'mie').
  * Senza `file` il documento viene chiesto all'utente; con `file` si usa quello
  * (serve quando il documento e' gia' stato scelto da un input della pagina).
  * `alFine` viene chiamata dopo un import confermato con successo.
@@ -230,12 +232,16 @@
   async function avvia(opzioni) {
     const opts = opzioni || {};
     const entita = ENTITA_VALIDE.includes(opts.entita) ? opts.entita : 'piano';
+    // Solo per 'macchina': quale dei due blocchi di Macchinari ha aperto
+    // l'import. Un valore diverso da 'concorrente' vale 'mie', il comportamento
+    // di sempre (import diretto, senza chiedere la provenienza).
+    const lato = opts.lato === 'concorrente' ? 'concorrente' : 'mie';
     const file = opts.file || await scegliFile();
     if (!file) return;
 
     montaFinestra('Importa listino PDF', file.name);
     S = {
-      entita, file,
+      entita, lato, file,
       nomeDefault: opts.nomeDefault || file.name.replace(/\.pdf$/i, ''),
       alFine: typeof opts.alFine === 'function' ? opts.alFine : null,
       fase: 'carica', nota: '', percento: 4,
@@ -243,13 +249,15 @@
       scala: 1.2, pdfDoc: null, selezionata: null,
       pagine: [], dpr: 1,
       mostraScartate: false, inCorso: false,
-      // Solo per l'entita' 'macchina': elenco dei concorrenti fra cui scegliere
-      // la provenienza. Il caricamento parte subito ma non deve rallentare
-      // l'apertura della finestra (vedi caricaProvenienza).
-      provenienza: entita === 'macchina' ? { stato: 'carico', lista: [] } : null
+      // Solo per l'entita' 'macchina' e lato 'concorrente': elenco dei
+      // concorrenti fra cui scegliere. Il pulsante premuto in Macchinari ha
+      // gia' deciso fra proprie e concorrenza, quindi qui non si offre piu'
+      // "Le mie macchine" come scelta. Il caricamento parte subito ma non deve
+      // rallentare l'apertura della finestra (vedi caricaProvenienza).
+      provenienza: entita === 'macchina' && lato === 'concorrente' ? { stato: 'carico', lista: [] } : null
     };
     renderFasi();
-    if (entita === 'macchina') caricaProvenienza();
+    if (entita === 'macchina' && lato === 'concorrente') caricaProvenienza();
 
     // Apertura locale del PDF in parallelo all'analisi: serve il numero di
     // pagine da mostrare subito e il documento per l'anteprima, senza allungare
@@ -326,10 +334,12 @@
     });
   }
 
-  // Elenco dei concorrenti per il selettore di provenienza (solo entita'
-  // 'macchina'). Parte in parallelo all'analisi del PDF, senza bloccare
+  // Elenco dei concorrenti esistenti per il selettore di provenienza (solo
+  // entita' 'macchina' e lato 'concorrente': il pulsante premuto in Macchinari
+  // ha gia' scelto fra proprie e concorrenza, qui si sceglie solo quale
+  // concorrente). Parte in parallelo all'analisi del PDF, senza bloccare
   // l'apertura della finestra: se fallisce o non e' ancora arrivato, il
-  // selettore mostra solo "Le mie macchine" (vedi opzioniProvenienza).
+  // selettore lo dichiara (vedi opzioniProvenienza).
   function caricaProvenienza() {
     fetch('/api/concorrenti', { headers: authHeaders() })
       .then(r => r.ok ? r.json() : Promise.reject(new Error('errore')))
@@ -345,21 +355,19 @@
       });
   }
 
-  // "Le mie macchine" e' sempre la prima opzione e l'unica finche' l'elenco
-  // dei concorrenti non e' arrivato. Se e' arrivato ma e' vuoto, una voce non
-  // selezionabile lo dichiara invece di lasciare il selettore silenziosamente
-  // a una sola scelta senza spiegazione.
+  // Solo i concorrenti esistenti: la scelta fra proprie e concorrenza e' gia'
+  // stata fatta col pulsante premuto in Macchinari, quindi "Le mie macchine"
+  // non e' piu' un'opzione qui. Finche' l'elenco non e' arrivato, o se e'
+  // arrivato vuoto, una voce non selezionabile lo dichiara invece di lasciare
+  // il selettore silenziosamente senza scelte.
   function opzioniProvenienza() {
-    const p = S.provenienza || { stato: 'pronto', lista: [] };
-    let html = `<option value="">Le mie macchine</option>`;
-    if (p.stato === 'pronto') {
-      html += p.lista.length
-        ? p.lista.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('')
-        : `<option value="" disabled>Nessun concorrente in archivio</option>`;
+    const p = S.provenienza || { stato: 'carico', lista: [] };
+    if (p.stato === 'pronto' && p.lista.length) {
+      return p.lista.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
     }
-    // Stato 'carico' o 'errore': nessuna opzione in piu', il selettore degrada
-    // a "Le mie macchine" senza bloccare l'import.
-    return html;
+    if (p.stato === 'pronto') return `<option value="" disabled>Nessun concorrente in archivio</option>`;
+    // Stato 'carico' o 'errore': l'elenco non e' ancora disponibile.
+    return `<option value="" disabled>Caricamento…</option>`;
   }
 
   function aggiornaSelettoreProvenienza() {
@@ -439,9 +447,9 @@
               <label for="imp-nome-conc">Nome del concorrente</label>
               <input class="roi-input" id="imp-nome-conc" value="${esc(S.nomeDefault)}" placeholder="Es. IDEXX 2026">
             </div>` : ''}
-          ${S.entita === 'macchina' ? `
+          ${S.entita === 'macchina' && S.lato === 'concorrente' ? `
             <div class="imp-campo">
-              <label for="imp-provenienza">Provenienza delle macchine</label>
+              <label for="imp-provenienza">Concorrente</label>
               <select class="roi-input" id="imp-provenienza">${opzioniProvenienza()}</select>
             </div>` : ''}
           <div class="imp-tab" id="imp-tab"></div>
@@ -747,18 +755,24 @@
     const righe = valide();
     if (!righe.length) return;
     // Per l'entita' 'concorrente' il nome e' testo libero digitato
-    // dall'operatore. Per 'macchina' la provenienza scelta nel selettore vale
-    // come concorrenteId: vuoto per "Le mie macchine", l'id del concorrente
-    // scelto altrimenti. Nessun altro caso invia questi due campi.
+    // dall'operatore. Per 'macchina' il lato scelto col pulsante in Macchinari
+    // decide il concorrenteId: null per 'mie', l'id scelto nel selettore per
+    // 'concorrente'. Nessun altro caso invia questi due campi.
     const nomeConc = S.entita === 'concorrente'
       ? String((document.getElementById('imp-nome-conc') || {}).value || '').trim()
       : '';
-    const concorrenteId = S.entita === 'macchina'
+    const concorrenteId = S.entita === 'macchina' && S.lato === 'concorrente'
       ? (String((document.getElementById('imp-provenienza') || {}).value || '').trim() || null)
       : null;
     if (S.entita === 'concorrente' && !nomeConc) {
       alert('Inserisci il nome del concorrente prima di importare.');
       const i = document.getElementById('imp-nome-conc');
+      if (i) i.focus();
+      return;
+    }
+    if (S.entita === 'macchina' && S.lato === 'concorrente' && !concorrenteId) {
+      alert('Seleziona il concorrente prima di importare.');
+      const i = document.getElementById('imp-provenienza');
       if (i) i.focus();
       return;
     }
