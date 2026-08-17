@@ -214,9 +214,9 @@ function buildSidebar() {
       </button>
       <div id="account-menu" class="account-menu" style="display:none">
         ${S.auth.guest || !S.auth.token ? `
-          <div onclick="mostraAuthScreen('login')">Accedi</div>
-          <div onclick="mostraAuthScreen('register')">Registrati</div>
-          <div onclick="authGuest()">Entra come ospite</div>` : `
+          <div onclick="mostraAuthScreen('login')">${t('comune.accedi')}</div>
+          <div onclick="mostraAuthScreen('register')">${t('auth.registrati')}</div>
+          <div onclick="authGuest()">${t('auth.ospiteEntra')}</div>` : `
           <div onclick="authLogout()">Logout</div>
           <div onclick="mostraAuthScreen('login')">Cambia account</div>`}
       </div>
@@ -1478,7 +1478,7 @@ async function renderPiani() {
   try { elenco = await api('/api/piani?all=1'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
     return;
   }
 
@@ -1491,23 +1491,23 @@ async function renderPiani() {
         <div class="page-subtitle">${t('pagina.piani.sottotitolo', { n: elenco.length })}</div>
       </div>
       <div class="page-actions">
-        ${admin ? `<label class="btn-outline" for="piani-import-input">📥 Importa listino JSON</label>
+        ${admin ? `<label class="btn-outline" for="piani-import-input">${t('piani.importaJson')}</label>
         <input type="file" id="piani-import-input" accept=".json" style="display:none" onchange="importaPianiJson(this)">
-        <button class="btn-outline" onclick="ImportPdf.avvia({ entita: 'piano' })">📄 Importa listino PDF</button>` : ''}
+        <button class="btn-outline" onclick="ImportPdf.avvia({ entita: 'piano' })">${t('comune.importaListinoPdf')}</button>` : ''}
       </div>
     </div>
     <div class="page-body">
       ${admin ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
-        <div class="empty-sub">🔒 Accedi per modificare i tuoi piani. Come ospite puoi consultare il listino ufficiale.</div>
+        <div class="empty-sub">${t('piani.avvisoOspite')}</div>
       </div>`}
       <div class="dett-toolbar" style="margin-bottom:14px">
-        <input class="roi-input dett-search" id="piani-search" placeholder="🔍 Cerca piano per nome o categoria…"
+        <input class="roi-input dett-search" id="piani-search" placeholder="${escHtml(t('piani.cercaPlaceholder'))}"
                value="${escHtml(S.pianiFiltro || '')}" oninput="filtraPiani(this.value)" autocomplete="off">
       </div>
       <div class="table-card">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Nome</th><th>Categoria</th><th>Anno</th><th>Attivo</th><th></th></tr></thead>
+            <thead><tr><th>${t('piani.tabella.nome')}</th><th>${t('piani.tabella.categoria')}</th><th>${t('piani.tabella.anno')}</th><th>${t('piani.tabella.attivo')}</th><th></th></tr></thead>
             <tbody id="piani-tbody"></tbody>
           </table>
         </div>
@@ -1533,11 +1533,11 @@ function renderPianiBody() {
     <td>${p.attivo ? '✅' : '❌'}</td>
     <td style="display:flex;gap:6px">
       ${admin
-        ? `<button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? 'Disattiva' : 'Attiva'}</button>
-      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">Modifica prezzi</button>`
-        : `<button class="btn-outline" onclick="renderPianoEdit(${p.id})">Vedi prezzi</button>`}
+        ? `<button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? t('piani.disattiva') : t('piani.attiva')}</button>
+      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">${t('piani.modificaPrezzi')}</button>`
+        : `<button class="btn-outline" onclick="renderPianoEdit(${p.id})">${t('piani.vediPrezzi')}</button>`}
     </td>
-  </tr>`).join('') || '<tr><td colspan="5" class="td-muted" style="text-align:center;padding:16px">Nessun piano trovato</td></tr>';
+  </tr>`).join('') || `<tr><td colspan="5" class="td-muted" style="text-align:center;padding:16px">${t('piani.nessunTrovato')}</td></tr>`;
 }
 
 function filtraPiani(v) {
@@ -1546,7 +1546,7 @@ function filtraPiani(v) {
 }
 
 async function togglePianoAttivo(id, attivo) {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per modificare i tuoi piani'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.modificarePiani') })); return; }
   try {
     await api(`/api/piani/${id}/attivo`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1555,7 +1555,7 @@ async function togglePianoAttivo(id, attivo) {
     await loadPiani();
     renderPiani();
   } catch (e) {
-    alert('Errore: ' + e.message);
+    alert(`${t('stato.errore')}: ${e.message}`);
   }
 }
 
@@ -1564,7 +1564,7 @@ async function renderPianoEdit(id) {
   try {
     data = await api(`/api/piani/${id}`);
   } catch (e) {
-    alert('Errore: ' + e.message);
+    alert(`${t('stato.errore')}: ${e.message}`);
     return;
   }
   const wrap = el('piano-edit-wrap');
@@ -1573,10 +1573,10 @@ async function renderPianoEdit(id) {
   const admin = !!(S.auth && S.auth.token && !S.auth.guest);
   wrap.innerHTML = `
     <div class="section-card">
-      <div class="section-card-title">Prezzi — ${escHtml(data.piano.nome)}</div>
-      ${admin ? '' : `<div class="empty-sub" style="margin-bottom:10px">🔒 Accedi per modificare i tuoi piani.</div>`}
+      <div class="section-card-title">${t('piani.titoloPrezziPiano', { nome: escHtml(data.piano.nome) })}</div>
+      ${admin ? '' : `<div class="empty-sub" style="margin-bottom:10px">${t('piani.avvisoOspiteBreve')}</div>`}
       <table class="roi-editable-table">
-        <thead><tr><th>Esame</th><th>Prezzo base</th><th>Prezzo per questo piano</th></tr></thead>
+        <thead><tr><th>${t('piani.tabella.esame')}</th><th>${t('piani.tabella.prezzoBase')}</th><th>${t('piani.tabella.prezzoPiano')}</th></tr></thead>
         <tbody>
           ${data.prezzi.map(p => `<tr>
             <td>${escHtml(p.esame_nome)}</td>
@@ -1585,13 +1585,13 @@ async function renderPianoEdit(id) {
           </tr>`).join('')}
         </tbody>
       </table>
-      ${admin ? `<button class="btn-primary mt-4" onclick="salvaPianoPrezzi(${id})">Salva prezzi</button>` : ''}
+      ${admin ? `<button class="btn-primary mt-4" onclick="salvaPianoPrezzi(${id})">${t('piani.salvaPrezziBtn')}</button>` : ''}
     </div>
   `;
 }
 
 async function salvaPianoPrezzi(id) {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per modificare i tuoi piani'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.modificarePiani') })); return; }
   const wrap = el('piano-edit-wrap');
   const inputs = wrap.querySelectorAll('[data-esame-id]');
   const prezzi = Array.from(inputs)
@@ -1602,19 +1602,19 @@ async function salvaPianoPrezzi(id) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prezzi })
     });
-    alert('Prezzi salvati.');
+    alert(t('piani.prezziSalvati'));
   } catch (e) {
-    alert('Errore: ' + e.message);
+    alert(`${t('stato.errore')}: ${e.message}`);
   }
 }
 
 async function importaPianiJson(inputEl) {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); inputEl.value = ''; return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); inputEl.value = ''; return; }
   const file = inputEl.files[0];
   if (!file) return;
   const text = await file.text();
   let data;
-  try { data = JSON.parse(text); } catch (e) { alert('File JSON non valido'); return; }
+  try { data = JSON.parse(text); } catch (e) { alert(t('piani.jsonNonValido')); return; }
   try {
     const resp = await fetch('/api/piani/import', {
       method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
@@ -1623,8 +1623,8 @@ async function importaPianiJson(inputEl) {
     if (!resp.ok) throw new Error((await resp.json()).error);
     await loadPiani();
     renderPiani();
-    alert('Import completato.');
-  } catch (e) { alert('Errore import: ' + e.message); }
+    alert(t('comune.importCompletato'));
+  } catch (e) { alert(`${t('comune.erroreImport')}: ${e.message}`); }
   inputEl.value = '';
 }
 
@@ -1638,7 +1638,7 @@ async function renderMacchinari() {
     try { listini = await api('/api/listini-macchine'); }
     catch (e) {
       setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-        <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+        <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
       return;
     }
     // Il blocco concorrenza deve sapere quali concorrenti esistono per il suo
@@ -1670,13 +1670,13 @@ function disegnaMacchinari() {
     <div class="page-body">
       <div class="macc-avviso">
         <span class="macc-avviso-ico">🔬</span>
-        <div>Carica qui soltanto listini di analizzatori. Ogni riga del file verrà importata come macchina, comprese quelle che sembrano esami: se il PDF contiene anche prezzi di esami, importalo in Gestione piani o in Gestione concorrenti.</div>
+        <div>${t('macchinari.avviso', { piani: t('menu.piani'), concorrenti: t('menu.concorrenti') })}</div>
       </div>
       ${loggato ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
-        <div class="empty-sub">🔒 Accedi per gestire i tuoi macchinari.</div>
+        <div class="empty-sub">${t('macchinari.avvisoOspite')}</div>
       </div>`}
-      ${bloccoListiniHtml('mie', 'Le mie macchine', 'Analizzatori del listino Mylav', mie, loggato)}
-      ${bloccoListiniHtml('loro', 'Macchine della concorrenza', 'Analizzatori dei listini dei concorrenti', loro, loggato)}
+      ${bloccoListiniHtml('mie', t('macchinari.mieTitolo'), t('macchinari.mieSottotitolo'), mie, loggato)}
+      ${bloccoListiniHtml('loro', t('macchinari.loroTitolo'), t('macchinari.loroSottotitolo'), loro, loggato)}
       <div id="listino-macchine-wrap"></div>
     </div>
   `);
@@ -1690,7 +1690,7 @@ function bloccoListiniHtml(lato, titolo, sottotitolo, listini, loggato) {
   const visibili = listini.filter(l => Ricerca.corrisponde(l.nome, filtro));
   const funzioneFiltro = lato === 'mie' ? 'filtraListiniMie' : 'filtraListiniLoro';
   const funzioneImport = lato === 'mie' ? 'importaPdfMacchineMie' : 'importaPdfMacchineConcorrente';
-  const etichettaImport = lato === 'mie' ? '📄 Importa listino PDF' : '📄 Importa listino concorrente';
+  const etichettaImport = lato === 'mie' ? t('comune.importaListinoPdf') : t('macchinari.importaListinoConcorrente');
 
   return `
     <div class="macc-blocco macc-blocco-${lato}">
@@ -1702,11 +1702,11 @@ function bloccoListiniHtml(lato, titolo, sottotitolo, listini, loggato) {
         ${loggato ? `<button class="btn-outline" onclick="${funzioneImport}()">${etichettaImport}</button>` : ''}
       </div>
       <div class="macc-blocco-corpo">
-        <input class="roi-input dett-search" placeholder="🔍 Cerca listino…" value="${escHtml(filtro)}"
+        <input class="roi-input dett-search" placeholder="${escHtml(t('macchinari.cercaListinoPlaceholder'))}" value="${escHtml(filtro)}"
                oninput="${funzioneFiltro}(this.value)" autocomplete="off" style="margin-bottom:10px">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Listino</th>${lato === 'loro' ? '<th>Concorrente</th>' : ''}<th style="width:100px">Macchine</th><th style="width:110px">Importato</th><th style="width:190px"></th></tr></thead>
+            <thead><tr><th>${t('macchinari.tabella.listino')}</th>${lato === 'loro' ? `<th>${t('macchinari.tabella.concorrente')}</th>` : ''}<th style="width:100px">${t('macchinari.tabella.macchine')}</th><th style="width:110px">${t('macchinari.tabella.importato')}</th><th style="width:190px"></th></tr></thead>
             <tbody>
               ${visibili.map(l => `<tr>
                 <td>${escHtml(l.nome)}</td>
@@ -1714,18 +1714,18 @@ function bloccoListiniHtml(lato, titolo, sottotitolo, listini, loggato) {
                 <td class="td-muted">${l.nMacchine}</td>
                 <td class="td-muted">${fmtDate(l.dataImport)}</td>
                 <td style="display:flex;gap:6px">
-                  <button class="btn-outline" onclick="renderListinoMacchine(${l.id})">Vedi macchine</button>
-                  <button class="btn-outline" onclick="eliminaListinoUI(${l.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
+                  <button class="btn-outline" onclick="renderListinoMacchine(${l.id})">${t('macchinari.vediMacchine')}</button>
+                  <button class="btn-outline" onclick="eliminaListinoUI(${l.id})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
                 </td>
               </tr>`).join('')}
               ${!visibili.length ? `<tr><td colspan="${lato === 'loro' ? 5 : 4}" class="td-muted" style="text-align:center;padding:22px">
                 ${listini.length
-                  ? 'Nessun listino corrisponde alla ricerca.'
+                  ? t('macchinari.nessunListinoRicerca')
                   : (loggato
-                      ? 'Nessun listino importato. Usa il pulsante qui sopra per aggiungerne uno.'
+                      ? t('macchinari.nessunListinoImportato')
                       : (lato === 'mie'
-                          ? 'Accedi per importare i tuoi listini.'
-                          : 'Accedi per importare i listini dei concorrenti.'))}
+                          ? t('macchinari.accediImportareMie')
+                          : t('macchinari.accediImportareLoro')))}
               </td></tr>` : ''}
             </tbody>
           </table>
@@ -1738,21 +1738,21 @@ function filtraListiniMie(v) { S.filtroListiniMie = v; disegnaMacchinari(); }
 function filtraListiniLoro(v) { S.filtroListiniLoro = v; disegnaMacchinari(); }
 
 function importaPdfMacchineMie() {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
   ImportPdf.avvia({ entita: 'macchina', lato: 'mie', alFine: () => renderMacchinari() });
 }
 
 async function importaPdfMacchineConcorrente() {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
   // Con l'elenco vuoto si rilegge prima di dare un verdetto: se il caricamento
   // all'apertura della pagina e' fallito, l'archivio sembrerebbe vuoto senza
   // esserlo, e l'operatore leggerebbe un motivo sbagliato.
   if (!S.concorrenti || !S.concorrenti.length) {
     try { await loadConcorrenti(); }
-    catch (e) { alert('Impossibile leggere l\'elenco dei concorrenti: ' + e.message); return; }
+    catch (e) { alert(`${t('macchinari.erroreLetturaConcorrenti')}: ${e.message}`); return; }
   }
   if (!S.concorrenti.length) {
-    alert('Nessun concorrente in archivio: importa prima un listino esami in Gestione concorrenti.');
+    alert(t('macchinari.nessunConcorrenteArchivio', { sezione: t('menu.concorrenti') }));
     return;
   }
   ImportPdf.avvia({ entita: 'macchina', lato: 'concorrente', alFine: () => renderMacchinari() });
@@ -1761,11 +1761,12 @@ async function importaPdfMacchineConcorrente() {
 async function eliminaListinoUI(id) {
   const l = (S.listiniMacchine || []).find(x => x.id === id);
   const quante = l ? l.nMacchine : 0;
-  if (!confirm(`Eliminare il listino "${l ? l.nome : ''}" e le sue ${quante} macchine? L'operazione non è reversibile.`)) return;
+  const chiave = quante === 1 ? 'macchinari.confermaEliminaListino.uno' : 'macchinari.confermaEliminaListino.molti';
+  if (!confirm(t(chiave, { nome: l ? l.nome : '', n: quante }))) return;
   try {
     await api(`/api/listini-macchine/${id}`, { method: 'DELETE' });
     renderMacchinari();
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
 }
 
 // Le macchine del listino aperto. L'aggiunta a mano serve a correggere o
@@ -1774,7 +1775,7 @@ async function eliminaListinoUI(id) {
 async function renderListinoMacchine(id) {
   let dettaglio;
   try { dettaglio = await api(`/api/listini-macchine/${id}`); }
-  catch (e) { alert('Errore: ' + e.message); return; }
+  catch (e) { alert(`${t('stato.errore')}: ${e.message}`); return; }
 
   // La ricerca appartiene al listino aperto: aprendone un altro si ricomincia da
   // un elenco intero. Si azzera solo al cambio di listino, non a ogni disegno,
@@ -1789,17 +1790,17 @@ async function renderListinoMacchine(id) {
     <div class="section-card">
       <div class="section-card-title">
         ${escHtml(dettaglio.nome)} —
-        ${dettaglio.concorrenteNome ? escHtml(dettaglio.concorrenteNome) : 'Mylav (mie)'}
+        ${dettaglio.concorrenteNome ? escHtml(dettaglio.concorrenteNome) : t('macchinari.mylavMie')}
       </div>
       <div class="dett-toolbar" style="margin-bottom:12px">
-        <button class="btn-outline" onclick="nuovaMacchina(${id})">+ Aggiungi macchina</button>
-        <input class="roi-input dett-search" id="macc-search" placeholder="🔍 Cerca macchina…"
+        <button class="btn-outline" onclick="nuovaMacchina(${id})">${t('macchinari.aggiungiMacchina')}</button>
+        <input class="roi-input dett-search" id="macc-search" placeholder="${escHtml(t('macchinari.cercaMacchinaPlaceholder'))}"
                value="${escHtml(S.filtroMacchine || '')}" oninput="filtraMacchine(this.value)" autocomplete="off">
-        <button class="btn-ghost" onclick="chiudiListinoMacchine()">Chiudi</button>
+        <button class="btn-ghost" onclick="chiudiListinoMacchine()">${t('comune.chiudi')}</button>
       </div>
       <div class="table-scroll" style="max-height:420px;overflow-y:auto">
         <table>
-          <thead><tr><th>Macchina</th><th style="width:120px">Prezzo</th><th style="width:170px"></th></tr></thead>
+          <thead><tr><th>${t('macchinari.tabella.macchina')}</th><th style="width:120px">${t('macchinari.tabella.prezzo')}</th><th style="width:170px"></th></tr></thead>
           <tbody id="macc-tbody"></tbody>
         </table>
       </div>
@@ -1820,26 +1821,26 @@ function renderListinoMacchineBody() {
   tbody.innerHTML = `
     ${inMod ? `<tr class="macc-riga-modifica">
       <td><input class="roi-input" id="macc-nome" value="${escHtml(inMod.nome)}"
-                 placeholder="Es. Analizzatore biochimico da banco" autocomplete="off"></td>
+                 placeholder="${escHtml(t('macchinari.placeholderNomeEsempio'))}" autocomplete="off"></td>
       <td><input class="roi-input roi-num" id="macc-prezzo" inputmode="decimal"
                  value="${inMod.prezzo === '' ? '' : escHtml(String(inMod.prezzo))}" placeholder="0,00"></td>
       <td style="display:flex;gap:6px">
-        <button class="btn-primary" onclick="salvaMacchinaUI()">Salva</button>
-        <button class="btn-outline" onclick="annullaModificaMacchina()">Annulla</button>
+        <button class="btn-primary" onclick="salvaMacchinaUI()">${t('comune.salva')}</button>
+        <button class="btn-outline" onclick="annullaModificaMacchina()">${t('comune.annulla')}</button>
       </td>
     </tr>` : ''}
     ${altreFiltrate.map(m => `<tr>
       <td>${escHtml(m.nome)}</td>
       <td class="td-num">${fmtEuro(m.prezzo)}</td>
       <td style="display:flex;gap:6px">
-        <button class="btn-outline" onclick="modificaMacchina(${m.id})">Modifica</button>
-        <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
+        <button class="btn-outline" onclick="modificaMacchina(${m.id})">${t('comune.modifica')}</button>
+        <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
       </td>
     </tr>`).join('')}
     ${!altre.length && !inMod ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
-      Nessuna macchina in questo listino.</td></tr>` : ''}
+      ${t('macchinari.nessunaMacchinaListino')}</td></tr>` : ''}
     ${altre.length && !altreFiltrate.length ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
-      Nessuna macchina trovata per la ricerca.</td></tr>` : ''}
+      ${t('macchinari.nessunaMacchinaRicerca')}</td></tr>` : ''}
   `;
 }
 
@@ -1882,8 +1883,8 @@ async function salvaMacchinaUI() {
   const nome = (el('macc-nome') || {}).value || '';
   const prezzoTesto = (el('macc-prezzo') || {}).value || '';
   const prezzo = parseFloat(String(prezzoTesto).replace(/\./g, '').replace(',', '.'));
-  if (!nome.trim()) { alert('Inserisci il nome della macchina'); return; }
-  if (!Number.isFinite(prezzo) || prezzo < 0) { alert('Inserisci un prezzo valido'); return; }
+  if (!nome.trim()) { alert(t('macchinari.inserisciNomeMacchina')); return; }
+  if (!Number.isFinite(prezzo) || prezzo < 0) { alert(t('macchinari.inserisciPrezzoValido')); return; }
 
   S.salvataggioMacchinaInCorso = true;
   const corpo = JSON.stringify({ listinoId: inMod.listinoId, nome: nome.trim(), prezzo });
@@ -1896,19 +1897,19 @@ async function salvaMacchinaUI() {
     S.macchinaInModifica = null;
     await renderMacchinari();
     renderListinoMacchine(inMod.listinoId);
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
   finally { S.salvataggioMacchinaInCorso = false; }
 }
 
 async function eliminaMacchinaUI(id) {
   const l = S.listinoAperto;
   const m = l ? l.macchine.find(x => x.id === id) : null;
-  if (!confirm(`Eliminare "${m ? m.nome : 'questa macchina'}" dal listino? L'operazione non è reversibile.`)) return;
+  if (!confirm(t('macchinari.confermaEliminaMacchina', { nome: m ? m.nome : t('macchinari.questaMacchina') }))) return;
   try {
     await api(`/api/macchine/${id}`, { method: 'DELETE' });
     await renderMacchinari();
     if (l) renderListinoMacchine(l.id);
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
 }
 
 // ── Confronto macchine ──
@@ -1922,7 +1923,7 @@ async function renderConfrontoMacchine() {
     try { elenco = await api('/api/macchine'); }
     catch (e) {
       setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-        <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+        <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
       return;
     }
   }
@@ -1947,9 +1948,9 @@ async function renderConfrontoMacchine() {
       <div class="section-card">
         <div class="roi-toolbar" style="justify-content:flex-end">
           <div class="roi-toolbar-controls">
-            ${mie.length && loro.length ? `<button class="btn-outline" onclick="aggiungiConfrontoMacchina()" style="font-size:12px">+ Aggiungi riga</button>
-            <button class="btn-outline" onclick="rimuoviTuttoConfrontoMacchine()" style="font-size:12px">🗑️ Rimuovi tutto</button>` : ''}
-            <button class="btn-outline" onclick="navigate('macchinari')" style="font-size:12px">🔬 Gestisci macchinari</button>
+            ${mie.length && loro.length ? `<button class="btn-outline" onclick="aggiungiConfrontoMacchina()" style="font-size:12px">${t('confronto.aggiungiRiga')}</button>
+            <button class="btn-outline" onclick="rimuoviTuttoConfrontoMacchine()" style="font-size:12px">${t('confronto.rimuoviTutto')}</button>` : ''}
+            <button class="btn-outline" onclick="navigate('macchinari')" style="font-size:12px">${t('confronto.gestisciMacchinari')}</button>
           </div>
         </div>
         <div id="confronto-macchine-corpo"></div>
@@ -1968,15 +1969,15 @@ function renderCorpoConfrontoMacchine() {
 
   if (!mie.length || !loro.length) {
     const manca = !loggato
-      ? 'Accedi per importare i listini di analizzatori nella sezione Macchinari: uno con le tue macchine e uno con quelle del concorrente.'
+      ? t('confronto.mancaOspite')
       : !mie.length && !loro.length
-        ? 'Non ci sono ancora macchine in catalogo. Importa un listino di analizzatori nella sezione Macchinari: uno con le tue macchine e uno con quelle del concorrente.'
+        ? t('confronto.mancaEntrambe')
         : !mie.length
-          ? 'Mancano le tue macchine: quelle della concorrenza ci sono già. Importa un listino con provenienza «Le mie macchine» nella sezione Macchinari.'
-          : 'Manca il termine di paragone: le tue macchine ci sono già. Importa un listino indicando il concorrente a cui appartiene, nella sezione Macchinari.';
+          ? t('confronto.mancaMie')
+          : t('confronto.mancaLoro');
     wrap.innerHTML = `
       <div class="td-muted" style="padding:6px 0;line-height:1.5">${manca}</div>
-      <button class="btn-primary" style="margin-top:12px" onclick="navigate('macchinari')">${loggato ? 'Vai a Macchinari' : 'Accedi'}</button>`;
+      <button class="btn-primary" style="margin-top:12px" onclick="navigate('macchinari')">${loggato ? t('confronto.vaiMacchinari') : t('comune.accedi')}</button>`;
     return;
   }
 
@@ -1992,7 +1993,7 @@ function renderCorpoConfrontoMacchine() {
   if (!righe.length) {
     wrap.innerHTML = `
       <div class="td-muted" style="padding:16px 0;line-height:1.5;text-align:center">
-        Nessuna riga di confronto. Usa «+ Aggiungi riga» qui sopra per aggiungerne una.
+        ${t('confronto.nessunaRiga')}
       </div>`;
     return;
   }
@@ -2021,13 +2022,13 @@ function renderCorpoConfrontoMacchine() {
     <div class="table-scroll">
       <table class="macc-confronto">
         <thead><tr>
-          <th>La mia macchina</th><th>Della concorrenza</th>
-          <th style="width:110px">Mylav</th><th style="width:110px">Concorrenza</th>
-          <th style="width:120px">Differenza</th><th style="width:40px"></th>
+          <th>${t('confronto.tabella.miaMacchina')}</th><th>${t('confronto.tabella.concorrenzaMacchina')}</th>
+          <th style="width:110px">${t('confronto.tabella.mylav')}</th><th style="width:110px">${t('confronto.tabella.concorrenza')}</th>
+          <th style="width:120px">${t('confronto.tabella.differenza')}</th><th style="width:40px"></th>
         </tr></thead>
         <tbody>${righeHtml}</tbody>
         <tfoot><tr>
-          <td colspan="2"><b>Totale</b></td>
+          <td colspan="2"><b>${t('confronto.totale')}</b></td>
           <td class="td-num"><b>${fmtEuro(totMia)}</b></td>
           <td class="td-num"><b>${fmtEuro(totSua)}</b></td>
           <td class="td-num ${diffTot <= 0 ? 'macc-meglio' : 'macc-peggio'}"><b>${diffTot <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diffTot))}</b></td>
@@ -2059,7 +2060,7 @@ function togliConfrontoMacchina(i) {
 }
 
 function rimuoviTuttoConfrontoMacchine() {
-  if (!confirm('Svuotare il confronto?')) return;
+  if (!confirm(t('confronto.confermaSvuota'))) return;
   S.confrontoMacchine = [];
   renderCorpoConfrontoMacchine();
 }
@@ -2073,7 +2074,7 @@ async function renderConcorrentiAdmin() {
   try { elenco = await api('/api/concorrenti'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
     return;
   }
 
@@ -2083,16 +2084,16 @@ async function renderConcorrentiAdmin() {
         <div class="page-subtitle">${t('pagina.concorrenti.sottotitolo', { n: elenco.length })}</div>
       </div>
       <div class="page-actions">
-        <label class="btn-outline" for="concorrenti-import-input">📥 Importa listino Excel</label>
+        <label class="btn-outline" for="concorrenti-import-input">${t('concorrenti.importaListinoExcel')}</label>
         <input type="file" id="concorrenti-import-input" accept=".xlsx,.xls" style="display:none" onchange="avviaImportConcorrente(this)">
-        <button class="btn-outline" onclick="importaPdfConcorrente()">📄 Importa listino PDF</button>
+        <button class="btn-outline" onclick="importaPdfConcorrente()">${t('comune.importaListinoPdf')}</button>
       </div>
     </div>
     <div class="page-body">
       <div class="table-card">
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Nome</th><th>Data import</th><th>Esami</th><th>Mappati</th><th></th></tr></thead>
+            <thead><tr><th>${t('concorrenti.tabella.nome')}</th><th>${t('concorrenti.tabella.dataImport')}</th><th>${t('concorrenti.tabella.esami')}</th><th>${t('concorrenti.tabella.mappati')}</th><th></th></tr></thead>
             <tbody>
               ${elenco.map(c => `<tr>
                 <td>${escHtml(c.nome)}</td>
@@ -2100,8 +2101,8 @@ async function renderConcorrentiAdmin() {
                 <td class="td-muted">${c.n_esami}</td>
                 <td class="td-muted">${c.n_mappati} / ${c.n_esami}</td>
                 <td style="display:flex;gap:6px">
-                  <button class="btn-outline" onclick="renderConcorrenteDettaglio(${c.id})">Vedi esami</button>
-                  <button class="btn-outline" onclick="eliminaConcorrenteUI(${c.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
+                  <button class="btn-outline" onclick="renderConcorrenteDettaglio(${c.id})">${t('concorrenti.vediEsami')}</button>
+                  <button class="btn-outline" onclick="eliminaConcorrenteUI(${c.id})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
                 </td>
               </tr>`).join('')}
             </tbody>
@@ -2126,14 +2127,14 @@ async function avviaImportConcorrente(inputEl) {
     if (!resp.ok) throw new Error((await resp.json()).error);
     parsed = await resp.json();
   } catch (e) {
-    alert('Errore lettura file: ' + e.message);
+    alert(`${t('concorrenti.erroreLetturaFile')}: ${e.message}`);
     inputEl.value = '';
     return;
   }
   inputEl.value = '';
 
   if (!parsed.headers.length || !parsed.rows.length) {
-    alert('Non sono riuscito a trovare una riga di intestazione con almeno 2 colonne in questo file.');
+    alert(t('concorrenti.headerNonTrovato'));
     return;
   }
 
@@ -2144,27 +2145,29 @@ async function avviaImportConcorrente(inputEl) {
 function renderImportConcorrenteForm(parsed) {
   const wrap = el('concorrente-import-wrap');
   if (!wrap) return;
-  const opts = parsed.headers.map((h, i) => `<option value="${i}">[${i}] ${escHtml(h || '(vuota)')}</option>`).join('');
-  const optsConSconto = `<option value="-1">— nessuna colonna sconto —</option>` + opts;
+  const opts = parsed.headers.map((h, i) => `<option value="${i}">[${i}] ${escHtml(h || t('concorrenti.colonnaVuota'))}</option>`).join('');
+  const optsConSconto = `<option value="-1">${t('concorrenti.nessunaColonnaSconto')}</option>` + opts;
 
   const anteprima = parsed.rows.slice(0, 5).map(r =>
     `<tr>${parsed.headers.map((_, i) => `<td>${escHtml(r[i])}</td>`).join('')}</tr>`
   ).join('');
 
+  const titoloChiave = parsed.rows.length === 1 ? 'concorrenti.confermaColonneTitolo.uno' : 'concorrenti.confermaColonneTitolo.molti';
+
   wrap.innerHTML = `
     <div class="section-card">
-      <div class="section-card-title">Conferma colonne — ${parsed.rows.length} righe trovate</div>
+      <div class="section-card-title">${t(titoloChiave, { n: parsed.rows.length })}</div>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
-        <label>Nome concorrente<br>
-          <input class="roi-input" id="import-nome-concorrente" placeholder="Es. IDEXX 2026" style="width:200px">
+        <label>${t('concorrenti.labelNomeConcorrente')}<br>
+          <input class="roi-input" id="import-nome-concorrente" placeholder="${escHtml(t('concorrenti.placeholderNomeEsempio'))}" style="width:200px">
         </label>
-        <label>Colonna nome esame<br>
+        <label>${t('concorrenti.labelColonnaNomeEsame')}<br>
           <select class="roi-input" id="import-col-esame" style="width:200px">${opts}</select>
         </label>
-        <label>Colonna prezzo<br>
+        <label>${t('concorrenti.labelColonnaPrezzo')}<br>
           <select class="roi-input" id="import-col-prezzo" style="width:200px">${opts}</select>
         </label>
-        <label>Colonna sconto<br>
+        <label>${t('concorrenti.labelColonnaSconto')}<br>
           <select class="roi-input" id="import-col-sconto" style="width:200px">${optsConSconto}</select>
         </label>
       </div>
@@ -2172,7 +2175,7 @@ function renderImportConcorrenteForm(parsed) {
         <table><thead><tr>${parsed.headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
         <tbody>${anteprima}</tbody></table>
       </div>
-      <button class="btn-primary" onclick="confermaImportConcorrente()">Conferma import</button>
+      <button class="btn-primary" onclick="confermaImportConcorrente()">${t('concorrenti.confermaImportBtn')}</button>
     </div>
   `;
   const selEsame = el('import-col-esame');
@@ -2184,15 +2187,15 @@ function renderImportConcorrenteForm(parsed) {
 }
 
 async function confermaImportConcorrente() {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
   const nomeConcorrente = el('import-nome-concorrente')?.value.trim();
   const colEsame  = Number(el('import-col-esame')?.value);
   const colPrezzo = Number(el('import-col-prezzo')?.value);
   const colSconto = Number(el('import-col-sconto')?.value);
   const rows = window._importConcorrenteRows || [];
 
-  if (!nomeConcorrente) return alert('Inserisci il nome del concorrente');
-  if (!rows.length) return alert('Nessuna riga da importare');
+  if (!nomeConcorrente) return alert(t('concorrenti.inserisciNomeConcorrente'));
+  if (!rows.length) return alert(t('concorrenti.nessunaRigaImportare'));
 
   try {
     await api('/api/concorrenti/import/conferma', {
@@ -2201,25 +2204,28 @@ async function confermaImportConcorrente() {
     });
     await loadConcorrenti();
     renderConcorrentiAdmin();
-    alert('Import completato.');
+    alert(t('comune.importCompletato'));
   } catch (e) {
-    alert('Errore import: ' + e.message);
+    alert(`${t('comune.erroreImport')}: ${e.message}`);
   }
 }
 
 async function eliminaConcorrenteUI(id) {
   const c = S.concorrenti.find(x => x.id === id);
-  const nome = c ? c.nome : 'questo concorrente';
+  const nome = c ? c.nome : t('concorrenti.questoConcorrente');
   // I listini di analizzatori di questo concorrente (e le loro macchine)
   // vengono eliminati insieme a lui: l'operatore deve saperlo prima di
   // confermare, non scoprirlo dopo.
-  const esami = c && c.n_esami != null ? `i suoi ${c.n_esami} esami` : 'tutti i suoi esami';
-  if (!confirm(`Eliminare "${nome}", ${esami} e i listini di analizzatori importati per questo concorrente? L'operazione non è reversibile.`)) return;
+  const nEsami = c && c.n_esami != null ? c.n_esami : null;
+  const chiave = nEsami == null
+    ? 'concorrenti.confermaElimina.senzaConteggio'
+    : (nEsami === 1 ? 'concorrenti.confermaElimina.uno' : 'concorrenti.confermaElimina.molti');
+  if (!confirm(t(chiave, { nome, n: nEsami }))) return;
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     await loadConcorrenti();
     renderConcorrentiAdmin();
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
 }
 
 // ── Import PDF ──
@@ -2227,7 +2233,7 @@ async function eliminaConcorrenteUI(id) {
 // revisione editabile e conferma di completezza) vive in public/importpdf.js
 // ed e' lo stesso usato da Gestione piani: un solo componente, due destinazioni.
 function importaPdfConcorrente() {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
   ImportPdf.avvia({
     entita: 'concorrente',
     alFine: async () => {
@@ -2240,7 +2246,7 @@ function importaPdfConcorrente() {
 async function renderConcorrenteDettaglio(id) {
   let dettaglio;
   try { dettaglio = await api(`/api/concorrenti/${id}`); }
-  catch (e) { alert('Errore: ' + e.message); return; }
+  catch (e) { alert(`${t('stato.errore')}: ${e.message}`); return; }
 
   const wrap = el('concorrente-dettaglio-wrap');
   if (!wrap) return;
@@ -2254,7 +2260,10 @@ async function renderConcorrenteDettaglio(id) {
   const hint = S.mappingDaRoi;   // lista di esami Mylav da mappare, arrivata dal Calcolatore ROI
   S.mappingDaRoi = null;         // consuma (una volta sola)
   const hintHtml = (Array.isArray(hint) && hint.length)
-    ? `<div class="dett-maphint">Esami Mylav da mappare (${hint.length}): ${hint.map(h => `<strong>${escHtml(h)}</strong>`).join(' · ')}</div>`
+    ? `<div class="dett-maphint">${t(hint.length === 1 ? 'concorrenti.hintMapping.uno' : 'concorrenti.hintMapping.molti', {
+        n: hint.length,
+        elenco: hint.map(h => `<strong>${escHtml(h)}</strong>`).join(' · ')
+      })}</div>`
     : '';
 
   const datalist = `<datalist id="mylav-esami-list">${(S.esamiMylavNomi || []).map(n => `<option value="${escHtml(n)}">`).join('')}</datalist>`;
@@ -2262,13 +2271,13 @@ async function renderConcorrenteDettaglio(id) {
   wrap.innerHTML = `
     <div class="section-card" data-concorrente-id="${id}">
       ${datalist}
-      <div class="section-card-title">Esami — ${escHtml(dettaglio.concorrente.nome)}</div>
+      <div class="section-card-title">${t('concorrenti.titoloEsamiConcorrente', { nome: escHtml(dettaglio.concorrente.nome) })}</div>
       ${hintHtml}
-      <div class="dett-maplabel">Inserisci il nome dell'esame della concorrenza che vuoi mappare</div>
+      <div class="dett-maplabel">${t('concorrenti.mapLabel')}</div>
       <div class="dett-toolbar">
-        <input class="roi-input dett-search" id="conc-search" placeholder="🔍 Nome esame concorrenza…"
+        <input class="roi-input dett-search" id="conc-search" placeholder="${escHtml(t('concorrenti.cercaEsamePlaceholder'))}"
                oninput="filtraDettaglio(this.value)" autocomplete="off">
-        <button class="btn-outline" id="conc-sort" onclick="toggleSortDettaglio()">Ordina A → Z</button>
+        <button class="btn-outline" id="conc-sort" onclick="toggleSortDettaglio()">${t('concorrenti.ordinaAZ')}</button>
       </div>
       <div id="conc-dett-body"></div>
     </div>
@@ -2291,25 +2300,25 @@ function renderDettaglioBody() {
     <td>${escHtml(e.nome_originale)}</td>
     <td class="td-muted">${fmtE(e.prezzo)}</td>
     <td class="td-muted">${e.sconto != null ? e.sconto + '%' : '—'}</td>
-    <td>${e.esame_mylav_nome ? (e.confermato ? '✅ confermato' : '🔎 auto') : '— non mappato'}</td>
-    <td><input class="roi-input" data-esame-concorrente-id="${e.id}" list="mylav-esami-list" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="scegli esame Mylav…" autocomplete="off" style="width:220px"></td>
+    <td>${e.esame_mylav_nome ? (e.confermato ? t('concorrenti.statoConfermato') : t('concorrenti.statoAuto')) : t('concorrenti.statoNonMappato')}</td>
+    <td><input class="roi-input" data-esame-concorrente-id="${e.id}" list="mylav-esami-list" value="${escHtml(e.esame_mylav_nome || '')}" placeholder="${escHtml(t('concorrenti.sceglieEsameMylavPlaceholder'))}" autocomplete="off" style="width:220px"></td>
     <td style="display:flex;gap:6px">
-      <button class="btn-outline" onclick="salvaMappaturaManuale(${st.id}, ${e.id})">Salva</button>
-      ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${st.id}, ${e.id})">Rimuovi</button>` : ''}
+      <button class="btn-outline" onclick="salvaMappaturaManuale(${st.id}, ${e.id})">${t('comune.salva')}</button>
+      ${e.esame_mylav_nome ? `<button class="btn-outline" onclick="rimuoviMappaturaManuale(${st.id}, ${e.id})">${t('concorrenti.rimuovi')}</button>` : ''}
     </td>
   </tr>`;
 
   const tabella = (lista) => `
     <table class="roi-editable-table" style="margin-bottom:8px">
-      <thead><tr><th>Nome originale</th><th>Prezzo</th><th>Sconto</th><th>Stato</th><th>Nome Mylav</th><th></th></tr></thead>
+      <thead><tr><th>${t('concorrenti.tabella.nomeOriginale')}</th><th>${t('concorrenti.tabella.prezzo')}</th><th>${t('concorrenti.tabella.sconto')}</th><th>${t('concorrenti.tabella.stato')}</th><th>${t('concorrenti.tabella.nomeMylav')}</th><th></th></tr></thead>
       <tbody>${lista.map(rigaHtml).join('')}</tbody>
     </table>`;
 
   const gruppo = (titolo, cls, lista) => `
     <div class="grp-title ${cls}">${titolo} (${lista.length})</div>
-    ${lista.length ? tabella(lista) : '<div class="td-muted" style="padding:4px 0">Nessuno</div>'}`;
+    ${lista.length ? tabella(lista) : `<div class="td-muted" style="padding:4px 0">${t('concorrenti.nessuno')}</div>`}`;
 
-  body.innerHTML = gruppo('✅ Mappati', 'grp-map', mappati) + gruppo('Da mappare', 'grp-nomap', nonMappati);
+  body.innerHTML = gruppo(t('concorrenti.grpMappati'), 'grp-map', mappati) + gruppo(t('concorrenti.grpDaMappare'), 'grp-nomap', nonMappati);
 }
 
 function filtraDettaglio(v) {
@@ -2322,15 +2331,15 @@ function toggleSortDettaglio() {
   if (!S.concDett) return;
   S.concDett.dir = -S.concDett.dir;
   const btn = el('conc-sort');
-  if (btn) btn.textContent = S.concDett.dir === 1 ? 'Ordina A → Z' : 'Ordina Z → A';
+  if (btn) btn.textContent = S.concDett.dir === 1 ? t('concorrenti.ordinaAZ') : t('concorrenti.ordinaZA');
   renderDettaglioBody();
 }
 
 async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
   const inp = document.querySelector(`[data-esame-concorrente-id="${esameConcorrenteId}"]`);
   const esameMylavNome = inp ? inp.value.trim() : '';
-  if (!esameMylavNome) return alert('Scrivi il nome esame Mylav corrispondente');
+  if (!esameMylavNome) return alert(t('concorrenti.scriviNomeEsameMylav'));
   try {
     await api(`/api/concorrenti/${concorrenteId}/conferma-match`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2348,11 +2357,11 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
       const dl = el('mylav-esami-list');
       if (dl) { const opt = document.createElement('option'); opt.value = esameMylavNome; dl.appendChild(opt); }
     }
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
 }
 
 async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
-  if (S.auth.guest || !S.auth.token) { alert('Accedi per salvare i dati'); return; }
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
   try {
     await api(`/api/concorrenti/${concorrenteId}/rimuovi-match`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -2363,7 +2372,7 @@ async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
       if (row) { row.esame_mylav_nome = null; row.confermato = 0; }
       renderDettaglioBody();
     }
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
 }
 
 // ══════════════════════════════════════════════════
@@ -3380,15 +3389,15 @@ function mostraAuthScreen(vista = 'login') {
         <polygon points="94,94 60,10 48,10 78,94" fill="#0f76bc"/></svg>V<span class="auth-reg">®</span></div>
       <div class="auth-rule"></div>
       <div class="auth-tabs" id="auth-tabs">
-        <button class="auth-tab ${vista === 'login' ? 'active' : ''}" onclick="mostraAuthScreen('login')">Accedi</button>
-        <button class="auth-tab ${vista === 'register' ? 'active' : ''}" onclick="mostraAuthScreen('register')">Registrati</button>
+        <button class="auth-tab ${vista === 'login' ? 'active' : ''}" onclick="mostraAuthScreen('login')">${t('comune.accedi')}</button>
+        <button class="auth-tab ${vista === 'register' ? 'active' : ''}" onclick="mostraAuthScreen('register')">${t('auth.registrati')}</button>
       </div>
       <div id="auth-err" class="auth-err" style="display:none"></div>
       <div id="auth-body"></div>
       <div class="auth-links">
-        <a onclick="authGuest()">Entra come ospite</a>
-        <a onclick="mostraAuthScreen('reset')">Password dimenticata?</a>
-        <a onclick="mostraAuthScreen('recover')">Ho dimenticato email e password</a>
+        <a onclick="authGuest()">${t('auth.ospiteEntra')}</a>
+        <a onclick="mostraAuthScreen('reset')">${t('auth.passwordDimenticata')}</a>
+        <a onclick="mostraAuthScreen('recover')">${t('auth.recuperoCompleto')}</a>
       </div>
     </div>`;
   ov.style.display = 'flex';
@@ -3410,11 +3419,11 @@ function renderAuthBody(vista) {
     if (tabs) tabs.style.display = 'flex';
     body.innerHTML = `
       <form id="auth-form-login" class="auth-form">
-        <label class="auth-label">Email</label>
+        <label class="auth-label">${t('auth.email')}</label>
         <input class="auth-input" type="email" id="auth-login-email" required autocomplete="username">
-        <label class="auth-label">Password</label>
+        <label class="auth-label">${t('auth.password')}</label>
         <input class="auth-input" type="password" id="auth-login-pass" required autocomplete="current-password">
-        <button type="submit" class="btn-primary auth-submit">Accedi</button>
+        <button type="submit" class="btn-primary auth-submit">${t('comune.accedi')}</button>
       </form>`;
     el('auth-form-login').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3430,16 +3439,16 @@ function renderAuthBody(vista) {
     if (tabs) tabs.style.display = 'flex';
     body.innerHTML = `
       <form id="auth-form-register" class="auth-form">
-        <label class="auth-label">Email</label>
+        <label class="auth-label">${t('auth.email')}</label>
         <input class="auth-input" type="email" id="auth-reg-email" required autocomplete="username">
-        <label class="auth-label">Password</label>
+        <label class="auth-label">${t('auth.password')}</label>
         <input class="auth-input" type="password" id="auth-reg-pass" required autocomplete="new-password">
         <ul class="auth-rules" id="auth-rules">
           <li data-rule="lunghezza">Almeno 8 caratteri</li>
           <li data-rule="cifra">Almeno un numero</li>
           <li data-rule="speciale">Almeno un carattere speciale</li>
         </ul>
-        <button type="submit" class="btn-primary auth-submit">Registrati</button>
+        <button type="submit" class="btn-primary auth-submit">${t('auth.registrati')}</button>
       </form>`;
     const passInp = el('auth-reg-pass');
     passInp.addEventListener('input', () => {
