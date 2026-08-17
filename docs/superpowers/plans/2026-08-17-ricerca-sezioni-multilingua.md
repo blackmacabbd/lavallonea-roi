@@ -618,7 +618,9 @@ git commit -m "feat: impianto multilingua e selettore lingua in alto a destra"
 
 - [ ] **Step 1: Censire le stringhe**
 
-Prima di tradurre, elencare tutte le stringhe visibili delle quattro sezioni: Gestione piani, Gestione concorrenti, Macchinari, Confronto macchine. Comprendono titoli, sottotitoli, intestazioni di tabella, etichette dei pulsanti, testi dei segnaposto (`placeholder`), stati vuoti, avvisi, e i testi delle finestre di conferma.
+Prima di tradurre, elencare tutte le stringhe visibili delle quattro sezioni: Gestione piani, Gestione concorrenti, Macchinari, Confronto macchine.
+
+**Piu' la schermata di accesso** (`#auth-overlay` in `public/index.html`), che il piano originale non prevedeva: la fetta 3 ha portato il selettore della lingua sopra quell'overlay, perche' chi non legge l'italiano deve poter scegliere la lingua prima di entrare. Un selettore raggiungibile su una schermata che resta in italiano non ha senso. Sono otto stringhe: «Accedi» (la linguetta e il pulsante), «Registrati», «Email», «Password», «Entra come ospite», «Password dimenticata?», «Ho dimenticato email e password». Il logo (`MYL`, `V`, `®`) non si traduce. Comprendono titoli, sottotitoli, intestazioni di tabella, etichette dei pulsanti, testi dei segnaposto (`placeholder`), stati vuoti, avvisi, e i testi delle finestre di conferma.
 
 Comando utile per non dimenticarne:
 
