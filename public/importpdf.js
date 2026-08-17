@@ -19,6 +19,22 @@
 (function () {
   'use strict';
 
+  // Difesa: importpdf.js e' caricato dopo i18n.js, quindi window.t esiste
+  // sempre in condizioni normali. Se pero' i18n.js non si caricasse (errore di
+  // rete), t ricade su una funzione che restituisce la chiave: un testo grezzo
+  // a schermo e' accettabile, una finestra rotta no.
+  const t = typeof window.t === 'function' ? window.t : function (chiave) { return chiave; };
+
+  // Il server manda un codice piu' il testo italiano: si mostra la traduzione
+  // del codice quando la conosciamo, altrimenti il testo cosi' come arriva.
+  function messaggioErrore(dati, fallback) {
+    const codice = dati && dati.codice;
+    if (codice && window.I18n && typeof window.I18n.esiste === 'function' && window.I18n.esiste('errore.' + codice)) {
+      return t('errore.' + codice);
+    }
+    return (dati && dati.error) || fallback;
+  }
+
   const PDFJS_SRC = '/vendor/pdf.min.js';
   const PDFJS_WORKER = '/vendor/pdf.worker.min.js';
 
@@ -41,11 +57,15 @@
   // dove il lavoro e' davvero per pagina: la preparazione dell'anteprima.
   // L'estrazione e il riconoscimento avvengono in un'unica chiamata server,
   // quindi lì si mostra la dimensione del documento, non un avanzamento finto.
+  // L'etichetta e' una chiave i18n, non il testo gia' risolto: FASI e' una
+  // costante di modulo valutata una sola volta al caricamento dello script,
+  // mentre la lingua puo' cambiare durante la sessione. Risolvere qui
+  // congelerebbe le etichette nella lingua attiva al primo caricamento.
   const FASI = [
-    { chiave: 'carica',    etichetta: 'Caricamento del file' },
-    { chiave: 'estrai',    etichetta: 'Estrazione del testo' },
-    { chiave: 'riconosci', etichetta: 'Riconoscimento esami e pacchetti' },
-    { chiave: 'pronto',    etichetta: 'Pronto per la revisione' }
+    { chiave: 'carica',    chiaveTesto: 'importPdf.fase.carica' },
+    { chiave: 'estrai',    chiaveTesto: 'importPdf.fase.estrai' },
+    { chiave: 'riconosci', chiaveTesto: 'importPdf.fase.riconosci' },
+    { chiave: 'pronto',    chiaveTesto: 'importPdf.fase.pronto' }
   ];
 
   let S = null;          // stato dell'import in corso
@@ -88,7 +108,7 @@
       const s = document.createElement('script');
       s.src = src;
       s.onload = () => risolvi();
-      s.onerror = () => rifiuta(new Error('Libreria PDF non caricata'));
+      s.onerror = () => rifiuta(new Error(t('importPdf.libreriaNonCaricata')));
       document.head.appendChild(s);
     });
   }
@@ -96,7 +116,7 @@
   async function pdfjs() {
     if (!window.pdfjsLib) {
       await caricaScript(PDFJS_SRC);
-      if (!window.pdfjsLib) throw new Error('Libreria PDF non disponibile');
+      if (!window.pdfjsLib) throw new Error(t('importPdf.libreriaNonDisponibile'));
       window.pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER;
     }
     return window.pdfjsLib;
@@ -115,7 +135,7 @@
             <div class="imp-title">${esc(titolo)}</div>
             <div class="imp-sub" id="imp-sub">${esc(sottotitolo || '')}</div>
           </div>
-          <button class="imp-x" type="button" aria-label="Chiudi">✕</button>
+          <button class="imp-x" type="button" aria-label="${esc(t('comune.chiudi'))}">✕</button>
         </div>
         <div class="imp-body" id="imp-body"></div>
       </div>`;
@@ -133,7 +153,7 @@
   // aver corretto venti righe sarebbe una perdita di lavoro silenziosa.
   function chiudiConVerifica() {
     const modificato = S && S.righe && S.righe.some(r => r.modificata || r.origine !== 'estratta');
-    if (modificato && !confirm('Le correzioni fatte in questa revisione non sono salvate. Chiudere comunque?')) return;
+    if (modificato && !confirm(t('importPdf.confermaChiusura'))) return;
     chiudi();
   }
 
@@ -164,7 +184,7 @@
             <li class="imp-fase ${i < attiva ? 'imp-fase-fatta' : i === attiva ? 'imp-fase-corso' : ''}">
               <span class="imp-fase-n">${i < attiva ? '✓' : i + 1}</span>
               <span class="imp-fase-testo">
-                ${esc(f.etichetta)}
+                ${esc(t(f.chiaveTesto))}
                 ${i === attiva && S.nota ? `<span class="imp-fase-nota">${esc(S.nota)}</span>` : ''}
               </span>
             </li>`).join('')}
@@ -217,12 +237,12 @@
     corpo(`<div class="imp-banner imp-banner-errore imp-banner-solo">
         <div class="imp-banner-ico">⚠️</div>
         <div>
-          <div class="imp-banner-tit">Non riesco a leggere questo PDF</div>
+          <div class="imp-banner-tit">${esc(t('importPdf.erroreTitolo'))}</div>
           <div class="imp-banner-msg">${esc(messaggio)}</div>
         </div>
       </div>
       <div class="imp-foot"><div class="imp-foot-dx">
-        <button type="button" class="btn-primary" id="imp-chiudi-err">Chiudi</button>
+        <button type="button" class="btn-primary" id="imp-chiudi-err">${esc(t('comune.chiudi'))}</button>
       </div></div>`);
     const b = document.getElementById('imp-chiudi-err');
     if (b) b.addEventListener('click', chiudi);
@@ -239,7 +259,7 @@
     const file = opts.file || await scegliFile();
     if (!file) return;
 
-    montaFinestra('Importa listino PDF', file.name);
+    montaFinestra(t('importPdf.titoloFinestra'), file.name);
     S = {
       entita, lato, file,
       nomeDefault: opts.nomeDefault || file.name.replace(/\.pdf$/i, ''),
@@ -266,7 +286,7 @@
       S.buffer = await file.arrayBuffer();
       const lib = await pdfjs();
       S.pdfDoc = await lib.getDocument({ data: S.buffer.slice(0) }).promise;
-      if (S && S.fase === 'estrai') fase('estrai', `documento di ${S.pdfDoc.numPages} pagine`);
+      if (S && S.fase === 'estrai') fase('estrai', t('importPdf.nota.documentoPagine', { n: S.pdfDoc.numPages }));
       return S.pdfDoc;
     })().catch(() => null);
 
@@ -280,7 +300,9 @@
 
     // "righe riconosciute", non "esami": il totale comprende anche le macchine,
     // e su un listino di soli analizzatori dire "esami" sarebbe falso.
-    fase('riconosci', `${S.analisi.classificate} righe riconosciute su ${S.analisi.totaliTabellari} righe con prezzo`, 72);
+    fase('riconosci', t('importPdf.nota.risultatoRiconoscimento', {
+      classificate: S.analisi.classificate, totale: S.analisi.totaliTabellari
+    }), 72);
     costruisciModello();
 
     await localePronto;
@@ -291,7 +313,7 @@
     catch (err) {
       const cont = document.getElementById('imp-pdf');
       if (cont) cont.innerHTML = `<div class="imp-banner-msg" style="padding:16px">
-        Anteprima non disponibile: ${esc(err.message)}. L'elenco estratto resta utilizzabile.</div>`;
+        ${esc(t('importPdf.anteprimaNonDisponibile', { msg: err.message }))}</div>`;
     }
   }
 
@@ -319,17 +341,20 @@
       xhr.upload.addEventListener('progress', e => {
         if (!e.lengthComputable || !S) return;
         const q = e.loaded / e.total;
-        fase('carica', `${Math.round(q * 100)}% di ${(e.total / 1024).toFixed(0)} KB`, 4 + q * 26);
+        fase('carica', t('importPdf.nota.percentualeCaricamento', {
+          pct: Math.round(q * 100), kb: (e.total / 1024).toFixed(0)
+        }), 4 + q * 26);
       });
-      xhr.upload.addEventListener('load', () => fase('estrai', S && S.pdfDoc ? `documento di ${S.pdfDoc.numPages} pagine` : '', 34));
+      xhr.upload.addEventListener('load', () => fase('estrai',
+        S && S.pdfDoc ? t('importPdf.nota.documentoPagine', { n: S.pdfDoc.numPages }) : '', 34));
 
       xhr.addEventListener('load', () => {
         let dati = null;
         try { dati = JSON.parse(xhr.responseText); } catch (_) {}
         if (xhr.status >= 200 && xhr.status < 300 && dati) risolvi(dati);
-        else rifiuta(new Error((dati && dati.error) || `Errore ${xhr.status}`));
+        else rifiuta(new Error(messaggioErrore(dati, `Errore ${xhr.status}`)));
       });
-      xhr.addEventListener('error', () => rifiuta(new Error('Connessione interrotta durante il caricamento')));
+      xhr.addEventListener('error', () => rifiuta(new Error(t('importPdf.connessioneInterrotta'))));
       xhr.send(fd);
     });
   }
@@ -365,9 +390,9 @@
     if (p.stato === 'pronto' && p.lista.length) {
       return p.lista.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
     }
-    if (p.stato === 'pronto') return `<option value="" disabled>Nessun concorrente in archivio</option>`;
+    if (p.stato === 'pronto') return `<option value="" disabled>${esc(t('importPdf.provenienza.nessunConcorrente'))}</option>`;
     // Stato 'carico' o 'errore': l'elenco non e' ancora disponibile.
-    return `<option value="" disabled>Caricamento…</option>`;
+    return `<option value="" disabled>${esc(t('importPdf.provenienza.caricamento'))}</option>`;
   }
 
   function aggiornaSelettoreProvenienza() {
@@ -411,44 +436,44 @@
     fase('pronto', '', 100);
     const a = S.analisi;
     const sub = document.getElementById('imp-sub');
-    if (sub) sub.textContent = `${S.file.name} · ${a.pagine} ${a.pagine === 1 ? 'pagina' : 'pagine'}`;
+    if (sub) sub.textContent = `${S.file.name} · ${t(a.pagine === 1 ? 'importPdf.pagineInfo.uno' : 'importPdf.pagineInfo.molti', { n: a.pagine })}`;
 
     corpo(`
       <div id="imp-banner"></div>
       <div class="imp-split">
         <div class="imp-col imp-col-pdf">
           <div class="imp-barra">
-            <span class="imp-barra-tit">Documento</span>
+            <span class="imp-barra-tit">${esc(t('importPdf.documento'))}</span>
             <span class="imp-nota-anteprima" id="imp-nota-anteprima"></span>
             <div class="imp-zoom">
-              <button type="button" class="imp-zoom-b" data-zoom="-1" aria-label="Riduci">−</button>
+              <button type="button" class="imp-zoom-b" data-zoom="-1" aria-label="${esc(t('importPdf.zoomRiduci'))}">−</button>
               <span id="imp-zoom-val">${Math.round(S.scala * 100)}%</span>
-              <button type="button" class="imp-zoom-b" data-zoom="1" aria-label="Ingrandisci">+</button>
+              <button type="button" class="imp-zoom-b" data-zoom="1" aria-label="${esc(t('importPdf.zoomIngrandisci'))}">+</button>
             </div>
           </div>
           <div class="imp-pdf" id="imp-pdf"></div>
           <div class="imp-legenda">
-            <span><i class="imp-chip imp-chip-alta"></i> riconosciuto</span>
-            <span><i class="imp-chip imp-chip-incerta"></i> da rivedere</span>
-            <span class="imp-legenda-nota">il testo scartato non è evidenziato</span>
+            <span><i class="imp-chip imp-chip-alta"></i> ${esc(t('importPdf.legenda.riconosciuto'))}</span>
+            <span><i class="imp-chip imp-chip-incerta"></i> ${esc(t('importPdf.stato.daRivedere'))}</span>
+            <span class="imp-legenda-nota">${esc(t('importPdf.legenda.nota'))}</span>
           </div>
         </div>
         <div class="imp-col imp-col-tab">
           <div class="imp-barra">
-            <span class="imp-barra-tit">Elenco da confermare</span>
+            <span class="imp-barra-tit">${esc(t('importPdf.elencoDaConfermare'))}</span>
             <div class="imp-barra-azioni">
               <span class="imp-conteggio" id="imp-conteggio"></span>
-              <button type="button" class="imp-mini" id="imp-aggiungi">+ Riga</button>
+              <button type="button" class="imp-mini" id="imp-aggiungi">${esc(t('importPdf.aggiungiRigaBtn'))}</button>
             </div>
           </div>
           ${S.entita === 'concorrente' ? `
             <div class="imp-campo">
-              <label for="imp-nome-conc">Nome del concorrente</label>
-              <input class="roi-input" id="imp-nome-conc" value="${esc(S.nomeDefault)}" placeholder="Es. IDEXX 2026">
+              <label for="imp-nome-conc">${esc(t('importPdf.labelNomeConcorrente'))}</label>
+              <input class="roi-input" id="imp-nome-conc" value="${esc(S.nomeDefault)}" placeholder="${esc(t('concorrenti.placeholderNomeEsempio'))}">
             </div>` : ''}
           ${S.entita === 'macchina' && S.lato === 'concorrente' ? `
             <div class="imp-campo">
-              <label for="imp-provenienza">Concorrente</label>
+              <label for="imp-provenienza">${esc(t('macchinari.tabella.concorrente'))}</label>
               <select class="roi-input" id="imp-provenienza">${opzioniProvenienza()}</select>
             </div>` : ''}
           <div class="imp-tab" id="imp-tab"></div>
@@ -457,12 +482,12 @@
       <div class="imp-foot">
         <label class="imp-conferma">
           <input type="checkbox" id="imp-ok">
-          <span>Confermo che l'elenco è corretto e completo</span>
+          <span>${esc(t('importPdf.confermaLabel'))}</span>
         </label>
         <div class="imp-foot-dx">
           <span class="imp-foot-nota" id="imp-foot-nota"></span>
-          <button type="button" class="btn-ghost" id="imp-annulla">Annulla</button>
-          <button type="button" class="btn-primary" id="imp-conferma" disabled>Importa nel catalogo</button>
+          <button type="button" class="btn-ghost" id="imp-annulla">${esc(t('comune.annulla'))}</button>
+          <button type="button" class="btn-primary" id="imp-conferma" disabled>${esc(t('importPdf.importaBtn'))}</button>
         </div>
       </div>`);
 
@@ -498,30 +523,30 @@
     // sono esami, per macchina sono macchine. Le parole del banner devono
     // dirlo, non parlare genericamente di "righe" come quando l'import era
     // misto.
-    const entitaPlurale = S.entita === 'macchina' ? 'macchine' : 'esami';
-    const estratte = S.entita === 'macchina' ? 'Estratte' : 'Estratti';
+    const entitaPlurale = t(S.entita === 'macchina' ? 'importPdf.parolaMacchine' : 'importPdf.parolaEsami');
+    const estratte = t(S.entita === 'macchina' ? 'importPdf.estrattiFem' : 'importPdf.estrattiMasc');
 
     let tipo = 'ok', titolo, messaggio, azioni = '';
-    titolo = `${estratte} ${a.classificate} ${entitaPlurale} su ${a.totaliTabellari} righe con prezzo rilevate`;
+    titolo = t('importPdf.banner.titolo', {
+      estratte, classificate: a.classificate, entitaPlurale, totaliTabellari: a.totaliTabellari
+    });
     if (persi > 0 || incerte > 0) {
       tipo = 'rivedi';
       const pezzi = [];
-      if (persi > 0) pezzi.push(persi === 1
-        ? `<strong>1</strong> riga con prezzo non è stata classificata`
-        : `<strong>${persi}</strong> righe con prezzo non sono state classificate`);
-      if (incerte > 0) pezzi.push(`<strong>${incerte}</strong> ${incerte === 1 ? 'riga è' : 'righe sono'} da rivedere`);
+      if (persi > 0) pezzi.push(t(persi === 1 ? 'importPdf.banner.persiRiga.uno' : 'importPdf.banner.persiRiga.molti', { n: persi }));
+      if (incerte > 0) pezzi.push(t(incerte === 1 ? 'importPdf.banner.incerteRiga.uno' : 'importPdf.banner.incerteRiga.molti', { n: incerte }));
       messaggio = pezzi.join(' · ');
-      if (incerte > 0) azioni += `<button type="button" class="imp-link" id="imp-vai-incerta">Vai alla prima da rivedere</button>`;
-      if (persi > 0) azioni += `<button type="button" class="imp-link" id="imp-vedi-scartate">${S.mostraScartate ? 'Nascondi' : 'Mostra'} le righe scartate</button>`;
+      if (incerte > 0) azioni += `<button type="button" class="imp-link" id="imp-vai-incerta">${esc(t('importPdf.banner.vaiPrimaDaRivedere'))}</button>`;
+      if (persi > 0) azioni += `<button type="button" class="imp-link" id="imp-vedi-scartate">${esc(t(S.mostraScartate ? 'importPdf.banner.nascondiScartate' : 'importPdf.banner.mostraScartate'))}</button>`;
     } else {
-      messaggio = 'Nessuna riga con prezzo è rimasta fuori e nessuna è dubbia.';
+      messaggio = t('importPdf.banner.tuttoOk');
     }
 
     // Unico uso rimasto del tipo di riga: se in un import verso Macchinari non
     // si riconosce nessun analizzatore, quel PDF sembra un listino di esami.
     // Avvisa senza bloccare: la scelta resta dell'operatore.
     if (S.entita === 'macchina' && S.analisi.macchine === 0) {
-      messaggio += `<div class="imp-banner-dest">Nessun analizzatore riconosciuto: questo documento sembra un listino di esami, mentre qui si importano solo analizzatori. Puoi proseguire comunque, se è quello che intendevi.</div>`;
+      messaggio += `<div class="imp-banner-dest">${esc(t('importPdf.banner.nessunAnalizzatore'))}</div>`;
     }
 
     document.getElementById('imp-banner').innerHTML = `
@@ -532,9 +557,9 @@
           <div class="imp-banner-msg">${messaggio}</div>
           ${azioni ? `<div class="imp-banner-azioni">${azioni}</div>` : ''}
         </div>
-        <div class="imp-fiducia" title="Confidenza complessiva dell'estrazione">
+        <div class="imp-fiducia" title="${esc(t('importPdf.confidenzaTitolo'))}">
           <div class="imp-fiducia-val">${conf}%</div>
-          <div class="imp-fiducia-lab">confidenza</div>
+          <div class="imp-fiducia-lab">${esc(t('importPdf.confidenzaLabel'))}</div>
         </div>
       </div>`;
 
@@ -555,17 +580,17 @@
     const cont = document.getElementById('imp-tab');
     if (!cont) return;
     const scartate = scartateTabellari();
-    const colonnaNome = S.entita === 'macchina' ? 'Macchina' : 'Esame';
+    const colonnaNome = S.entita === 'macchina' ? t('macchinari.tabella.macchina') : t('piani.tabella.esame');
 
     cont.innerHTML = `
       <table class="imp-tabella imp-tabella-edit">
         <thead><tr>
-          <th style="width:30px">#</th><th>${colonnaNome}</th>
-          <th style="width:96px">Prezzo</th><th style="width:104px">Stato</th><th style="width:34px"></th>
+          <th style="width:30px">#</th><th>${esc(colonnaNome)}</th>
+          <th style="width:96px">${esc(t('macchinari.tabella.prezzo'))}</th><th style="width:104px">${esc(t('concorrenti.tabella.stato'))}</th><th style="width:34px"></th>
         </tr></thead>
         <tbody>
           ${S.righe.length ? S.righe.map((r, i) => rigaHtml(r, i)).join('')
-            : `<tr><td colspan="5" class="imp-vuoto">Nessuna riga. Usa «+ Riga» per aggiungerne a mano.</td></tr>`}
+            : `<tr><td colspan="5" class="imp-vuoto">${esc(t('importPdf.nessunaRigaTabella'))}</td></tr>`}
         </tbody>
       </table>` + (S.mostraScartate ? bloccoScartateHtml(scartate) : '');
 
@@ -600,11 +625,13 @@
   // Stato mostrato accanto alla riga. Una riga aggiunta a mano resta "aggiunta"
   // anche dopo averla compilata: dire "modificata" nasconderebbe da dove viene.
   function statoRiga(r) {
-    if (r.origine === 'manuale') return { cls: 'mod', txt: 'aggiunta', tip: 'Riga aggiunta a mano' };
-    if (r.origine === 'recuperata') return { cls: 'incerta', txt: 'recuperata', tip: 'Riga scartata dall\'analisi e recuperata a mano' };
-    if (r.modificata) return { cls: 'mod', txt: 'modificata', tip: 'Modificata a mano in questa revisione' };
-    if (r.confidenza === 'incerta') return { cls: 'incerta', txt: 'da rivedere', tip: r.motivo || '' };
-    return { cls: 'alta', txt: 'alta', tip: '' };
+    if (r.origine === 'manuale') return { cls: 'mod', txt: t('importPdf.stato.aggiunta'), tip: t('importPdf.stato.aggiuntaTip') };
+    if (r.origine === 'recuperata') return { cls: 'incerta', txt: t('importPdf.stato.recuperata'), tip: t('importPdf.stato.recuperataTip') };
+    if (r.modificata) return { cls: 'mod', txt: t('importPdf.stato.modificata'), tip: t('importPdf.stato.modificataTip') };
+    // r.motivo arriva da lib/pdfclassifica.js gia' in italiano: resta cosi'
+    // anche nelle altre lingue, e' un limite noto di questa fetta.
+    if (r.confidenza === 'incerta') return { cls: 'incerta', txt: t('importPdf.stato.daRivedere'), tip: r.motivo || '' };
+    return { cls: 'alta', txt: t('importPdf.stato.alta'), tip: '' };
   }
 
   function rigaHtml(r, i) {
@@ -616,9 +643,9 @@
         <td><input class="imp-inp" data-id="${r.id}" data-campo="nome" value="${esc(r.nome)}"></td>
         <td><input class="imp-inp imp-inp-num" data-id="${r.id}" data-campo="prezzo"
                    inputmode="decimal" value="${esc(prezzoDaMostrare(r.prezzo))}"></td>
-        <td><span class="imp-tag imp-tag-${stato.cls}" ${stato.tip ? `title="${esc(stato.tip)}"` : ''}>${stato.txt}</span></td>
+        <td><span class="imp-tag imp-tag-${stato.cls}" ${stato.tip ? `title="${esc(stato.tip)}"` : ''}>${esc(stato.txt)}</span></td>
         <td class="imp-azioni-riga">
-          <button type="button" class="imp-x-riga" data-elimina="${r.id}" title="Togli questa riga">✕</button>
+          <button type="button" class="imp-x-riga" data-elimina="${r.id}" title="${esc(t('importPdf.togliQuestaRiga'))}">✕</button>
         </td>
       </tr>`;
   }
@@ -627,16 +654,16 @@
     if (!scartate.length) return '';
     return `
       <div class="imp-scartate">
-        <div class="imp-scartate-tit">${scartate.length} righe con un importo, non classificate</div>
+        <div class="imp-scartate-tit">${esc(t('importPdf.scartateTitolo', { n: scartate.length }))}</div>
         <table class="imp-tabella">
           <tbody>
             ${scartate.map(r => `
               <tr>
                 <td class="imp-scartate-testo" title="${esc(r.motivo || '')}">
-                  <span class="imp-scartate-pag">p.${r.pagina}</span> ${esc(r.testo)}
+                  <span class="imp-scartate-pag">${esc(t('importPdf.paginaAbbrev'))}${r.pagina}</span> ${esc(r.testo)}
                   <div class="imp-scartate-motivo">${esc(r.motivo || '')}</div>
                 </td>
-                <td style="width:96px"><button type="button" class="imp-mini" data-recupera="${r.indice}">Recupera</button></td>
+                <td style="width:96px"><button type="button" class="imp-mini" data-recupera="${r.indice}">${esc(t('importPdf.recupera'))}</button></td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -724,7 +751,7 @@
 
   function aggiornaConteggio() {
     const c = document.getElementById('imp-conteggio');
-    if (c) c.textContent = `${valide().length} da importare`;
+    if (c) c.textContent = t('importPdf.contDaImportare', { n: valide().length });
   }
 
   function aggiornaPiede() {
@@ -737,13 +764,12 @@
     // La conferma resta l'unico passaggio che scrive nel catalogo.
     bottone.disabled = !(ok.checked && n > 0) || S.inCorso;
     if (nota) {
-      nota.textContent = S.inCorso ? 'Import in corso…'
-        : n === 0 ? 'Nessuna riga valida'
+      nota.textContent = S.inCorso ? t('importPdf.importInCorso')
+        : n === 0 ? t('importPdf.nessunaRigaValida')
         : [
-            n === 1 ? '1 riga da importare' : `${n} righe da importare`,
+            t(n === 1 ? 'importPdf.rigaDaImportare.uno' : 'importPdf.rigaDaImportare.molti', { n }),
             scartate === 0 ? null
-              : scartate === 1 ? '1 riga incompleta verrà ignorata'
-              : `${scartate} righe incomplete verranno ignorate`
+              : t(scartate === 1 ? 'importPdf.righeIncomplete.uno' : 'importPdf.righeIncomplete.molti', { n: scartate })
           ].filter(Boolean).join(' · ');
     }
     aggiornaConteggio();
@@ -764,13 +790,13 @@
       ? (String((document.getElementById('imp-provenienza') || {}).value || '').trim() || null)
       : null;
     if (S.entita === 'concorrente' && !nomeConc) {
-      alert('Inserisci il nome del concorrente prima di importare.');
+      alert(t('importPdf.alertNomeConcorrente'));
       const i = document.getElementById('imp-nome-conc');
       if (i) i.focus();
       return;
     }
     if (S.entita === 'macchina' && S.lato === 'concorrente' && !concorrenteId) {
-      alert('Seleziona il concorrente prima di importare.');
+      alert(t('importPdf.alertSelezionaConcorrente'));
       const i = document.getElementById('imp-provenienza');
       if (i) i.focus();
       return;
@@ -785,16 +811,19 @@
         body: JSON.stringify({ nome: nomeConc, righe, confermaCompletezza: true, concorrenteId })
       });
       const dati = await resp.json().catch(() => null);
-      if (!resp.ok) throw new Error((dati && dati.error) || `Errore ${resp.status}`);
+      if (!resp.ok) throw new Error(messaggioErrore(dati, `Errore ${resp.status}`));
 
       const alFine = S.alFine;
       const esito = dati;
       chiudi();
       const dettagli = [
-        esito.ignorate ? `${esito.ignorate} ignorate` : null,
-        esito.duplicate ? `${esito.duplicate} duplicate accorpate` : null
+        esito.ignorate ? t('importPdf.ignorate', { n: esito.ignorate }) : null,
+        esito.duplicate ? t('importPdf.duplicateAccorpate', { n: esito.duplicate }) : null
       ].filter(Boolean);
-      alert(`Import completato: ${esito.importate} righe salvate${dettagli.length ? ' (' + dettagli.join(', ') + ')' : ''}.`);
+      alert(t('importPdf.importCompletato', {
+        n: esito.importate,
+        dettagli: dettagli.length ? ' (' + dettagli.join(', ') + ')' : ''
+      }));
       if (alFine) alFine(esito);
     } catch (err) {
       // La finestra puo' essere stata chiusa durante l'invio: senza questa
@@ -803,7 +832,7 @@
         S.inCorso = false;
         aggiornaPiede();
       }
-      alert('Import non riuscito: ' + err.message);
+      alert(t('importPdf.importFallito') + ': ' + err.message);
     }
   }
 
@@ -877,7 +906,7 @@
       if (!cima && fine > cont.scrollTop + 4) cima = p.n;
     }
 
-    if (S.pagine.length > 1) fase('pronto', `pagina ${cima || 1} di ${S.pagine.length}`, 100);
+    if (S.pagine.length > 1) fase('pronto', t('importPdf.nota.paginaDiTotale', { n: cima || 1, totale: S.pagine.length }), 100);
   }
 
   function liberaPagine() {

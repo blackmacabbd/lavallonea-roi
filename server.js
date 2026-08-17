@@ -194,7 +194,11 @@ const uploadPdf = multer({
   limits: { fileSize: 40 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (/\.pdf$/i.test(file.originalname)) cb(null, true);
-    else cb(new Error('Solo file PDF'));
+    else {
+      const err = new Error('Solo file PDF');
+      err.codice = 'SOLO_PDF';
+      cb(err);
+    }
   }
 });
 
@@ -1317,7 +1321,7 @@ function pianoInAmbito(req, pianoId) {
 app.get('/api/piani/:id', optionalAuth, (req, res) => {
   try {
     const piano = pianoInAmbito(req, req.params.id);
-    if (!piano) return res.status(404).json({ error: 'Piano non trovato' });
+    if (!piano) return res.status(404).json({ error: 'Piano non trovato', codice: 'PIANO_NON_TROVATO' });
     const sc = piani.scopeCatalogo(req.user ? req.user.id : null);
     const prezzi = db.prepare(`
       SELECT er.id AS esame_id, er.nome AS esame_nome, er.prezzo_base, pp.prezzo
@@ -1334,7 +1338,7 @@ app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (r
   try {
     const { prezzi } = req.body || {};
     if (!Array.isArray(prezzi)) return res.status(400).json({ error: 'Formato non valido, atteso { prezzi: [...] }' });
-    if (!pianoInAmbito(req, req.params.id)) return res.status(404).json({ error: 'Piano non trovato' });
+    if (!pianoInAmbito(req, req.params.id)) return res.status(404).json({ error: 'Piano non trovato', codice: 'PIANO_NON_TROVATO' });
 
     // esame_id arriva dal client: va verificato che appartenga a questo account,
     // altrimenti si potrebbe agganciare un prezzo all'esame di un altro utente.
@@ -1360,7 +1364,7 @@ app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (r
 app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
   try {
     const { attivo } = req.body || {};
-    if (!pianoInAmbito(req, req.params.id)) return res.status(404).json({ error: 'Piano non trovato' });
+    if (!pianoInAmbito(req, req.params.id)) return res.status(404).json({ error: 'Piano non trovato', codice: 'PIANO_NON_TROVATO' });
     db.prepare(`UPDATE piani_sconto SET attivo = ? WHERE id = ? AND user_id = ?`)
       .run(attivo ? 1 : 0, req.params.id, req.user.id);
     res.json({ success: true });
@@ -1419,7 +1423,7 @@ app.get('/api/concorrenti', requireAuth, (req, res) => {
 app.get('/api/concorrenti/:id', requireAuth, (req, res) => {
   try {
     const dettaglio = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
-    if (!dettaglio) return res.status(404).json({ error: 'Concorrente non trovato' });
+    if (!dettaglio) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     res.json(dettaglio);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1429,7 +1433,7 @@ app.get('/api/concorrenti/:id/match', requireAuth, (req, res) => {
     const { esame } = req.query;
     if (!esame) return res.status(400).json({ error: 'Parametro esame mancante' });
     const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
-    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
+    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     res.json(concorrenti.trovaMatch(db, Number(req.params.id), esame));
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1441,7 +1445,7 @@ app.post('/api/concorrenti/:id/conferma-match', requireAuth, express.json(), (re
       return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId, esameMylavNome)' });
     }
     const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
-    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
+    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     concorrenti.confermaMatch(db, Number(req.params.id), Number(esameConcorrenteId), esameMylavNome);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1452,7 +1456,7 @@ app.post('/api/concorrenti/:id/rimuovi-match', requireAuth, express.json(), (req
     const { esameConcorrenteId } = req.body || {};
     if (!esameConcorrenteId) return res.status(400).json({ error: 'Dati mancanti (esameConcorrenteId)' });
     const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
-    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato' });
+    if (!owned) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     concorrenti.rimuoviMatch(db, Number(req.params.id), Number(esameConcorrenteId));
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -1461,7 +1465,7 @@ app.post('/api/concorrenti/:id/rimuovi-match', requireAuth, express.json(), (req
 app.delete('/api/concorrenti/:id', requireAuth, (req, res) => {
   try {
     const ok = concorrenti.eliminaConcorrente(db, req.params.id, req.user.id);
-    if (!ok) return res.status(404).json({ error: 'Concorrente non trovato' });
+    if (!ok) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1493,7 +1497,10 @@ app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), asyn
   try {
     if (!importbozze.ENTITA.includes(entita)) {
       annota('errore', `entita non valida: "${entita}"`);
-      return res.status(400).json({ error: `Destinazione non valida: attese ${importbozze.ENTITA.join(' o ')}` });
+      return res.status(400).json({
+        error: `Destinazione non valida: attese ${importbozze.ENTITA.join(' o ')}`,
+        codice: 'DESTINAZIONE_NON_VALIDA'
+      });
     }
 
     const buf = fs.readFileSync(req.file.path);
@@ -1550,7 +1557,7 @@ app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), asyn
 app.get('/api/import-pdf/:id', requireAuth, (req, res) => {
   try {
     const bozza = importbozze.getBozza(db, req.params.id, req.user.id);
-    if (!bozza) return res.status(404).json({ error: 'Bozza non trovata' });
+    if (!bozza) return res.status(404).json({ error: 'Bozza non trovata', codice: 'BOZZA_NON_TROVATA' });
     res.json(bozza);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1559,9 +1566,9 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
   try {
     const { nome, righe, confermaCompletezza } = req.body || {};
     const bozza = importbozze.getBozza(db, req.params.id, req.user.id);
-    if (!bozza) return res.status(404).json({ error: 'Bozza non trovata' });
+    if (!bozza) return res.status(404).json({ error: 'Bozza non trovata', codice: 'BOZZA_NON_TROVATA' });
     if (bozza.stato !== 'bozza') {
-      return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
+      return res.status(409).json({ error: 'Questa bozza e stata gia confermata', codice: 'BOZZA_GIA_CONFERMATA' });
     }
     const annota = (esito, dettaglio, extra = {}) => {
       try {
@@ -1584,7 +1591,7 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     const { valide, ignorate, duplicate } = importbozze.normalizzaRighe(righe);
     if (!valide.length) {
       annota('rifiutato', 'nessuna riga importabile');
-      return res.status(400).json({ error: 'Nessuna riga importabile nell\'elenco confermato' });
+      return res.status(400).json({ error: 'Nessuna riga importabile nell\'elenco confermato', codice: 'NESSUNA_RIGA_IMPORTABILE' });
     }
 
     // Una sola destinazione per import. Le macchine entrano solo dalla sezione
@@ -1599,7 +1606,7 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     let risultato = {};
     if (bozza.entita === 'concorrente') {
       const nomeConc = String(nome || '').trim();
-      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente' });
+      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente', codice: 'NOME_CONCORRENTE_MANCANTE' });
       risultato = concorrenti.upsertConcorrente(
         db, nomeConc,
         valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
@@ -1628,20 +1635,25 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     }
 
     const confermata = importbozze.confermaBozza(db, bozza.id, req.user.id, valide);
-    if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata' });
+    if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata', codice: 'BOZZA_GIA_CONFERMATA' });
 
     annota('confermato',
       `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
       { nRighe: valide.length });
     res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
-  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message }); }
+  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) }); }
 });
 
 // ── Macchinari (analizzatori) ──────────────────────
 // Un errore che dice "non trovato" e' una risorsa inesistente per questo
-// account: 404. Gli altri sono dati non validi: 400.
+// account: 404. Gli altri sono dati non validi: 400. Con un codice, la
+// decisione si basa su quello (stessa informazione, in forma robusta); senza
+// codice ricade sulla vecchia espressione regolare sul testo italiano, per
+// gli errori che non passano da qui con un codice attaccato.
 const ERRORI_NON_TROVATO = /non trovat/i;
+const CODICI_NON_TROVATO = new Set(['LISTINO_NON_TROVATO', 'MACCHINA_NON_TROVATA', 'CONCORRENTE_NON_TROVATO']);
 function statoErroreMacchina(err) {
+  if (err && err.codice) return CODICI_NON_TROVATO.has(err.codice) ? 404 : 400;
   return ERRORI_NON_TROVATO.test(String(err && err.message)) ? 404 : 400;
 }
 
@@ -1653,7 +1665,7 @@ app.get('/api/listini-macchine', requireAuth, (req, res) => {
 app.get('/api/listini-macchine/:id', requireAuth, (req, res) => {
   try {
     const listino = macchineLib.getListino(db, req.params.id, req.user.id);
-    if (!listino) return res.status(404).json({ error: 'Listino non trovato' });
+    if (!listino) return res.status(404).json({ error: 'Listino non trovato', codice: 'LISTINO_NON_TROVATO' });
     res.json({ ...listino, macchine: macchineLib.macchineDiListino(db, req.params.id, req.user.id) });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1661,7 +1673,7 @@ app.get('/api/listini-macchine/:id', requireAuth, (req, res) => {
 app.delete('/api/listini-macchine/:id', requireAuth, (req, res) => {
   try {
     const ok = macchineLib.eliminaListino(db, req.params.id, req.user.id);
-    if (!ok) return res.status(404).json({ error: 'Listino non trovato' });
+    if (!ok) return res.status(404).json({ error: 'Listino non trovato', codice: 'LISTINO_NON_TROVATO' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1675,20 +1687,20 @@ app.post('/api/macchine', requireAuth, express.json(), (req, res) => {
   try {
     const { listinoId, nome, prezzo, note } = req.body || {};
     res.json({ success: true, ...macchineLib.salvaMacchina(db, { userId: req.user.id, listinoId, nome, prezzo, note }) });
-  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message }); }
+  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) }); }
 });
 
 app.put('/api/macchine/:id', requireAuth, express.json(), (req, res) => {
   try {
     const { listinoId, nome, prezzo, note } = req.body || {};
     res.json({ success: true, ...macchineLib.salvaMacchina(db, { id: req.params.id, userId: req.user.id, listinoId, nome, prezzo, note }) });
-  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message }); }
+  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) }); }
 });
 
 app.delete('/api/macchine/:id', requireAuth, (req, res) => {
   try {
     const ok = macchineLib.eliminaMacchina(db, req.params.id, req.user.id);
-    if (!ok) return res.status(404).json({ error: 'Macchina non trovata' });
+    if (!ok) return res.status(404).json({ error: 'Macchina non trovata', codice: 'MACCHINA_NON_TROVATA' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -1845,8 +1857,9 @@ app.use((err, req, res, next) => {
   const messaggio = troppoGrande
     ? 'Il file supera i 40 MB: comprimilo o dividilo prima di caricarlo.'
     : (err.message || 'Richiesta non valida');
+  const codice = troppoGrande ? 'FILE_TROPPO_GRANDE' : err.codice;
   if (req.file && req.file.path) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
-  res.status(stato).json({ error: messaggio });
+  res.status(stato).json(Object.assign({ error: messaggio }, codice ? { codice } : {}));
 });
 
 app.listen(PORT, () => {
