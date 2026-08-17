@@ -1701,7 +1701,6 @@ async function renderListinoMacchine(id) {
   S.listinoAperto = dettaglio;
   const wrap = el('listino-macchine-wrap');
   if (!wrap) return;
-  const inMod = S.macchinaInModifica;
 
   wrap.innerHTML = `
     <div class="section-card">
@@ -1709,38 +1708,61 @@ async function renderListinoMacchine(id) {
         ${escHtml(dettaglio.nome)} —
         ${dettaglio.concorrenteNome ? escHtml(dettaglio.concorrenteNome) : 'Mylav (mie)'}
       </div>
-      <div style="margin-bottom:12px;display:flex;gap:8px">
+      <div class="dett-toolbar" style="margin-bottom:12px">
         <button class="btn-outline" onclick="nuovaMacchina(${id})">+ Aggiungi macchina</button>
+        <input class="roi-input dett-search" id="macc-search" placeholder="🔍 Cerca macchina…"
+               value="${escHtml(S.filtroMacchine || '')}" oninput="filtraMacchine(this.value)" autocomplete="off">
         <button class="btn-ghost" onclick="chiudiListinoMacchine()">Chiudi</button>
       </div>
       <div class="table-scroll" style="max-height:420px;overflow-y:auto">
         <table>
           <thead><tr><th>Macchina</th><th style="width:120px">Prezzo</th><th style="width:170px"></th></tr></thead>
-          <tbody>
-            ${inMod ? `<tr class="macc-riga-modifica">
-              <td><input class="roi-input" id="macc-nome" value="${escHtml(inMod.nome)}"
-                         placeholder="Es. Analizzatore biochimico da banco" autocomplete="off"></td>
-              <td><input class="roi-input roi-num" id="macc-prezzo" inputmode="decimal"
-                         value="${inMod.prezzo === '' ? '' : escHtml(String(inMod.prezzo))}" placeholder="0,00"></td>
-              <td style="display:flex;gap:6px">
-                <button class="btn-primary" onclick="salvaMacchinaUI()">Salva</button>
-                <button class="btn-outline" onclick="annullaModificaMacchina()">Annulla</button>
-              </td>
-            </tr>` : ''}
-            ${dettaglio.macchine.filter(m => !inMod || m.id !== inMod.id).map(m => `<tr>
-              <td>${escHtml(m.nome)}</td>
-              <td class="td-num">${fmtEuro(m.prezzo)}</td>
-              <td style="display:flex;gap:6px">
-                <button class="btn-outline" onclick="modificaMacchina(${m.id})">Modifica</button>
-                <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
-              </td>
-            </tr>`).join('')}
-            ${!dettaglio.macchine.length && !inMod ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
-              Nessuna macchina in questo listino.</td></tr>` : ''}
-          </tbody>
+          <tbody id="macc-tbody"></tbody>
         </table>
       </div>
     </div>`;
+  renderListinoMacchineBody();
+}
+
+function renderListinoMacchineBody() {
+  const dettaglio = S.listinoAperto;
+  const tbody = el('macc-tbody');
+  if (!tbody || !dettaglio) return;
+  const inMod = S.macchinaInModifica;
+  const filtro = S.filtroMacchine || '';
+  // Le altre righe (quella in modifica, se c'e', resta sempre visibile a parte).
+  const altre = dettaglio.macchine.filter(m => !inMod || m.id !== inMod.id);
+  const altreFiltrate = altre.filter(m => Ricerca.corrisponde(m.nome, filtro));
+
+  tbody.innerHTML = `
+    ${inMod ? `<tr class="macc-riga-modifica">
+      <td><input class="roi-input" id="macc-nome" value="${escHtml(inMod.nome)}"
+                 placeholder="Es. Analizzatore biochimico da banco" autocomplete="off"></td>
+      <td><input class="roi-input roi-num" id="macc-prezzo" inputmode="decimal"
+                 value="${inMod.prezzo === '' ? '' : escHtml(String(inMod.prezzo))}" placeholder="0,00"></td>
+      <td style="display:flex;gap:6px">
+        <button class="btn-primary" onclick="salvaMacchinaUI()">Salva</button>
+        <button class="btn-outline" onclick="annullaModificaMacchina()">Annulla</button>
+      </td>
+    </tr>` : ''}
+    ${altreFiltrate.map(m => `<tr>
+      <td>${escHtml(m.nome)}</td>
+      <td class="td-num">${fmtEuro(m.prezzo)}</td>
+      <td style="display:flex;gap:6px">
+        <button class="btn-outline" onclick="modificaMacchina(${m.id})">Modifica</button>
+        <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">Elimina</button>
+      </td>
+    </tr>`).join('')}
+    ${!altre.length && !inMod ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
+      Nessuna macchina in questo listino.</td></tr>` : ''}
+    ${altre.length && !altreFiltrate.length ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
+      Nessuna macchina trovata per la ricerca.</td></tr>` : ''}
+  `;
+}
+
+function filtraMacchine(v) {
+  S.filtroMacchine = v;
+  renderListinoMacchineBody();
 }
 
 function chiudiListinoMacchine() {
