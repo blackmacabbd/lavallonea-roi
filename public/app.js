@@ -15,6 +15,7 @@ const S = {
   listiniMacchine: [],
   listinoAperto: null,
   macchinaInModifica: null,
+  filtroMacchine: '',
   salvataggioMacchinaInCorso: false,
   macchine: [],
   confrontoMacchine: null,
