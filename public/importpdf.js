@@ -375,9 +375,8 @@
     if (!sel) return;
     const valorePrecedente = sel.value;
     sel.innerHTML = opzioniProvenienza();
-    // Se l'operatore aveva gia' scelto qualcosa prima che l'elenco arrivasse
-    // (praticamente solo "Le mie macchine", l'unica opzione possibile fino ad
-    // allora), la selezione resta quella.
+    // Se l'operatore aveva gia' scelto un concorrente prima che l'elenco
+    // finisse di arrivare, la selezione resta quella.
     if (Array.from(sel.options).some(o => o.value === valorePrecedente)) sel.value = valorePrecedente;
   }
 

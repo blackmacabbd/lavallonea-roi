@@ -1712,7 +1712,11 @@ function bloccoListiniHtml(lato, titolo, sottotitolo, listini, loggato) {
               ${!visibili.length ? `<tr><td colspan="${lato === 'loro' ? 5 : 4}" class="td-muted" style="text-align:center;padding:22px">
                 ${listini.length
                   ? 'Nessun listino corrisponde alla ricerca.'
-                  : (loggato ? 'Nessun listino importato. Usa il pulsante qui sopra per aggiungerne uno.' : 'Accedi per importare i tuoi listini.')}
+                  : (loggato
+                      ? 'Nessun listino importato. Usa il pulsante qui sopra per aggiungerne uno.'
+                      : (lato === 'mie'
+                          ? 'Accedi per importare i tuoi listini.'
+                          : 'Accedi per importare i listini dei concorrenti.'))}
               </td></tr>` : ''}
             </tbody>
           </table>
@@ -1729,9 +1733,16 @@ function importaPdfMacchineMie() {
   ImportPdf.avvia({ entita: 'macchina', lato: 'mie', alFine: () => renderMacchinari() });
 }
 
-function importaPdfMacchineConcorrente() {
+async function importaPdfMacchineConcorrente() {
   if (S.auth.guest || !S.auth.token) { alert('Accedi per importare un listino'); return; }
+  // Con l'elenco vuoto si rilegge prima di dare un verdetto: se il caricamento
+  // all'apertura della pagina e' fallito, l'archivio sembrerebbe vuoto senza
+  // esserlo, e l'operatore leggerebbe un motivo sbagliato.
   if (!S.concorrenti || !S.concorrenti.length) {
+    try { await loadConcorrenti(); }
+    catch (e) { alert('Impossibile leggere l\'elenco dei concorrenti: ' + e.message); return; }
+  }
+  if (!S.concorrenti.length) {
     alert('Nessun concorrente in archivio: importa prima un listino esami in Gestione concorrenti.');
     return;
   }
