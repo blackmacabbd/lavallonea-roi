@@ -44,9 +44,9 @@
 |---|---|---|
 | `public/ricerca.js` | funzione di ricerca tollerante | 1 |
 | `lib/ricerca.test.js` | test della ricerca, caricando il file vero | 1 |
-| `public/i18n.js` | dizionario delle quattro lingue e `t()` | 3, 4, 5 |
+| `public/i18n.js` | dizionario delle quattro lingue e `t()` | 3, 4, 5, 6 |
 | `public/index.html` | caricamento dei due script nuovi | 1, 3 |
-| `public/app.js` | ricerca nelle sezioni, due blocchi, testi tradotti | 1, 2, 3, 4 |
+| `public/app.js` | ricerca nelle sezioni, due blocchi, testi tradotti | 1, 2, 3, 4, 6 |
 | `public/importpdf.js` | lato di provenienza, testi tradotti | 2, 5 |
 | `public/style.css` | blocchi colorati, selettore lingua, barre di ricerca | 2, 3 |
 | `server.js` | codici sui messaggi d'errore comuni | 5 |
@@ -722,7 +722,48 @@ git commit -m "feat: finestra di import tradotta e codici sui messaggi d'errore 
 
 ---
 
-### Task 6: Verifica end-to-end
+### Task 6: Traduzione delle pagine restanti
+
+**Files:**
+- Modify: `public/i18n.js`
+- Modify: `public/app.js`
+
+**Interfaces:** consuma `t()` dal Task 3; nessuna interfaccia nuova.
+
+Questo task non era nel piano originale. La revisione del Task 4 ha mostrato che i Task 3-5 coprono il menu, i titoli, quattro sezioni, la schermata di accesso e la finestra di import, ma **lasciano in italiano tutto il resto**: il committente ha chiesto che «tutto» sia tradotto, e un'interfaccia tradotta a metà e' peggio di una non tradotta, perche' chi la usa non sa piu' cosa aspettarsi.
+
+- [ ] **Step 1: Censire le pagine rimaste**
+
+Da tradurre, corpo compreso: **Dashboard**, **Cronologia file**, **Confronto strutture**, **Risparmio totale strutture**, **Debug Excel**, la finestra di caricamento file Excel, il gruppo «Altro» / «Cronologia e strumenti» della barra laterale con l'elenco `STRUTTURE` e il suo stato vuoto «Nessuna struttura», il `Caricamento...` iniziale (la chiave `stato.caricamento` esiste dal Task 3 ma non e' agganciata), e le **viste di reset e recupero password**.
+
+Le viste di reset e recupero password sono le piu' importanti di questo elenco, malgrado l'aspetto marginale: oggi chi non legge l'italiano e perde la password non ha modo di rientrare.
+
+Usa lo stesso comando del Task 4 per non dimenticare stringhe, e scrivi il censimento nel report.
+
+- [ ] **Step 2: Aggiungere le chiavi e sostituire i testi**
+
+Stesse regole del Task 4: chiave a punti che dice dove vive, tutte e quattro le lingue, numeri e nomi per sostituzione e mai per concatenazione, doppia chiave dove singolare e plurale cambiano forma, terminologia dei vincoli globali, italiano identico a oggi parola per parola.
+
+Attenzione ai grafici della Dashboard e del Confronto strutture: le etichette degli assi e delle legende sono testo dell'interfaccia e vanno tradotte, ma i nomi delle strutture, degli esami e dei piani che compaiono nei grafici sono **dati dell'operatore** e restano come sono.
+
+- [ ] **Step 3: Verificare**
+
+Run: `node --check public/app.js && node --check public/i18n.js && npm test`
+
+Passare per ognuna di quelle pagine nelle quattro lingue cercando testo italiano residuo, e controllare la console per avvisi di chiavi mancanti.
+
+**Al termine rimuovere l'account di prova e le sue righe.**
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add public/i18n.js public/app.js
+git commit -m "feat: traduzione di dashboard, cronologia, confronto strutture e recupero password"
+```
+
+---
+
+### Task 7: Verifica end-to-end
 
 **Files:** nessuna modifica prevista; eventuali correzioni nei file dei task precedenti.
 
@@ -770,9 +811,10 @@ Se la verifica ha richiesto correzioni, un commit unico che le descriva.
 | Selettore in alto a destra, scelta ricordata | 3 |
 | Ricaduta sull'italiano per chiave mancante | 3 |
 | Traduzione delle sezioni | 4 |
+| Traduzione delle pagine restanti e del recupero password | 6 |
 | Traduzione della finestra di import | 5 |
 | Messaggi comuni del server tradotti via codice | 5 |
-| Dati dell'operatore non tradotti | 4, 5 (verifica esplicita) |
+| Dati dell'operatore non tradotti | 4, 5, 6 (verifica esplicita) |
 
 **Punti annotati durante la stesura:**
 
