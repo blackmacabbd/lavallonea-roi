@@ -1734,7 +1734,13 @@ body.imp-aperto { overflow: hidden; }
 
 /* Selettore della lingua: fissato in alto a destra, fuori dal disegno delle
    pagine, che si ridisegnano continuamente. */
-#selettore-lingua { position: fixed; top: 12px; right: 16px; z-index: 900; }
+/* Sopra #auth-overlay (2000): ogni sessione parte dalla schermata di accesso, e
+   chi non legge l'italiano deve poter cambiare lingua prima di entrare. */
+#selettore-lingua { position: fixed; top: 12px; right: 16px; z-index: 2100; }
+
+/* Ma non sopra la finestra di import: un clic la' cambierebbe lingua
+   ridisegnando la pagina, e la revisione in corso andrebbe persa. */
+body.imp-aperto #selettore-lingua { display: none; }
 .lang-btn {
   display: flex; align-items: center; gap: 6px;
   padding: 5px 10px; border-radius: 999px;

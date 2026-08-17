@@ -47,6 +47,9 @@
       'stato.nessunDato': 'Nessun dato ancora',
       'stato.errore': 'Errore',
       'stato.erroreCaricamento': 'Errore caricamento',
+      // {azione} deve ricevere una stringa gia' tradotta, cioe' il risultato di
+      // un'altra t(): passare l'infinito italiano produrrebbe frasi meta'
+      // tradotte come "Sign in to modificare i tuoi piani".
       'stato.ospiteAccedi': 'Accedi per {azione}',
 
       // Comandi ricorrenti
@@ -75,9 +78,9 @@
       'pagina.concorrenti.titolo': 'Competitor management',
       'pagina.concorrenti.sottotitolo': '{n} competitors imported',
       'pagina.macchinari.titolo': 'Equipment',
-      'pagina.macchinari.sottotitolo': '{mie} yours · {loro} from competitors',
+      'pagina.macchinari.sottotitolo': '{mie} yours · {loro} from the competition',
       'pagina.confrontoMacchine.titolo': 'Equipment comparison',
-      'pagina.confrontoMacchine.sottotitolo': '{mie} yours · {loro} from competitors',
+      'pagina.confrontoMacchine.sottotitolo': '{mie} yours · {loro} from the competition',
       'pagina.confrontoStrutture.titolo': 'Practice comparison',
       'pagina.confrontoStrutture.sottotitolo': '{n} practices in the database',
       'pagina.cronologia.titolo': 'File history',
