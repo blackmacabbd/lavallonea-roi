@@ -1698,6 +1698,11 @@ async function renderListinoMacchine(id) {
   try { dettaglio = await api(`/api/listini-macchine/${id}`); }
   catch (e) { alert('Errore: ' + e.message); return; }
 
+  // La ricerca appartiene al listino aperto: aprendone un altro si ricomincia da
+  // un elenco intero. Si azzera solo al cambio di listino, non a ogni disegno,
+  // altrimenti salvare una macchina cancellerebbe la ricerca in corso.
+  if (!S.listinoAperto || S.listinoAperto.id !== dettaglio.id) S.filtroMacchine = '';
+
   S.listinoAperto = dettaglio;
   const wrap = el('listino-macchine-wrap');
   if (!wrap) return;
