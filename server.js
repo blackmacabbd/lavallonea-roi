@@ -531,7 +531,7 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
     const password = String(req.body?.password || '');
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Email non valida', codice: 'EMAIL_NON_VALIDA' });
     const pv = auth.validaPassword(password);
-    if (!pv.ok) return res.status(400).json({ error: pv.motivo });
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo, codice: pv.codice });
     if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return res.status(409).json({ error: 'Email già registrata', codice: 'EMAIL_GIA_REGISTRATA' });
 
     const recoveryCode = auth.genRecoveryCode();
@@ -613,7 +613,7 @@ app.post('/api/auth/reset-password', authRateLimit, express.json(), (req, res) =
     const email = auth.normEmail(req.body?.email);
     const code = String(req.body?.code || '').trim();
     const pv = auth.validaPassword(String(req.body?.newPassword || ''));
-    if (!pv.ok) return res.status(400).json({ error: pv.motivo });
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo, codice: pv.codice });
     const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
     if (!u) return res.status(400).json({ error: 'Codice non valido', codice: 'CODICE_NON_VALIDO' });
     const rc = db.prepare(`SELECT * FROM reset_codes WHERE user_id = ? AND code = ? AND used = 0 AND expires_at > ? ORDER BY id DESC`)
@@ -630,7 +630,7 @@ app.post('/api/auth/recover-full', authRateLimit, express.json(), (req, res) => 
     const recoveryCode = String(req.body?.recoveryCode || '');
     const newEmail = auth.normEmail(req.body?.newEmail);
     const pv = auth.validaPassword(String(req.body?.newPassword || ''));
-    if (!pv.ok) return res.status(400).json({ error: pv.motivo });
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo, codice: pv.codice });
     if (!newEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) return res.status(400).json({ error: 'Email non valida', codice: 'EMAIL_NON_VALIDA' });
     const u = db.prepare(`SELECT * FROM users WHERE recovery_lookup = ?`).get(auth.lookupHash(recoveryCode));
     if (!u || !auth.verifyPassword(recoveryCode, u.recovery_hash)) return res.status(400).json({ error: 'Codice di recupero non valido', codice: 'CODICE_RECUPERO_NON_VALIDO' });
