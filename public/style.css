@@ -1724,3 +1724,16 @@ body.imp-aperto { overflow: hidden; }
    dalla tabella: il progetto non usa finestre di dialogo native. */
 .macc-riga-modifica { background: var(--blue-tint); }
 .macc-riga-modifica .roi-input { width: 100%; }
+
+/* Confronto macchine: stessa lettura del risparmio del calcolatore esami —
+   blu quando conviene Mylav, rosso quando conviene il concorrente. */
+.macc-confronto { width: 100%; border-collapse: collapse; font-size: 13px; }
+.macc-confronto th {
+  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
+  font-size: 11px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--ink-soft);
+}
+.macc-confronto td { padding: 6px 10px; border-bottom: 1px solid var(--line); }
+.macc-confronto tfoot td { border-bottom: none; border-top: 2px solid var(--line); }
+.macc-meglio { color: var(--blue); }
+.macc-peggio { color: var(--red); }

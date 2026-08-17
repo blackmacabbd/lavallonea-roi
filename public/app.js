@@ -1677,6 +1677,100 @@ async function renderMacchinari() {
       <div id="macchinari-calcolatore"></div>
     </div>
   `);
+  renderCalcolatoreMacchine();
+}
+
+// Confronto fra le proprie macchine e quelle di un concorrente.
+// L'accoppiamento e' scelto dall'operatore riga per riga: nessuna mappatura
+// persistente e nessun algoritmo di somiglianza, perche' non e' stato chiesto.
+function renderCalcolatoreMacchine() {
+  const wrap = el('macchinari-calcolatore');
+  if (!wrap) return;
+  const mie = (S.macchine || []).filter(m => !m.concorrenteId);
+  const loro = (S.macchine || []).filter(m => m.concorrenteId);
+
+  if (!mie.length || !loro.length) {
+    wrap.innerHTML = `
+      <div class="section-card">
+        <div class="section-card-title">Confronto macchine</div>
+        <div class="td-muted" style="padding:6px 0">
+          Servono almeno una macchina tua e una di un concorrente. Importa un listino in
+          Gestione concorrenti per avere il termine di paragone.
+        </div>
+      </div>`;
+    return;
+  }
+
+  S.confrontoMacchine = S.confrontoMacchine && S.confrontoMacchine.length
+    ? S.confrontoMacchine
+    : [{ mia: mie[0].id, sua: loro[0].id }];
+
+  const opzioni = (lista, sel) => lista
+    .map(m => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('');
+
+  let totMia = 0, totSua = 0;
+  const righe = S.confrontoMacchine.map((r, i) => {
+    const a = mie.find(m => m.id === r.mia) || mie[0];
+    const b = loro.find(m => m.id === r.sua) || loro[0];
+    totMia += a.prezzo; totSua += b.prezzo;
+    const diff = a.prezzo - b.prezzo;
+    return `<tr>
+      <td><select class="roi-input" onchange="cambiaConfrontoMacchina(${i},'mia',this.value)">${opzioni(mie, a.id)}</select></td>
+      <td><select class="roi-input" onchange="cambiaConfrontoMacchina(${i},'sua',this.value)">${opzioni(loro, b.id)}</select></td>
+      <td class="td-num">${fmtEuro(a.prezzo)}</td>
+      <td class="td-num">${fmtEuro(b.prezzo)}</td>
+      <td class="td-num ${diff <= 0 ? 'macc-meglio' : 'macc-peggio'}">${diff <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diff))}</td>
+      <td><button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="Togli riga">✕</button></td>
+    </tr>`;
+  }).join('');
+
+  const diffTot = totMia - totSua;
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">Confronto macchine</div>
+      <div class="table-scroll">
+        <table class="macc-confronto">
+          <thead><tr>
+            <th>La mia macchina</th><th>Del concorrente</th>
+            <th style="width:110px">Mylav</th><th style="width:110px">Concorrente</th>
+            <th style="width:120px">Differenza</th><th style="width:40px"></th>
+          </tr></thead>
+          <tbody>${righe}</tbody>
+          <tfoot><tr>
+            <td colspan="2"><b>Totale</b></td>
+            <td class="td-num"><b>${fmtEuro(totMia)}</b></td>
+            <td class="td-num"><b>${fmtEuro(totSua)}</b></td>
+            <td class="td-num ${diffTot <= 0 ? 'macc-meglio' : 'macc-peggio'}"><b>${diffTot <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diffTot))}</b></td>
+            <td></td>
+          </tr></tfoot>
+        </table>
+      </div>
+      <button class="btn-outline" style="margin-top:12px" onclick="aggiungiConfrontoMacchina()">+ Aggiungi riga</button>
+    </div>`;
+}
+
+function cambiaConfrontoMacchina(i, lato, valore) {
+  if (!S.confrontoMacchine || !S.confrontoMacchine[i]) return;
+  S.confrontoMacchine[i][lato] = Number(valore);
+  renderCalcolatoreMacchine();
+}
+
+function aggiungiConfrontoMacchina() {
+  const mie = (S.macchine || []).filter(m => !m.concorrenteId);
+  const loro = (S.macchine || []).filter(m => m.concorrenteId);
+  if (!mie.length || !loro.length) return;
+  S.confrontoMacchine.push({ mia: mie[0].id, sua: loro[0].id });
+  renderCalcolatoreMacchine();
+}
+
+function togliConfrontoMacchina(i) {
+  S.confrontoMacchine.splice(i, 1);
+  if (!S.confrontoMacchine.length) {
+    const mie = (S.macchine || []).filter(m => !m.concorrenteId);
+    const loro = (S.macchine || []).filter(m => m.concorrenteId);
+    if (mie.length && loro.length) S.confrontoMacchine.push({ mia: mie[0].id, sua: loro[0].id });
+  }
+  renderCalcolatoreMacchine();
 }
 
 function importaPdfMacchine() {
