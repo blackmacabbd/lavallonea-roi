@@ -1690,28 +1690,46 @@ function renderCalcolatoreMacchine() {
   const loro = (S.macchine || []).filter(m => m.concorrenteId);
 
   if (!mie.length || !loro.length) {
+    // Il consiglio deve dire cosa manca davvero: "importa dal concorrente" non
+    // risolve nulla se a mancare sono proprio le macchine tue, e viceversa.
+    let messaggio;
+    if (!mie.length && !loro.length) {
+      messaggio = `Non ci sono ancora macchine in catalogo, né tue né di un concorrente.
+        Importa un listino PDF qui sopra per le tue, o in Gestione concorrenti per quelle
+        del concorrente (oppure aggiungile a mano).`;
+    } else if (!mie.length) {
+      messaggio = `Mancano le tue macchine: quelle del concorrente ci sono già.
+        Importa un listino PDF o aggiungine una a mano con i pulsanti qui sopra.`;
+    } else {
+      messaggio = `Manca il termine di paragone: le tue macchine ci sono già.
+        Importa un listino di un concorrente in Gestione concorrenti.`;
+    }
     wrap.innerHTML = `
       <div class="section-card">
         <div class="section-card-title">Confronto macchine</div>
-        <div class="td-muted" style="padding:6px 0">
-          Servono almeno una macchina tua e una di un concorrente. Importa un listino in
-          Gestione concorrenti per avere il termine di paragone.
-        </div>
+        <div class="td-muted" style="padding:6px 0">${messaggio}</div>
       </div>`;
     return;
   }
 
-  S.confrontoMacchine = S.confrontoMacchine && S.confrontoMacchine.length
-    ? S.confrontoMacchine
-    : [{ mia: mie[0].id, sua: loro[0].id }];
+  // Le righe salvate puntano a id di macchine: se il catalogo e' cambiato
+  // (cambio di account nella stessa scheda, o una macchina accoppiata e' stata
+  // eliminata) quegli id possono non esistere piu' in questo catalogo. Tenerle
+  // e ripiegare in silenzio sulla prima macchina disponibile farebbe dire alla
+  // riga un accoppiamento diverso da quello scelto dall'operatore: si scarta
+  // la riga invece, garantendo pero' che ne resti sempre almeno una quando ci
+  // sono macchine da entrambi i lati.
+  const righeValide = (S.confrontoMacchine || []).filter(r =>
+    mie.some(m => m.id === r.mia) && loro.some(m => m.id === r.sua));
+  S.confrontoMacchine = righeValide.length ? righeValide : [{ mia: mie[0].id, sua: loro[0].id }];
 
   const opzioni = (lista, sel) => lista
     .map(m => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('');
 
   let totMia = 0, totSua = 0;
   const righe = S.confrontoMacchine.map((r, i) => {
-    const a = mie.find(m => m.id === r.mia) || mie[0];
-    const b = loro.find(m => m.id === r.sua) || loro[0];
+    const a = mie.find(m => m.id === r.mia);
+    const b = loro.find(m => m.id === r.sua);
     totMia += a.prezzo; totSua += b.prezzo;
     const diff = a.prezzo - b.prezzo;
     return `<tr>
@@ -1765,11 +1783,8 @@ function aggiungiConfrontoMacchina() {
 
 function togliConfrontoMacchina(i) {
   S.confrontoMacchine.splice(i, 1);
-  if (!S.confrontoMacchine.length) {
-    const mie = (S.macchine || []).filter(m => !m.concorrenteId);
-    const loro = (S.macchine || []).filter(m => m.concorrenteId);
-    if (mie.length && loro.length) S.confrontoMacchine.push({ mia: mie[0].id, sua: loro[0].id });
-  }
+  // Se questa era l'ultima riga, renderCalcolatoreMacchine() ne rimette una
+  // di default (stessa garanzia usata per le righe che puntano a id spariti).
   renderCalcolatoreMacchine();
 }
 
@@ -3041,6 +3056,12 @@ async function avviaApp() {
   // e se sopravvivesse un "Salva" successivo scriverebbe dati vecchi sopra
   // al catalogo dell'account ora attivo.
   S.macchinaInModifica = null;
+  // Le coppie del confronto macchine sono accoppiate per id, e gli id sono
+  // globali ma appartengono al catalogo di un account: quelli salvati
+  // dall'account precedente quasi certamente non esistono in questo catalogo,
+  // percio' ogni riga cadrebbe sul ripiego della prima macchina disponibile e
+  // tutte le righe collasserebbero sulla stessa coppia, gonfiando il totale.
+  S.confrontoMacchine = null;
   // loadStrutture/loadConcorrenti richiedono un account (dati privati per utente):
   // in modalita' ospite falliscono con 401, atteso. Non deve bloccare il boot.
   await loadStrutture().catch(() => { S.strutture = []; });
@@ -3100,6 +3121,9 @@ async function authLogout(silent) {
   // catturati prima del logout non devono ripresentarsi (e finire salvati)
   // sotto l'account che accedera' dopo.
   S.macchinaInModifica = null;
+  // Stesso motivo: gli id delle macchine accoppiate nel confronto sono del
+  // catalogo dell'account che esce e non hanno senso per quello successivo.
+  S.confrontoMacchine = null;
   mostraAuthScreen();
 }
 
