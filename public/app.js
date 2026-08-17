@@ -71,13 +71,24 @@ async function api(path, opts = {}) {
     // Se non c'era token (ospite su una rotta privata) è un 401 atteso: non forzare il logout.
     if (S.auth && S.auth.token) {
       authLogout(true);
-      throw new Error('Sessione scaduta, effettua di nuovo l\'accesso');
+      throw new Error(t('errore.sessioneScaduta'));
     }
-    throw new Error('Accedi o registrati per vedere questi dati');
+    throw new Error(t('errore.accediPerVedere'));
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || res.statusText);
+    const dati = await res.json().catch(() => ({ error: res.statusText }));
+    const codice = dati && dati.codice;
+    // Il server manda un codice piu' il testo italiano: quando conosciamo la
+    // traduzione del codice, l'errore lanciato la porta; altrimenti resta il
+    // testo del server, come prima (rilievo I8). Il codice resta comunque
+    // sull'oggetto Error, cosi' chi chiama puo' distinguere il caso senza
+    // leggere una frase che ora cambia con la lingua.
+    const tradotta = codice && window.I18n && typeof window.I18n.esiste === 'function' && window.I18n.esiste('errore.' + codice)
+      ? t('errore.' + codice)
+      : null;
+    const err = new Error(tradotta || (dati && dati.error) || res.statusText);
+    if (codice) err.codice = codice;
+    throw err;
   }
   return res.json();
 }

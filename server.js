@@ -214,13 +214,13 @@ function userFromToken(req) {
 }
 function requireAuth(req, res, next) {
   const u = userFromToken(req);
-  if (!u) return res.status(401).json({ error: 'Autenticazione richiesta' });
+  if (!u) return res.status(401).json({ error: 'Autenticazione richiesta', codice: 'AUTENTICAZIONE_RICHIESTA' });
   req.user = u; next();
 }
 function optionalAuth(req, res, next) { req.user = userFromToken(req); next(); }
 function requireAdmin(req, res, next) {
   const u = userFromToken(req);
-  if (!u) return res.status(401).json({ error: 'Autenticazione richiesta' });
+  if (!u) return res.status(401).json({ error: 'Autenticazione richiesta', codice: 'AUTENTICAZIONE_RICHIESTA' });
   if (u.email.toLowerCase() !== ADMIN_EMAIL) return res.status(403).json({ error: 'Solo l\'amministratore può modificare il catalogo' });
   req.user = u; next();
 }
@@ -1510,7 +1510,13 @@ app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), asyn
     } catch (err) {
       // Errore comprensibile all'operatore (PDF scansionato, protetto, corrotto).
       annota('errore', err.codice || err.message);
-      return res.status(400).json({ error: err.message, codice: err.codice || 'PDF_NON_LEGGIBILE' });
+      return res.status(400).json({
+        error: err.message,
+        codice: err.codice || 'PDF_NON_LEGGIBILE',
+        // Causa tecnica separata dal messaggio (vedi lib/pdfestrazione.js):
+        // il client la sostituisce dentro la frase tradotta.
+        ...(err.dettaglio ? { dettaglio: err.dettaglio } : {})
+      });
     }
 
     const cls = pdfclassifica.classificaRighe(grezze);
@@ -1606,7 +1612,10 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     let risultato = {};
     if (bozza.entita === 'concorrente') {
       const nomeConc = String(nome || '').trim();
-      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente', codice: 'NOME_CONCORRENTE_MANCANTE' });
+      // Codice proprio (non NOME_CONCORRENTE_MANCANTE, che resta di
+      // lib/concorrenti.js): stesso caso a monte, testo italiano diverso, e
+      // un solo codice non puo' coprire due frasi (rilievo I2).
+      if (!nomeConc) return res.status(400).json({ error: 'Manca il nome del concorrente', codice: 'CONFERMA_SENZA_NOME_CONCORRENTE' });
       risultato = concorrenti.upsertConcorrente(
         db, nomeConc,
         valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),

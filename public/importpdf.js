@@ -30,7 +30,11 @@
   function messaggioErrore(dati, fallback) {
     const codice = dati && dati.codice;
     if (codice && window.I18n && typeof window.I18n.esiste === 'function' && window.I18n.esiste('errore.' + codice)) {
-      return t('errore.' + codice);
+      const testo = t('errore.' + codice, { dettaglio: dati && dati.dettaglio });
+      // Se la chiave attende un segnaposto che il server non ha valorizzato
+      // (es. dettaglio assente), non mostrare la graffa a schermo: si ricade
+      // sul testo del server, come quando il codice non e' tradotto (C1).
+      if (!/\{[a-zA-Z]+\}/.test(testo)) return testo;
     }
     return (dati && dati.error) || fallback;
   }
@@ -286,7 +290,7 @@
       S.buffer = await file.arrayBuffer();
       const lib = await pdfjs();
       S.pdfDoc = await lib.getDocument({ data: S.buffer.slice(0) }).promise;
-      if (S && S.fase === 'estrai') fase('estrai', t('importPdf.nota.documentoPagine', { n: S.pdfDoc.numPages }));
+      if (S && S.fase === 'estrai') fase('estrai', t(S.pdfDoc.numPages === 1 ? 'importPdf.nota.documentoPagine.uno' : 'importPdf.nota.documentoPagine.molti', { n: S.pdfDoc.numPages }));
       return S.pdfDoc;
     })().catch(() => null);
 
@@ -346,13 +350,13 @@
         }), 4 + q * 26);
       });
       xhr.upload.addEventListener('load', () => fase('estrai',
-        S && S.pdfDoc ? t('importPdf.nota.documentoPagine', { n: S.pdfDoc.numPages }) : '', 34));
+        S && S.pdfDoc ? t(S.pdfDoc.numPages === 1 ? 'importPdf.nota.documentoPagine.uno' : 'importPdf.nota.documentoPagine.molti', { n: S.pdfDoc.numPages }) : '', 34));
 
       xhr.addEventListener('load', () => {
         let dati = null;
         try { dati = JSON.parse(xhr.responseText); } catch (_) {}
         if (xhr.status >= 200 && xhr.status < 300 && dati) risolvi(dati);
-        else rifiuta(new Error(messaggioErrore(dati, `Errore ${xhr.status}`)));
+        else rifiuta(new Error(messaggioErrore(dati, t('errore.rispostaServer', { stato: xhr.status }))));
       });
       xhr.addEventListener('error', () => rifiuta(new Error(t('importPdf.connessioneInterrotta'))));
       xhr.send(fd);
@@ -654,13 +658,13 @@
     if (!scartate.length) return '';
     return `
       <div class="imp-scartate">
-        <div class="imp-scartate-tit">${esc(t('importPdf.scartateTitolo', { n: scartate.length }))}</div>
+        <div class="imp-scartate-tit">${esc(t(scartate.length === 1 ? 'importPdf.scartateTitolo.uno' : 'importPdf.scartateTitolo.molti', { n: scartate.length }))}</div>
         <table class="imp-tabella">
           <tbody>
             ${scartate.map(r => `
               <tr>
                 <td class="imp-scartate-testo" title="${esc(r.motivo || '')}">
-                  <span class="imp-scartate-pag">${esc(t('importPdf.paginaAbbrev'))}${r.pagina}</span> ${esc(r.testo)}
+                  <span class="imp-scartate-pag">${esc(t('importPdf.pagina', { n: r.pagina }))}</span> ${esc(r.testo)}
                   <div class="imp-scartate-motivo">${esc(r.motivo || '')}</div>
                 </td>
                 <td style="width:96px"><button type="button" class="imp-mini" data-recupera="${r.indice}">${esc(t('importPdf.recupera'))}</button></td>
@@ -811,16 +815,16 @@
         body: JSON.stringify({ nome: nomeConc, righe, confermaCompletezza: true, concorrenteId })
       });
       const dati = await resp.json().catch(() => null);
-      if (!resp.ok) throw new Error(messaggioErrore(dati, `Errore ${resp.status}`));
+      if (!resp.ok) throw new Error(messaggioErrore(dati, t('errore.rispostaServer', { stato: resp.status })));
 
       const alFine = S.alFine;
       const esito = dati;
       chiudi();
       const dettagli = [
-        esito.ignorate ? t('importPdf.ignorate', { n: esito.ignorate }) : null,
-        esito.duplicate ? t('importPdf.duplicateAccorpate', { n: esito.duplicate }) : null
+        esito.ignorate ? t(esito.ignorate === 1 ? 'importPdf.ignorate.uno' : 'importPdf.ignorate.molti', { n: esito.ignorate }) : null,
+        esito.duplicate ? t(esito.duplicate === 1 ? 'importPdf.duplicateAccorpate.uno' : 'importPdf.duplicateAccorpate.molti', { n: esito.duplicate }) : null
       ].filter(Boolean);
-      alert(t('importPdf.importCompletato', {
+      alert(t(esito.importate === 1 ? 'importPdf.importCompletato.uno' : 'importPdf.importCompletato.molti', {
         n: esito.importate,
         dettagli: dettagli.length ? ' (' + dettagli.join(', ') + ')' : ''
       }));
@@ -832,7 +836,7 @@
         S.inCorso = false;
         aggiornaPiede();
       }
-      alert(t('importPdf.importFallito') + ': ' + err.message);
+      alert(t('importPdf.importFallitoDettaglio', { msg: err.message }));
     }
   }
 
