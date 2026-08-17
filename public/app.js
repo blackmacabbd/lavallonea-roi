@@ -136,11 +136,11 @@ function buildSidebar() {
     <div class="nav-item ${isActive('dashboard')}" onclick="navigate('dashboard')">
       <span class="nav-icon">📊</span> ${t('menu.dashboard')}
     </div>
-    <div class="nav-divider">Strutture</div>
+    <div class="nav-divider">${t('sidebar.divStrutture')}</div>
   `;
 
   if (S.strutture.length === 0) {
-    html += `<div style="padding:8px 16px;font-size:12px;color:#9ca3af">Nessuna struttura</div>`;
+    html += `<div style="padding:8px 16px;font-size:12px;color:#9ca3af">${t('sidebar.nessunaStruttura')}</div>`;
   }
 
   for (const s of S.strutture) {
@@ -159,7 +159,7 @@ function buildSidebar() {
           <div class="struttura-group">
             <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
               <span class="sname">${escHtml(label)}</span>
-              <span class="struttura-del" title="Elimina questo calcolo" onclick="event.stopPropagation(); eliminaFileSidebarUI(${f.id}, '${escHtml(label)}')">×</span>
+              <span class="struttura-del" title="${escHtml(t('sidebar.eliminaCalcolo'))}" onclick="event.stopPropagation(); eliminaFileSidebarUI(${f.id}, '${escHtml(label)}')">×</span>
             </div>
           </div>
         `;
@@ -174,7 +174,7 @@ function buildSidebar() {
         <div class="struttura-group">
           <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
             <span class="sname">${escHtml(s.nome)}</span>
-            <span class="struttura-del" title="Elimina struttura" onclick="event.stopPropagation(); eliminaStrutturaUI(${s.id})">×</span>
+            <span class="struttura-del" title="${escHtml(t('sidebar.eliminaStruttura'))}" onclick="event.stopPropagation(); eliminaStrutturaUI(${s.id})">×</span>
           </div>
         </div>
       `;
@@ -182,7 +182,7 @@ function buildSidebar() {
   }
 
   html += `
-    <div class="nav-divider" style="margin-top:8px">Gestione</div>
+    <div class="nav-divider" style="margin-top:8px">${t('sidebar.divGestione')}</div>
     <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
       <span class="nav-icon">💰</span> ${t('menu.piani')}
     </div>
@@ -208,25 +208,25 @@ function buildSidebar() {
   // Gruppo a scomparsa "Altro": voci usate raramente / tecniche
   const altroOpen = S.gestioneOpen ? 'open' : '';
   html += `
-    <div class="nav-divider" style="margin-top:8px">Altro</div>
+    <div class="nav-divider" style="margin-top:8px">${t('sidebar.divAltro')}</div>
     <div class="struttura-group">
       <div class="struttura-header ${altroOpen}" onclick="toggleGestione()">
-        <span class="sname">Cronologia e strumenti</span>
+        <span class="sname">${t('sidebar.cronologiaStrumenti')}</span>
         <span class="struttura-chevron">›</span>
       </div>
       <div class="struttura-children ${altroOpen}">
-        <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">Risparmio totale strutture</div>
+        <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">${t('menu.risparmioTotale')}</div>
         <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">${t('menu.cronologia')}</div>
-        <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">Debug Excel</div>
+        <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">${t('menu.debugExcel')}</div>
       </div>
     </div>
   `;
 
   html += `
     <div class="sidebar-account">
-      <button class="account-btn" onclick="toggleAccountMenu()" title="Account">
+      <button class="account-btn" onclick="toggleAccountMenu()" title="${escHtml(t('comune.account'))}">
         <span class="account-ico">👤</span>
-        <span class="account-email">${S.auth.guest ? t('comune.ospite') : (S.auth.email || 'Account')}</span>
+        <span class="account-email">${S.auth.guest ? t('comune.ospite') : (S.auth.email || t('comune.account'))}</span>
       </button>
       <div id="account-menu" class="account-menu" style="display:none">
         ${S.auth.guest || !S.auth.token ? `
@@ -261,25 +261,25 @@ function toggleGestione() {
 
 async function eliminaStrutturaUI(id) {
   const s = S.strutture.find(x => x.id === id);
-  const nome = s ? s.nome : 'questa struttura';
-  if (!confirm(`Eliminare la struttura "${nome}" con tutti i suoi file e dati? L'operazione non è reversibile.`)) return;
+  const nome = s ? s.nome : t('sidebar.questaStruttura');
+  if (!confirm(t('sidebar.confermaEliminaStruttura', { nome }))) return;
   try {
     await api(`/api/strutture/${id}`, { method: 'DELETE' });
     await loadStrutture();
     buildSidebar();
     navigate('dashboard');
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 // Elimina un singolo calcolo (file) quando una struttura ne ha piu' di uno in sidebar.
 async function eliminaFileSidebarUI(fileId, label) {
-  if (!confirm(`Eliminare il calcolo "${label}"? L'operazione non è reversibile.`)) return;
+  if (!confirm(t('sidebar.confermaEliminaCalcolo', { label }))) return;
   try {
     await api(`/api/cronologia/${fileId}`, { method: 'DELETE' });
     await loadStrutture();
     buildSidebar();
     if (window._currentFileId === fileId) navigate('dashboard');
-  } catch (e) { alert('Errore: ' + e.message); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 function isActive(view, extra) {
@@ -342,6 +342,7 @@ function navigate(view, params = {}) {
 // del proprio markup. Se la vista corrente azzera stato al suo ingresso
 // (es. 'macchinari' chiude il listino aperto), l'effetto e' accettato.
 window.ridisegnaTutto = function () {
+  traduciMarkupStatico();
   navigate(window._currentView || 'dashboard', window._currentParams || {});
 };
 
@@ -352,7 +353,7 @@ async function renderDashboard() {
     data = await api('/api/dashboard');
   } catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore caricamento</div>
+      <div class="empty-title">${t('stato.erroreCaricamento')}</div>
       <div class="empty-sub">${e.message}</div></div>`);
     return;
   }
@@ -367,9 +368,9 @@ async function renderDashboard() {
       <div class="page-body">
         <div class="empty-state" style="margin-bottom:24px">
           <div class="empty-icon">📂</div>
-          <div class="empty-title">Nessun dato ancora</div>
-          <div class="empty-sub">Carica un file Excel oppure usa il Calcolatore ROI qui sotto.</div>
-          <button class="btn-primary mt-4" onclick="openUploadModal()">+ Carica file Excel</button>
+          <div class="empty-title">${t('stato.nessunDato')}</div>
+          <div class="empty-sub">${t('pagina.dashboard.corpoVuoto')}</div>
+          <button class="btn-primary mt-4" onclick="openUploadModal()">${t('pagina.dashboard.caricaBtn')}</button>
         </div>
       </div>
     `);
@@ -391,9 +392,9 @@ async function renderDashboard() {
       <div class="section-card" id="roi-hero"></div>
       <div class="riepilogo-band">
         <div class="kpi-card kpi-risparmio" id="dash-risparmio-card">
-          <div class="kpi-label">Risparmio calcolo attuale</div>
+          <div class="kpi-label">${t('pagina.dashboard.risparmioLabel')}</div>
           <div class="kpi-value" id="dash-risparmio-val">${euro(0)}</div>
-          <div class="kpi-sub">vs concorrenza — solo il calcolo qui sopra</div>
+          <div class="kpi-sub">${t('pagina.dashboard.risparmioSub')}</div>
         </div>
       </div>
       ${buildRoiActionsHtml()}
@@ -423,31 +424,31 @@ async function renderRisparmioTotale() {
   try { data = await api('/api/dashboard'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
     return;
   }
   const { differenziale_totale, per_struttura } = data;
   setMain(`
     <div class="page-header">
       <div>
-        <div class="page-title">Risparmio totale strutture</div>
-        <div class="page-subtitle">Somma del risparmio di tutti i calcoli salvati, per struttura</div>
+        <div class="page-title">${t('menu.risparmioTotale')}</div>
+        <div class="page-subtitle">${t('pagina.risparmioTotale.sottotitolo')}</div>
       </div>
     </div>
     <div class="page-body">
       <div class="kpi-card kpi-risparmio" style="max-width:340px;margin-bottom:24px">
-        <div class="kpi-label">Risparmio totale dottori</div>
+        <div class="kpi-label">${t('pagina.risparmioTotale.kpiLabel')}</div>
         <div class="kpi-value" style="color:${differenziale_totale >= 0 ? 'var(--blue)' : 'var(--red)'}">${euro(differenziale_totale)}</div>
-        <div class="kpi-sub">vs concorrenza — tutte le strutture</div>
+        <div class="kpi-sub">${t('pagina.risparmioTotale.kpiSub')}</div>
       </div>
       ${per_struttura.length ? `
       <div class="section-card">
-        <div class="section-card-title">Riepilogo per struttura</div>
+        <div class="section-card-title">${t('pagina.risparmioTotale.riepilogoTitolo')}</div>
         <div class="chart-canvas-wrap">
           <canvas id="chart-confronto-tot" height="${Math.max(180, per_struttura.length * 46)}"></canvas>
         </div>
       </div>` : `<div class="empty-state"><div class="empty-icon">📭</div>
-        <div class="empty-title">Nessun calcolo salvato</div></div>`}
+        <div class="empty-title">${t('pagina.risparmioTotale.nessunCalcolo')}</div></div>`}
     </div>
   `);
 
@@ -459,8 +460,8 @@ async function renderRisparmioTotale() {
         data: {
           labels: per_struttura.map(s => s.nome),
           datasets: [
-            { label: 'Concorrenza scontata', data: per_struttura.map(s => s.fatturato), backgroundColor: '#ce181e', borderRadius: 4 },
-            { label: 'Mylav scontata',  data: per_struttura.map(s => s.costo),    backgroundColor: '#0f76bc', borderRadius: 4 }
+            { label: t('chart.concorrenzaScontata'), data: per_struttura.map(s => s.fatturato), backgroundColor: '#ce181e', borderRadius: 4 },
+            { label: t('chart.mylavScontata'),  data: per_struttura.map(s => s.costo),    backgroundColor: '#0f76bc', borderRadius: 4 }
           ]
         },
         options: {
@@ -1144,7 +1145,7 @@ async function renderCronologia() {
     [rows, strutture] = await Promise.all([api('/api/cronologia'), api('/api/strutture')]);
   } catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
     return;
   }
 
@@ -1158,9 +1159,9 @@ async function renderCronologia() {
     </div>
     <div class="page-body">
       <div class="filter-bar">
-        <label>Struttura:</label>
+        <label>${t('cronologia.filtroLabel')}</label>
         <select id="filter-struttura" onchange="filterCronologia()">
-          <option value="">Tutte</option>
+          <option value="">${t('cronologia.tutte')}</option>
           ${optStrutture}
         </select>
       </div>
@@ -1168,8 +1169,8 @@ async function renderCronologia() {
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Data</th><th>File</th><th>Struttura</th><th>Fogli</th>
-              <th>Concorrenza scontata</th><th>Mylav scontata</th><th>Risparmio</th><th></th>
+              <th>${t('cronologia.tabella.data')}</th><th>${t('cronologia.tabella.file')}</th><th>${t('comune.struttura')}</th><th>${t('cronologia.tabella.fogli')}</th>
+              <th>${t('chart.concorrenzaScontata')}</th><th>${t('chart.mylavScontata')}</th><th>${t('comune.risparmio')}</th><th></th>
             </tr></thead>
             <tbody id="crono-tbody">
               ${buildCronoRows(rows)}
@@ -1185,7 +1186,7 @@ async function renderCronologia() {
 
 function buildCronoRows(rows) {
   if (!rows.length) return `<tr><td colspan="7" class="td-muted text-center" style="padding:24px">
-    Nessun file caricato</td></tr>`;
+    ${t('cronologia.nessunFile')}</td></tr>`;
 
   // Se la stessa struttura ha piu' salvataggi, numerali (n) in ordine di creazione
   // (id crescente = piu' vecchio prima) cosi' si distinguono in elenco.
@@ -1206,7 +1207,7 @@ function buildCronoRows(rows) {
       <td class="td-yellow">${euro(r.totale_costo)}</td>
       <td class="td-green">${euro(r.differenziale)}</td>
       <td onclick="event.stopPropagation()">
-        <button class="roi-del-btn" onclick="deleteCrono(${r.id})" title="Elimina">×</button>
+        <button class="roi-del-btn" onclick="deleteCrono(${r.id})" title="${escHtml(t('comune.elimina'))}">×</button>
       </td>
     </tr>`).join('');
 }
@@ -1220,14 +1221,14 @@ async function filterCronologia() {
 }
 
 async function deleteCrono(id) {
-  if (!confirm('Eliminare questo file dalla cronologia? Verranno rimossi tutti i dati associati.')) return;
+  if (!confirm(t('cronologia.confermaElimina'))) return;
   try {
     await fetch(`/api/cronologia/${id}`, { method: 'DELETE', headers: authHeaders() });
     await loadStrutture();
     buildSidebar();
     renderCronologia();
   } catch (e) {
-    alert('Errore: ' + e.message);
+    alert(t('errore.generico', { msg: e.message }));
   }
 }
 
@@ -1241,15 +1242,15 @@ async function renderConfronto() {
   try { data = await api('/api/confronto'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
     return;
   }
 
   if (data.length < 2) {
     setMain(`<div class="empty-state">
       <div class="empty-icon">⚖️</div>
-      <div class="empty-title">Servono almeno 2 strutture</div>
-      <div class="empty-sub">Carica dati per più strutture per confrontarle.</div>
+      <div class="empty-title">${t('confrontoStrutture.serveAlmeno2')}</div>
+      <div class="empty-sub">${t('confrontoStrutture.caricaDatiSub')}</div>
     </div>`);
     return;
   }
@@ -1262,7 +1263,7 @@ async function renderConfronto() {
     </div>
     <div class="page-body">
       <div class="section-card">
-        <div class="section-card-title">Concorrenza vs Mylav vs Risparmio</div>
+        <div class="section-card-title">${t('confrontoStrutture.chartTitolo')}</div>
         <div class="chart-legend" id="conf-legend" style="margin-bottom:12px"></div>
         <canvas id="chart-conf" height="240"></canvas>
       </div>
@@ -1271,8 +1272,8 @@ async function renderConfronto() {
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Struttura</th><th>Listino conc.</th>
-              <th>Scontato conc.</th><th>Scontato Lav</th><th>Risparmio</th>
+              <th>${t('comune.struttura')}</th><th>${t('comune.listinoConc')}</th>
+              <th>${t('comune.scontatoConc')}</th><th>${t('confrontoStrutture.tabella.scontatoLav')}</th><th>${t('comune.risparmio')}</th>
             </tr></thead>
             <tbody>
               ${data.map(s => `<tr>
@@ -1290,9 +1291,9 @@ async function renderConfronto() {
   `);
 
   el('conf-legend').innerHTML = legendHtml([
-    { label: 'Concorrenza scontata', color: '#ce181e' },
-    { label: 'Mylav scontata',  color: '#5fa8db' },
-    { label: 'Risparmio dottore',    color: '#0f76bc' }
+    { label: t('chart.concorrenzaScontata'), color: '#ce181e' },
+    { label: t('chart.mylavScontata'),  color: '#5fa8db' },
+    { label: t('chart.risparmioDottore'),    color: '#0f76bc' }
   ]);
 
   S.charts.conf = new Chart(el('chart-conf'), {
@@ -1300,9 +1301,9 @@ async function renderConfronto() {
     data: {
       labels: data.map(s => s.nome),
       datasets: [
-        { label: 'Concorrenza scontata', data: data.map(s => s.prezzo_scontato_concorrenza), backgroundColor: '#ce181e', borderRadius: 4 },
-        { label: 'Mylav scontata',  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#5fa8db', borderRadius: 4 },
-        { label: 'Risparmio dottore',    data: data.map(s => s.risparmio_totale),              backgroundColor: '#0f76bc', borderRadius: 4 }
+        { label: t('chart.concorrenzaScontata'), data: data.map(s => s.prezzo_scontato_concorrenza), backgroundColor: '#ce181e', borderRadius: 4 },
+        { label: t('chart.mylavScontata'),  data: data.map(s => s.totale_scontato_lav),         backgroundColor: '#5fa8db', borderRadius: 4 },
+        { label: t('chart.risparmioDottore'),    data: data.map(s => s.risparmio_totale),              backgroundColor: '#0f76bc', borderRadius: 4 }
       ]
     },
     options: {
@@ -1337,8 +1338,8 @@ function showStatus(type, msg) {
 }
 
 async function doUpload(file, force = false) {
-  if (S.auth.guest || !S.auth.token) { showStatus('error', '❌ Accedi per salvare i dati'); return; }
-  showStatus('loading', '<div class="spinner" style="width:18px;height:18px"></div> Elaborazione...');
+  if (S.auth.guest || !S.auth.token) { showStatus('error', '❌ ' + t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  showStatus('loading', '<div class="spinner" style="width:18px;height:18px"></div> ' + t('caricamento.elaborazione'));
 
   const fd = new FormData();
   fd.append('file', file);
@@ -1357,7 +1358,7 @@ async function doUpload(file, force = false) {
       el('upload-status').hidden = true;
       return;
     }
-    if (!res.ok) throw new Error(resp.error || 'Errore upload');
+    if (!res.ok) throw new Error(I18n.messaggioErrore(resp, t('errore.upload')));
   } catch (e) {
     showStatus('error', '❌ ' + e.message);
     return;
@@ -1395,13 +1396,14 @@ async function downloadPdf(fileId, foglio, tipo) {
       body:    JSON.stringify({ donutImg, barreImg, donutLegend, barreLegend })
     });
   } catch (e) {
-    alert('Errore rete: ' + e.message);
+    alert(t('errore.reteMsg', { msg: e.message }));
     return;
   }
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    alert('Errore PDF: ' + (err.error || res.statusText));
+    const fallback = res.statusText || t('errore.rispostaServer', { stato: res.status });
+    alert(t('errore.pdfMsg', { msg: I18n.messaggioErrore(err, fallback) }));
     return;
   }
 
@@ -1444,13 +1446,13 @@ function renderDebug() {
   setMain(`
     <div class="page-header">
       <div>
-        <div class="page-title">🔍 Debug Excel</div>
-        <div class="page-subtitle">Analizza gli header rilevati senza salvare</div>
+        <div class="page-title">${t('pagina.debug.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.debug.sottotitolo')}</div>
       </div>
     </div>
     <div class="page-body">
       <div class="section-card">
-        <div class="section-card-title">Carica un file Excel da analizzare</div>
+        <div class="section-card-title">${t('pagina.debug.caricaTitolo')}</div>
         <div style="margin-top:12px">
           <input type="file" id="dbg-input" accept=".xlsx,.xls"
                  style="font-size:13px;padding:6px;border:1px solid #e8e9eb;border-radius:6px;width:100%">
@@ -1473,18 +1475,18 @@ function renderDebug() {
     for (const [sheet, info] of Object.entries(data)) {
       html += `<div style="margin-bottom:24px">
         <div style="font-weight:500;font-size:14px;margin-bottom:8px;color:#0f76bc">
-          Foglio: <strong>${sheet}</strong> — riga header: ${info.hRow}
+          ${t('pagina.debug.foglioInfo', { sheet, riga: info.hRow })}
         </div>
         <div style="font-family:monospace;font-size:12px;background:#f5f6f8;
                     padding:12px;border-radius:6px;overflow-x:auto;white-space:pre">${info.headers.join('\n')}</div>
-        <div style="margin-top:8px;font-size:12px;color:#6b7280;font-weight:500">Prime 3 righe:</div>
+        <div style="margin-top:8px;font-size:12px;color:#6b7280;font-weight:500">${t('pagina.debug.prime3Righe')}</div>
         <div style="font-family:monospace;font-size:11px;background:#f5f6f8;
                     padding:10px;border-radius:6px;overflow-x:auto;white-space:pre;margin-top:4px">${
-          info.sample.map((r,i) => `Riga ${i+1}: ${JSON.stringify(r)}`).join('\n')
+          info.sample.map((r,i) => t('pagina.debug.rigaN', { n: i + 1, json: JSON.stringify(r) })).join('\n')
         }</div>
       </div>`;
     }
-    out.innerHTML = html || '<div style="color:#6b7280">Nessun foglio trovato</div>';
+    out.innerHTML = html || `<div style="color:#6b7280">${t('pagina.debug.nessunFoglio')}</div>`;
   });
 }
 
@@ -2402,21 +2404,21 @@ function buildRoiSectionHtml() {
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <div class="roi-toolbar">
       <div>
-        <div class="roi-toolbar-title">Calcolatore ROI</div>
-        <div class="roi-toolbar-sub">Confronto risparmio Mylav vs concorrenza</div>
+        <div class="roi-toolbar-title">${t('roi.toolbarTitolo')}</div>
+        <div class="roi-toolbar-sub">${t('roi.toolbarSub')}</div>
       </div>
       <div class="roi-toolbar-controls">
         <div style="position:relative">
           <button class="btn-outline roi-piano-btn roi-pill-myl" id="roi-piano-btn"
                   onclick="togglePianoPanel()" title="${escHtml(pianoSelezionatoNome() || '')}">
-            Piano: ${escHtml(pianoSelezionatoNome() || 'Nessuno')} ▾
+            ${t('roi.pianoBtn', { nome: escHtml(pianoSelezionatoNome() || t('roi.nessuno')) })}
           </button>
           <div id="roi-piano-panel" class="roi-piano-panel" style="display:none"></div>
         </div>
         <div style="position:relative">
           <button class="btn-outline roi-piano-btn roi-pill-conc" id="roi-concorrente-btn"
                   onclick="toggleConcorrentePanel()" title="${escHtml(concorrenteSelezionatoNome() || '')}">
-            Concorrente: ${escHtml(concorrenteSelezionatoNome() || 'Nessuno')} ▾
+            ${t('roi.concorrenteBtn', { nome: escHtml(concorrenteSelezionatoNome() || t('roi.nessuno')) })}
           </button>
           <div id="roi-concorrente-panel" class="roi-piano-panel" style="display:none"></div>
         </div>
@@ -2424,7 +2426,7 @@ function buildRoiSectionHtml() {
     </div>
     <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
-      <button class="btn-outline" onclick="addRigaRoi()" style="font-size:12px">+ Aggiungi esame</button>
+      <button class="btn-outline" onclick="addRigaRoi()" style="font-size:12px">${t('roi.aggiungiEsame')}</button>
     </div>
     <div id="roi-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="roi-ac" class="roi-autocomplete" style="display:none"></div>
@@ -2437,18 +2439,18 @@ function buildRoiSectionHtml() {
 function buildRoiActionsHtml() {
   return `
     <div class="roi-actions-bar">
-      <button class="btn-outline" onclick="salvaCalcolo()" style="color:var(--blue);border-color:var(--blue)">💾 Salva come file</button>
-      <button class="btn-outline" onclick="esportaExcelRoi()">📥 Esporta Excel</button>
-      <button class="btn-outline" onclick="navigate('piani')" style="color:var(--blue);border-color:var(--blue)">+ Aggiungi piano MYL</button>
-      <button class="btn-outline" onclick="navigate('concorrenti')" style="color:var(--red);border-color:var(--red)">+ Aggiungi piano concorrenza</button>
+      <button class="btn-outline" onclick="salvaCalcolo()" style="color:var(--blue);border-color:var(--blue)">${t('roi.salvaComeFile')}</button>
+      <button class="btn-outline" onclick="esportaExcelRoi()">${t('roi.esportaExcel')}</button>
+      <button class="btn-outline" onclick="navigate('piani')" style="color:var(--blue);border-color:var(--blue)">${t('roi.aggiungiPianoMyl')}</button>
+      <button class="btn-outline" onclick="navigate('concorrenti')" style="color:var(--red);border-color:var(--red)">${t('roi.aggiungiPianoConcorrenza')}</button>
     </div>
-    <button class="roi-clear-all-btn" onclick="rimuoviTuttoRoi()">🗑️ Rimuovi tutto</button>
+    <button class="roi-clear-all-btn" onclick="rimuoviTuttoRoi()">${t('confronto.rimuoviTutto')}</button>
     <div id="roi-classifica"></div>`;
 }
 
 // Azzera completamente il calcolatore ROI: righe, struttura, piano, concorrente.
 function rimuoviTuttoRoi() {
-  if (!confirm('Rimuovere tutto dal calcolatore? Righe, struttura, piano e concorrente selezionati verranno azzerati.')) return;
+  if (!confirm(t('roi.confermaRimuoviTutto'))) return;
   S.roi.struttura = '';
   S.roi.pianoId = null;
   S.roi.concorrenteId = null;
@@ -2477,10 +2479,10 @@ function renderPianoPanel(filtro) {
   const perCategoria = {};
   filtrati.forEach(p => { (perCategoria[p.categoria] = perCategoria[p.categoria] || []).push(p); });
 
-  let html = `<input class="roi-input" id="roi-piano-search" placeholder="🔍 Cerca piano..."
+  let html = `<input class="roi-input" id="roi-piano-search" placeholder="${escHtml(t('roi.cercaPianoPlaceholder'))}"
     value="${escHtml(filtro)}" oninput="renderPianoPanel(this.value)"
     style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
-  html += `<div class="roi-piano-item" onclick="selezionaPiano(null)" style="font-style:italic">— Nessun piano —</div>`;
+  html += `<div class="roi-piano-item" onclick="selezionaPiano(null)" style="font-style:italic">${t('roi.nessunPianoOpzione')}</div>`;
   for (const [categoria, items] of Object.entries(perCategoria)) {
     html += `<div class="roi-piano-categoria">${escHtml(categoria)}</div>`;
     items.forEach(p => {
@@ -2498,7 +2500,7 @@ function selezionaPiano(id) {
   if (panel) panel.style.display = 'none';
   const btn = el('roi-piano-btn');
   if (btn) {
-    btn.textContent = `Piano: ${pianoSelezionatoNome() || 'Nessuno'} ▾`;
+    btn.textContent = t('roi.pianoBtn', { nome: pianoSelezionatoNome() || t('roi.nessuno') });
     btn.title = pianoSelezionatoNome() || '';
   }
   const tbody = el('roi-tbody');
@@ -2526,10 +2528,10 @@ function renderConcorrentePanel(filtro) {
   const f = filtro.trim().toLowerCase();
   const filtrati = S.concorrenti.filter(c => !f || c.nome.toLowerCase().includes(f));
 
-  let html = `<input class="roi-input" id="roi-concorrente-search" placeholder="🔍 Cerca concorrente..."
+  let html = `<input class="roi-input" id="roi-concorrente-search" placeholder="${escHtml(t('roi.cercaConcorrentePlaceholder'))}"
     value="${escHtml(filtro)}" oninput="renderConcorrentePanel(this.value)"
     style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
-  html += `<div class="roi-piano-item" onclick="selezionaConcorrente(null)" style="font-style:italic">— Nessun concorrente —</div>`;
+  html += `<div class="roi-piano-item" onclick="selezionaConcorrente(null)" style="font-style:italic">${t('roi.nessunConcorrenteOpzione')}</div>`;
   filtrati.forEach(c => {
     html += `<div class="roi-piano-item" onclick="selezionaConcorrente(${c.id})">${escHtml(c.nome)}</div>`;
   });
@@ -2544,7 +2546,7 @@ function selezionaConcorrente(id) {
   if (panel) panel.style.display = 'none';
   const btn = el('roi-concorrente-btn');
   if (btn) {
-    btn.textContent = `Concorrente: ${concorrenteSelezionatoNome() || 'Nessuno'} ▾`;
+    btn.textContent = t('roi.concorrenteBtn', { nome: concorrenteSelezionatoNome() || t('roi.nessuno') });
     btn.title = concorrenteSelezionatoNome() || '';
   }
   const tbody = el('roi-tbody');
@@ -2596,8 +2598,8 @@ function mostraBannerNoMatch(esame, concorrenteId) {
   banner.innerHTML = `
     <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
     <div onclick="mappaturaManualeDaRoi(${concorrenteId})" style="cursor:pointer">
-      🔗 <strong>${escHtml(esame)}</strong> non ha corrispondenza nel listino concorrente.<br>
-      <span style="font-size:11px;color:#6b7280">Clicca per mappare a mano tutti gli esami mancanti</span>
+      ${t('roi.matchBanner.nessunaCorrispondenza', { esame: escHtml(esame) })}<br>
+      <span style="font-size:11px;color:#6b7280">${t('roi.matchBanner.clicaMappa')}</span>
     </div>
   `;
   banner.style.display = 'block';
@@ -2630,8 +2632,8 @@ function mostraBannerMatch(tr, m) {
   banner.innerHTML = `
     <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
     <div onclick="confermaMatchBanner(${tr.dataset.idx}, ${m.esameConcorrenteId})" style="cursor:pointer">
-      💡 Forse corrisponde a <strong>${escHtml(m.nomeOriginale)}</strong> nel listino concorrente — ${fmtE(m.prezzo)}<br>
-      <span style="font-size:11px;color:#6b7280">Clicca per confermare</span>
+      ${t('roi.matchBanner.forseCorrisponde', { nome: escHtml(m.nomeOriginale), prezzo: fmtE(m.prezzo) })}<br>
+      <span style="font-size:11px;color:#6b7280">${t('roi.matchBanner.clicaConfermare')}</span>
     </div>
   `;
   banner.style.display = 'block';
@@ -2661,28 +2663,28 @@ function buildRoiTableHtml() {
   const header1 = `
     <tr>
       <th colspan="4"></th>
-      <th colspan="4" class="roi-grp roi-grp-conc">Concorrenza</th>
+      <th colspan="4" class="roi-grp roi-grp-conc">${t('confronto.tabella.concorrenza')}</th>
       <th></th>
-      <th colspan="4" class="roi-grp roi-grp-myl">Mylav</th>
+      <th colspan="4" class="roi-grp roi-grp-myl">${t('confronto.tabella.mylav')}</th>
       <th></th><th></th>
     </tr>`;
 
   const header2 = `
     <tr>
-      <th style="width:130px">Struttura</th>
+      <th style="width:130px">${t('comune.struttura')}</th>
       <th style="width:12px"></th>
-      <th style="width:170px">ESAMI</th>
-      <th style="width:60px">N.</th>
-      <th style="width:95px;background:rgba(206,24,30,0.04)">Listino conc.</th>
-      <th style="width:65px;background:rgba(206,24,30,0.04)">Sconto%</th>
-      <th style="width:95px;background:rgba(206,24,30,0.04)">Tot. conc.</th>
-      <th style="width:95px;background:rgba(206,24,30,0.04)">Scontato conc.</th>
+      <th style="width:170px">${t('roi.tabella.esami')}</th>
+      <th style="width:60px">${t('roi.tabella.n')}</th>
+      <th style="width:95px;background:rgba(206,24,30,0.04)">${t('comune.listinoConc')}</th>
+      <th style="width:65px;background:rgba(206,24,30,0.04)">${t('roi.tabella.scontoPct')}</th>
+      <th style="width:95px;background:rgba(206,24,30,0.04)">${t('roi.tabella.totConc')}</th>
+      <th style="width:95px;background:rgba(206,24,30,0.04)">${t('comune.scontatoConc')}</th>
       <th style="width:12px"></th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Listino MYL</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. MYL</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Piano MYL</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">Tot. sc. MYL</th>
-      <th style="width:95px">Risparmio</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.listinoMyl')}</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.totMyl')}</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.pianoMyl')}</th>
+      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.totScMyl')}</th>
+      <th style="width:95px">${t('comune.risparmio')}</th>
       <th style="width:28px"></th>
     </tr>`;
 
@@ -2690,7 +2692,7 @@ function buildRoiTableHtml() {
 
   const tots = calcolaRoiTotali();
   const totRow = `<tr class="roi-totals-row">
-    <td colspan="4"><strong>TOTALE</strong></td>
+    <td colspan="4"><strong>${t('roi.tabella.totale')}</strong></td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_listino_conc)}</td>
     <td style="background:rgba(206,24,30,0.04)"></td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_conc)}</td>
@@ -2705,8 +2707,8 @@ function buildRoiTableHtml() {
   </tr>`;
   const diffRow = `<tr class="roi-diff-row">
     <td colspan="13" style="text-align:right;font-size:13px;font-weight:500">
-      <span id="roi-diff-note" style="display:${tots.differenziale < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">⚠ Con questo piano il dottore NON risparmia rispetto alla concorrenza</span>
-      Differenziale totale:
+      <span id="roi-diff-note" style="display:${tots.differenziale < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">${t('roi.avvisoNonRisparmia')}</span>
+      ${t('roi.differenzialeTotale')}
     </td>
     <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'}">${fmtE(tots.differenziale)}</td>
   </tr>`;
@@ -2743,13 +2745,13 @@ function buildRoiRigaHtml(r, i) {
   const scPlaceholder = sc > 0 ? String(sc) : '';
 
   const strutturaCell = i === 0
-    ? `<td><input class="roi-input roi-struttura-inp" list="roi-strutture-list" value="${escHtml(S.roi.struttura)}" placeholder="Struttura…" autocomplete="off" oninput="S.roi.struttura=this.value" style="width:120px"></td>`
+    ? `<td><input class="roi-input roi-struttura-inp" list="roi-strutture-list" value="${escHtml(S.roi.struttura)}" placeholder="${escHtml(t('roi.placeholderStruttura'))}" autocomplete="off" oninput="S.roi.struttura=this.value" style="width:120px"></td>`
     : `<td></td>`;
 
   return `<tr data-idx="${i}" data-tipo="Platinum">
     ${strutturaCell}
     <td></td>
-    <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="Esame…" autocomplete="off" style="width:160px"></td>
+    <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="${escHtml(t('roi.placeholderEsame'))}" autocomplete="off" style="width:160px"></td>
     <td><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
     <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza || ''}" placeholder="0.00"></td>
     <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
@@ -2761,7 +2763,7 @@ function buildRoiRigaHtml(r, i) {
     <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav || ''}" placeholder="0.00"></td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_prezzo_lav">${fmtE(totPL)}</td>
     <td class="roi-calc" data-col="risparmio" style="color:${rispColor};font-weight:500">${fmtE(risp)}</td>
-    <td><button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="Rimuovi">×</button></td>
+    <td><button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="${escHtml(t('concorrenti.rimuovi'))}">×</button></td>
   </tr>`;
 }
 
@@ -2858,15 +2860,15 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
     if (S.roi.pianoId !== requestedPianoId) return; // a newer plan selection superseded this in-flight request; discard
     plInp.classList.remove('roi-prezzo-nuovo');
     if (pResp.fonte === 'piano' || pResp.fonte === 'custom' || pResp.fonte === 'base_fallback') {
-      const titolo = pResp.fonte === 'piano' ? 'Prezzo automatico dal piano'
-        : pResp.fonte === 'custom' ? 'Prezzo personalizzato salvato in precedenza'
-        : 'Prezzo del piano non disponibile per questo esame — mostrato il prezzo base';
+      const titolo = pResp.fonte === 'piano' ? t('roi.tooltip.prezzoAutomatico')
+        : pResp.fonte === 'custom' ? t('roi.tooltip.prezzoCustomSalvato')
+        : t('roi.tooltip.prezzoBaseFallback');
       if (force || campoFillabile(plInp)) {
         plInp.value = pResp.prezzo;
         plInp.dataset.auto = '1';
         plInp.title = titolo;
       } else {
-        plInp.title = `${titolo} (non applicato: modifica manuale in corso)`;
+        plInp.title = t('roi.tooltip.nonApplicato', { titolo });
       }
     } else {
       plInp.dataset.auto = '0';
@@ -2904,11 +2906,11 @@ async function mostraClassificaPiani() {
   const conConc = totConc > 0;
   const mostrati = conConc ? piani.filter(p => p.totale < totConc) : piani;
 
-  const titolo = `<div class="section-card-title">Piani più convenienti per questi esami</div>`;
+  const titolo = `<div class="section-card-title">${t('roi.classifica.titolo')}</div>`;
 
   if (conConc && !mostrati.length) {
     box.innerHTML = `<div class="section-card roi-classifica-card">${titolo}
-      <div class="roi-classifica-empty">Nessun piano batte la concorrenza per questi esami</div></div>`;
+      <div class="roi-classifica-empty">${t('roi.classifica.nessunoConviene')}</div></div>`;
     return;
   }
 
@@ -2917,13 +2919,13 @@ async function mostraClassificaPiani() {
     const risp = conConc
       ? `<td class="roi-classifica-risp">${fmtE(totConc - p.totale)}</td>` : '';
     return `<tr class="${attivo ? 'riga-attiva' : ''}" onclick="selezionaPiano(${p.pianoId})">
-      <td>${escHtml(p.pianoNome)}${attivo ? ' <span class="roi-classifica-badge">selezionato</span>' : ''}</td>
+      <td>${escHtml(p.pianoNome)}${attivo ? ` <span class="roi-classifica-badge">${t('roi.classifica.selezionato')}</span>` : ''}</td>
       <td class="roi-classifica-tot">${fmtE(p.totale)}</td>${risp}</tr>`;
   }).join('');
 
   box.innerHTML = `<div class="section-card roi-classifica-card">${titolo}
     <table class="roi-classifica-table">
-      <thead><tr><th>Piano</th><th>Totale MYLAV</th>${conConc ? '<th>Risparmio vs concorrenza</th>' : ''}</tr></thead>
+      <thead><tr><th>${t('roi.classifica.colPiano')}</th><th>${t('roi.classifica.colTotale')}</th>${conConc ? `<th>${t('roi.classifica.colRisparmio')}</th>` : ''}</tr></thead>
       <tbody>${righe}</tbody>
     </table></div>`;
 }
@@ -2943,14 +2945,15 @@ async function mostraConsiglioTotale() {
 
   const stesso = resp.pianoId === S.roi.pianoId;
   const saltati = resp.nSaltati > 0
-    ? `<br><span style="font-size:11px;color:#6b7280">${resp.nSaltati} esami non a listino esclusi</span>` : '';
+    ? `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.esamiEsclusi', { n: resp.nSaltati })}</span>` : '';
   let messaggio;
   if (stesso) {
-    messaggio = `✓ Stai già usando il piano più conveniente per questi ${resp.nEsami} esami: <strong>${escHtml(resp.pianoNome)}</strong> (${fmtE(resp.totale)})${saltati}`;
+    messaggio = t('roi.consiglio.stessoPiano' + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(resp.pianoNome), totale: fmtE(resp.totale) }) + saltati;
   } else {
     const risparmio = (resp.totaleAttuale != null && resp.totaleAttuale > resp.totale)
-      ? `<br><span style="font-size:11px;color:#6b7280">Risparmi ${fmtE(resp.totaleAttuale - resp.totale)} rispetto al piano attuale</span>` : '';
-    messaggio = `💡 Per questi ${resp.nEsami} esami conviene <strong>${escHtml(resp.pianoNome)}</strong> — ${fmtE(resp.totale)}${risparmio}<br><span style="font-size:11px;color:#6b7280">Clicca per selezionare questo piano</span>${saltati}`;
+      ? `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.risparmioAttuale', { risparmio: fmtE(resp.totaleAttuale - resp.totale) })}</span>` : '';
+    messaggio = t('roi.consiglio.pianoConviene' + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(resp.pianoNome), totale: fmtE(resp.totale) })
+      + risparmio + `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.clicaSeleziona')}</span>` + saltati;
   }
 
   banner.innerHTML = `
@@ -2969,8 +2972,9 @@ async function mostraConsiglioPiano(esame) {
 
   const stessoPiano = consiglio.pianoId === S.roi.pianoId;
   const messaggio = stessoPiano
-    ? `✓ Stai già usando il piano più conveniente per <strong>${escHtml(esame)}</strong>: <strong>${escHtml(consiglio.pianoNome)}</strong> (${fmtE(consiglio.prezzo)})`
-    : `💡 Per <strong>${escHtml(esame)}</strong> conviene <strong>${escHtml(consiglio.pianoNome)}</strong> — ${fmtE(consiglio.prezzo)}<br><span style="font-size:11px;color:#6b7280">Clicca per selezionare questo piano</span>`;
+    ? t('roi.consiglio.stessoPianoSingolo', { esame: escHtml(esame), pianoNome: escHtml(consiglio.pianoNome), prezzo: fmtE(consiglio.prezzo) })
+    : t('roi.consiglio.pianoConvieneSingolo', { esame: escHtml(esame), pianoNome: escHtml(consiglio.pianoNome), prezzo: fmtE(consiglio.prezzo) })
+      + `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.clicaSeleziona')}</span>`;
 
   banner.innerHTML = `
     <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
@@ -3098,7 +3102,7 @@ function initRoiEvents() {
         });
         inp.dataset.auto = '1';
         inp.classList.remove('roi-prezzo-nuovo');
-        inp.title = 'Prezzo personalizzato salvato';
+        inp.title = t('roi.tooltip.prezzoCustomSalvatoOra');
       }
     }
   }, true);
@@ -3216,12 +3220,12 @@ function getRoiRigheValide() {
 }
 
 async function salvaCalcolo() {
-  if (S.auth.guest || !S.auth.token) { roiMsg('Accedi per salvare i dati', 'error'); return; }
+  if (S.auth.guest || !S.auth.token) { roiMsg(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') }), 'error'); return; }
   const righe    = getRoiRigheValide();
   const struttura = (document.querySelector('.roi-struttura-inp')?.value || S.roi.struttura || '').trim();
 
-  if (!struttura) return roiMsg('Scrivi il nome della struttura nella prima colonna', 'error');
-  if (!righe.length) return roiMsg('Nessun esame con nome compilato', 'error');
+  if (!struttura) return roiMsg(t('roi.scriviStruttura'), 'error');
+  if (!righe.length) return roiMsg(t('roi.nessunEsameConNome'), 'error');
 
   const nomeFile = `Calcolo_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
   try {
@@ -3230,11 +3234,11 @@ async function salvaCalcolo() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ struttura, foglio: 'Platinum', righe, nomeFile, piano_id: S.roi.pianoId })
     });
-    roiMsg('✓ Salvato! Trovi il file nella Cronologia.', 'ok');
+    roiMsg(t('roi.salvatoOk'), 'ok');
     await loadStrutture();
     buildSidebar();
   } catch(e) {
-    roiMsg('Errore: ' + e.message, 'error');
+    roiMsg(t('errore.generico', { msg: e.message }), 'error');
   }
 }
 
@@ -3243,7 +3247,7 @@ async function esportaExcelRoi() {
   const righe     = getRoiRigheValide();
   const struttura = (document.querySelector('.roi-struttura-inp')?.value || S.roi.struttura || '').trim();
 
-  if (!righe.length) return roiMsg('Nessun esame compilato', 'error');
+  if (!righe.length) return roiMsg(t('roi.nessunEsameCompilato'), 'error');
   try {
     const res = await fetch('/api/export-excel', {
       method: 'POST',
@@ -3252,16 +3256,19 @@ async function esportaExcelRoi() {
     });
     if (res.status === 401) {
       if (S.auth && S.auth.token) authLogout(true);
-      throw new Error('Sessione scaduta');
+      throw new Error(t('roi.sessioneScaduta'));
     }
-    if (!res.ok) throw new Error((await res.json()).error);
+    if (!res.ok) {
+      const dati = await res.json().catch(() => ({}));
+      throw new Error(I18n.messaggioErrore(dati, t('errore.rispostaServer', { stato: res.status })));
+    }
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
     a.href = url; a.download = `mylav_roi.xlsx`;
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
-  } catch(e) { roiMsg('Errore export: ' + e.message, 'error'); }
+  } catch(e) { roiMsg(t('roi.erroreExport', { msg: e.message }), 'error'); }
 }
 
 function roiMsg(msg, tipo) {
@@ -3299,8 +3306,44 @@ async function avviaApp() {
   navigate('dashboard');
 }
 
+// public/index.html contiene alcuni nodi statici (finestra di caricamento file
+// Excel, la sua conferma di sovrascrittura, il "Caricamento..." iniziale della
+// sidebar) che non passano mai da un t() perche' non li disegna nessun render
+// di questo file: li aggiorniamo a mano qui, richiamata sia all'avvio sia da
+// ridisegnaTutto() a ogni cambio lingua.
+function traduciMarkupStatico() {
+  const loading = document.querySelector('#sidebar-nav .sidebar-loading');
+  if (loading) loading.textContent = t('stato.caricamento');
+
+  const modal = el('upload-modal');
+  if (modal) {
+    modal.setAttribute('aria-label', t('menu.upload'));
+    const titolo = modal.querySelector('h2');
+    if (titolo) titolo.textContent = t('menu.upload');
+    const dzText = modal.querySelector('.dropzone-text');
+    if (dzText) dzText.innerHTML = t('caricamento.trascina');
+    const dzSub = modal.querySelector('.dropzone-sub');
+    if (dzSub) dzSub.textContent = t('caricamento.oppure');
+    const dzLabel = modal.querySelector('label[for="file-input"]');
+    if (dzLabel) dzLabel.textContent = t('caricamento.selezionaFile');
+  }
+  const modalClose = el('modal-close');
+  if (modalClose) modalClose.setAttribute('aria-label', t('comune.chiudi'));
+
+  const confirmModal = el('confirm-modal');
+  if (confirmModal) {
+    const titolo = confirmModal.querySelector('h2');
+    if (titolo) titolo.textContent = t('caricamento.filePresenteTitolo');
+  }
+  const confirmCancel = el('confirm-cancel');
+  if (confirmCancel) confirmCancel.textContent = t('comune.annulla');
+  const confirmOk = el('confirm-ok');
+  if (confirmOk) confirmOk.textContent = t('caricamento.sovrascrivi');
+}
+
 async function boot() {
   document.documentElement.lang = I18n.lingua();
+  traduciMarkupStatico();
   const selettore = el('selettore-lingua');
   if (selettore) selettore.innerHTML = I18n.selettoreHtml();
   if (S.auth.token) {
@@ -3327,13 +3370,13 @@ function salvaSessione(token, email, isAdmin) {
 
 async function authLogin(email, password) {
   const r = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Login fallito');
+  const d = await r.json(); if (!r.ok) throw new Error(I18n.messaggioErrore(d, t('auth.loginFallito')));
   salvaSessione(d.token, d.email, d.isAdmin); nascondiAuthScreen(); avviaApp();
 }
 
 async function authRegister(email, password) {
   const r = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
-  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Registrazione fallita');
+  const d = await r.json(); if (!r.ok) throw new Error(I18n.messaggioErrore(d, t('auth.registrazioneFallita')));
   salvaSessione(d.token, d.email, d.isAdmin);
   return d.recoveryCode; // il chiamante mostra la schermata "salva il codice"
 }
@@ -3360,19 +3403,19 @@ async function authLogout(silent) {
 
 async function authRequestReset(email) {
   const r = await fetch('/api/auth/request-reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Richiesta fallita');
+  const d = await r.json(); if (!r.ok) throw new Error(I18n.messaggioErrore(d, t('auth.richiestaFallita')));
   return d;
 }
 
 async function authResetPassword(email, code, newPassword) {
   const r = await fetch('/api/auth/reset-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, code, newPassword }) });
-  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Reset fallito');
+  const d = await r.json(); if (!r.ok) throw new Error(I18n.messaggioErrore(d, t('auth.resetFallito')));
   return d;
 }
 
 async function authRecoverFull(recoveryCode, newEmail, newPassword) {
   const r = await fetch('/api/auth/recover-full', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ recoveryCode, newEmail, newPassword }) });
-  const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Recupero fallito');
+  const d = await r.json(); if (!r.ok) throw new Error(I18n.messaggioErrore(d, t('auth.recuperoFallito')));
   return d;
 }
 
@@ -3492,11 +3535,11 @@ function renderAuthBody(vista) {
     if (tabs) tabs.style.display = 'none';
     body.innerHTML = `
       <form id="auth-form-reset" class="auth-form">
-        <div class="auth-form-title">Recupera la password</div>
-        <label class="auth-label">Email</label>
+        <div class="auth-form-title">${t('auth.reset.titolo')}</div>
+        <label class="auth-label">${t('auth.email')}</label>
         <input class="auth-input" type="email" id="auth-reset-email" required autocomplete="username">
-        <button type="submit" class="btn-primary auth-submit">Invia codice</button>
-        <div class="auth-back"><a onclick="mostraAuthScreen('login')">&larr; Torna al login</a></div>
+        <button type="submit" class="btn-primary auth-submit">${t('auth.reset.inviaCodice')}</button>
+        <div class="auth-back"><a onclick="mostraAuthScreen('login')">${t('auth.tornaLogin')}</a></div>
       </form>`;
     el('auth-form-reset').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -3514,20 +3557,20 @@ function renderAuthBody(vista) {
     if (tabs) tabs.style.display = 'none';
     body.innerHTML = `
       <form id="auth-form-recover" class="auth-form">
-        <div class="auth-form-title">Recupero completo account</div>
-        <label class="auth-label">Codice di recupero</label>
+        <div class="auth-form-title">${t('auth.recover.titolo')}</div>
+        <label class="auth-label">${t('auth.recover.codiceLabel')}</label>
         <input class="auth-input" type="text" id="auth-rec-code" required placeholder="XXXX-XXXX-XXXX">
-        <label class="auth-label">Nuova email</label>
+        <label class="auth-label">${t('auth.recover.nuovaEmailLabel')}</label>
         <input class="auth-input" type="email" id="auth-rec-email" required autocomplete="username">
-        <label class="auth-label">Nuova password</label>
+        <label class="auth-label">${t('auth.nuovaPasswordLabel')}</label>
         <input class="auth-input" type="password" id="auth-rec-pass" required autocomplete="new-password">
         <ul class="auth-rules" id="auth-rec-rules">
-          <li data-rule="lunghezza">Almeno 8 caratteri</li>
-          <li data-rule="cifra">Almeno un numero</li>
-          <li data-rule="speciale">Almeno un carattere speciale</li>
+          <li data-rule="lunghezza">${t('auth.regola.lunghezza')}</li>
+          <li data-rule="cifra">${t('auth.regola.cifra')}</li>
+          <li data-rule="speciale">${t('auth.regola.speciale')}</li>
         </ul>
-        <button type="submit" class="btn-primary auth-submit">Recupera account</button>
-        <div class="auth-back"><a onclick="mostraAuthScreen('login')">&larr; Torna al login</a></div>
+        <button type="submit" class="btn-primary auth-submit">${t('auth.recover.submitBtn')}</button>
+        <div class="auth-back"><a onclick="mostraAuthScreen('login')">${t('auth.tornaLogin')}</a></div>
       </form>`;
     const passInp = el('auth-rec-pass');
     passInp.addEventListener('input', () => {
@@ -3543,12 +3586,12 @@ function renderAuthBody(vista) {
       const code = el('auth-rec-code').value.trim();
       const newEmail = el('auth-rec-email').value.trim();
       const newPassword = passInp.value;
-      if (!passwordOk(newPassword)) return authErr('La password non rispetta i requisiti richiesti');
+      if (!passwordOk(newPassword)) return authErr(t('auth.passwordNonConforme'));
       try {
         await authRecoverFull(code, newEmail, newPassword);
         authErr('');
         const body2 = el('auth-body');
-        body2.innerHTML = `<div class="auth-ok">Account recuperato. Ora puoi accedere con la nuova email e password.</div>`;
+        body2.innerHTML = `<div class="auth-ok">${t('auth.recover.successo')}</div>`;
         setTimeout(() => mostraAuthScreen('login'), 1800);
       } catch (err) { authErr(err.message); }
     });
@@ -3561,19 +3604,19 @@ function renderResetStep2(email) {
   authErr('');
   body.innerHTML = `
     <form id="auth-form-reset2" class="auth-form">
-      <div class="auth-form-title">Controlla la tua email</div>
-      <div class="auth-hint">Abbiamo inviato un codice a ${escHtml(email)} (se l'account esiste).</div>
-      <label class="auth-label">Codice ricevuto</label>
+      <div class="auth-form-title">${t('auth.resetStep2.titolo')}</div>
+      <div class="auth-hint">${t('auth.resetStep2.hint', { email: escHtml(email) })}</div>
+      <label class="auth-label">${t('auth.resetStep2.codiceLabel')}</label>
       <input class="auth-input" type="text" id="auth-reset-code" required>
-      <label class="auth-label">Nuova password</label>
+      <label class="auth-label">${t('auth.nuovaPasswordLabel')}</label>
       <input class="auth-input" type="password" id="auth-reset-newpass" required autocomplete="new-password">
       <ul class="auth-rules" id="auth-reset-rules">
-        <li data-rule="lunghezza">Almeno 8 caratteri</li>
-        <li data-rule="cifra">Almeno un numero</li>
-        <li data-rule="speciale">Almeno un carattere speciale</li>
+        <li data-rule="lunghezza">${t('auth.regola.lunghezza')}</li>
+        <li data-rule="cifra">${t('auth.regola.cifra')}</li>
+        <li data-rule="speciale">${t('auth.regola.speciale')}</li>
       </ul>
-      <button type="submit" class="btn-primary auth-submit">Reimposta password</button>
-      <div class="auth-back"><a onclick="mostraAuthScreen('login')">&larr; Torna al login</a></div>
+      <button type="submit" class="btn-primary auth-submit">${t('auth.resetStep2.submitBtn')}</button>
+      <div class="auth-back"><a onclick="mostraAuthScreen('login')">${t('auth.tornaLogin')}</a></div>
     </form>`;
   const passInp = el('auth-reset-newpass');
   passInp.addEventListener('input', () => {
@@ -3588,11 +3631,11 @@ function renderResetStep2(email) {
     authErr('');
     const code = el('auth-reset-code').value.trim();
     const newPassword = passInp.value;
-    if (!passwordOk(newPassword)) return authErr('La password non rispetta i requisiti richiesti');
+    if (!passwordOk(newPassword)) return authErr(t('auth.passwordNonConforme'));
     try {
       await authResetPassword(email, code, newPassword);
       const body2 = el('auth-body');
-      body2.innerHTML = `<div class="auth-ok">Password reimpostata. Ora puoi accedere.</div>`;
+      body2.innerHTML = `<div class="auth-ok">${t('auth.resetStep2.successo')}</div>`;
       setTimeout(() => mostraAuthScreen('login'), 1500);
     } catch (err) { authErr(err.message); }
   });
