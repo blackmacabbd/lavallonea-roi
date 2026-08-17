@@ -31,14 +31,17 @@
       'pagina.dashboard.titolo': 'Dashboard',
       'pagina.piani.titolo': 'Gestione piani di scontistica',
       'pagina.piani.sottotitolo': '{n} piani (attivi e disattivati)',
+      'pagina.piani.sottotitolo.uno': '{n} piani (attivi e disattivati)',
       'pagina.concorrenti.titolo': 'Gestione concorrenti',
       'pagina.concorrenti.sottotitolo': '{n} concorrenti importati',
+      'pagina.concorrenti.sottotitolo.uno': '{n} concorrenti importati',
       'pagina.macchinari.titolo': 'Macchinari',
       'pagina.macchinari.sottotitolo': '{mie} tuoi · {loro} della concorrenza',
       'pagina.confrontoMacchine.titolo': 'Confronto macchine',
       'pagina.confrontoMacchine.sottotitolo': '{mie} tue · {loro} della concorrenza',
       'pagina.confrontoStrutture.titolo': 'Confronto strutture',
       'pagina.confrontoStrutture.sottotitolo': '{n} strutture nel database',
+      'pagina.confrontoStrutture.sottotitolo.uno': '{n} strutture nel database',
       'pagina.cronologia.titolo': 'Cronologia file',
       'pagina.cronologia.sottotitolo': 'Tutti i file caricati',
 
@@ -336,14 +339,17 @@
       'pagina.dashboard.titolo': 'Dashboard',
       'pagina.piani.titolo': 'Discount plan management',
       'pagina.piani.sottotitolo': '{n} plans (active and disabled)',
+      'pagina.piani.sottotitolo.uno': '{n} plan (active or disabled)',
       'pagina.concorrenti.titolo': 'Competitor management',
       'pagina.concorrenti.sottotitolo': '{n} competitors imported',
+      'pagina.concorrenti.sottotitolo.uno': '{n} competitor imported',
       'pagina.macchinari.titolo': 'Equipment',
       'pagina.macchinari.sottotitolo': '{mie} yours · {loro} from the competition',
       'pagina.confrontoMacchine.titolo': 'Equipment comparison',
       'pagina.confrontoMacchine.sottotitolo': '{mie} yours · {loro} from the competition',
       'pagina.confrontoStrutture.titolo': 'Practice comparison',
       'pagina.confrontoStrutture.sottotitolo': '{n} practices in the database',
+      'pagina.confrontoStrutture.sottotitolo.uno': '{n} practice in the database',
       'pagina.cronologia.titolo': 'File history',
       'pagina.cronologia.sottotitolo': 'All uploaded files',
 
@@ -622,14 +628,17 @@
       'pagina.dashboard.titolo': 'Tableau de bord',
       'pagina.piani.titolo': 'Gestion des plans de remises',
       'pagina.piani.sottotitolo': '{n} plans (actifs et désactivés)',
+      'pagina.piani.sottotitolo.uno': '{n} plan (actif ou désactivé)',
       'pagina.concorrenti.titolo': 'Gestion des concurrents',
       'pagina.concorrenti.sottotitolo': '{n} concurrents importés',
+      'pagina.concorrenti.sottotitolo.uno': '{n} concurrent importé',
       'pagina.macchinari.titolo': 'Équipements',
       'pagina.macchinari.sottotitolo': '{mie} de votre côté · {loro} de la concurrence',
       'pagina.confrontoMacchine.titolo': 'Comparaison des équipements',
       'pagina.confrontoMacchine.sottotitolo': '{mie} de votre côté · {loro} de la concurrence',
       'pagina.confrontoStrutture.titolo': 'Comparaison des cliniques',
       'pagina.confrontoStrutture.sottotitolo': '{n} cliniques dans la base de données',
+      'pagina.confrontoStrutture.sottotitolo.uno': '{n} clinique dans la base de données',
       'pagina.cronologia.titolo': 'Historique des fichiers',
       'pagina.cronologia.sottotitolo': 'Tous les fichiers importés',
 
@@ -908,14 +917,17 @@
       'pagina.dashboard.titolo': 'Panel',
       'pagina.piani.titolo': 'Gestión de planes de descuentos',
       'pagina.piani.sottotitolo': '{n} planes (activos y desactivados)',
+      'pagina.piani.sottotitolo.uno': '{n} plan (activo o desactivado)',
       'pagina.concorrenti.titolo': 'Gestión de competidores',
       'pagina.concorrenti.sottotitolo': '{n} competidores importados',
+      'pagina.concorrenti.sottotitolo.uno': '{n} competidor importado',
       'pagina.macchinari.titolo': 'Equipos',
       'pagina.macchinari.sottotitolo': '{mie} tuyos · {loro} de la competencia',
       'pagina.confrontoMacchine.titolo': 'Comparación de equipos',
       'pagina.confrontoMacchine.sottotitolo': '{mie} tuyas · {loro} de la competencia',
       'pagina.confrontoStrutture.titolo': 'Comparación de clínicas',
       'pagina.confrontoStrutture.sottotitolo': '{n} clínicas en la base de datos',
+      'pagina.confrontoStrutture.sottotitolo.uno': '{n} clínica en la base de datos',
       'pagina.cronologia.titolo': 'Historial de archivos',
       'pagina.cronologia.sottotitolo': 'Todos los archivos subidos',
 
@@ -1209,6 +1221,24 @@
     return !!((DIZIONARIO[corrente] && DIZIONARIO[corrente][chiave] != null) || DIZIONARIO.it[chiave] != null);
   }
 
+  // Il server manda un codice accanto al testo italiano: si mostra la traduzione
+  // del codice quando la conosciamo, altrimenti il testo cosi' come arriva.
+  //
+  // Sta qui e non nella finestra di import perche' gli errori di rete passano
+  // anche da api(): due copie della stessa guardia divergono alla prima svista,
+  // e la svista qui si vede a schermo come una graffa non sostituita.
+  function messaggioErrore(dati, fallback) {
+    const codice = dati && dati.codice;
+    if (codice && esiste('errore.' + codice)) {
+      const testo = t('errore.' + codice, { dettaglio: dati && dati.dettaglio });
+      // Se la chiave attende un segnaposto che il server non ha valorizzato,
+      // non si mostra la graffa: si ricade sul testo del server, come quando il
+      // codice non e' tradotto.
+      if (!/\{[a-zA-Z]+\}/.test(testo)) return testo;
+    }
+    return (dati && dati.error) || fallback;
+  }
+
   function impostaLingua(codice) {
     if (!LINGUE.includes(codice) || codice === corrente) return;
     corrente = codice;
@@ -1263,7 +1293,7 @@
     chiudiMenuLingua();
   });
 
-  window.I18n = { LINGUE, NOMI, t, esiste, lingua: () => corrente, impostaLingua, selettoreHtml };
+  window.I18n = { LINGUE, NOMI, t, esiste, messaggioErrore, lingua: () => corrente, impostaLingua, selettoreHtml };
   window.t = t;
   window.apriMenuLingua = apriMenuLingua;
   window.sceglieLingua = sceglieLingua;

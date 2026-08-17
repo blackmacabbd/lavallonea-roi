@@ -740,6 +740,10 @@ Le viste di reset e recupero password sono le piu' importanti di questo elenco, 
 
 Usa lo stesso comando del Task 4 per non dimenticare stringhe, e scrivi il censimento nel report.
 
+**Punti già individuati dalla revisione del Task 5**, da includere: in `public/app.js`, l'italiano cablato fuori da `api()` — `'Sessione scaduta'` e il `.error` letto direttamente nell'export Excel (intorno a riga 3250), `'Errore upload'` (intorno a 1344), `'Errore rete: '` (1382), `'Errore PDF: '` (1388). Le chiavi `errore.sessioneScaduta` e `errore.rispostaServer` esistono già dal Task 5, e dove si mostra un errore di rete va usata `I18n.messaggioErrore(dati, fallback)` invece di leggere `.error`.
+
+Due punti cosmetici, da decidere e dichiarare invece che lasciare in sospeso: la confidenza e lo zoom nella finestra di import si compongono in codice (`public/importpdf.js`, intorno a `561` e `976`) e restano `87%` / `120%` attaccati in ogni lingua. Il francese vorrebbe lo spazio prima del segno. Su un chip è accettabile: se si lascia così, scrivilo nel report.
+
 - [ ] **Step 2: Aggiungere le chiavi e sostituire i testi**
 
 Stesse regole del Task 4: chiave a punti che dice dove vive, tutte e quattro le lingue, numeri e nomi per sostituzione e mai per concatenazione, doppia chiave dove singolare e plurale cambiano forma, terminologia dei vincoli globali, italiano identico a oggi parola per parola.

@@ -25,16 +25,11 @@
   // a schermo e' accettabile, una finestra rotta no.
   const t = typeof window.t === 'function' ? window.t : function (chiave) { return chiave; };
 
-  // Il server manda un codice piu' il testo italiano: si mostra la traduzione
-  // del codice quando la conosciamo, altrimenti il testo cosi' come arriva.
+  // Una sola implementazione, in i18n.js: la stessa guardia serve anche ad
+  // api() in app.js, e due copie divergono alla prima svista.
   function messaggioErrore(dati, fallback) {
-    const codice = dati && dati.codice;
-    if (codice && window.I18n && typeof window.I18n.esiste === 'function' && window.I18n.esiste('errore.' + codice)) {
-      const testo = t('errore.' + codice, { dettaglio: dati && dati.dettaglio });
-      // Se la chiave attende un segnaposto che il server non ha valorizzato
-      // (es. dettaglio assente), non mostrare la graffa a schermo: si ricade
-      // sul testo del server, come quando il codice non e' tradotto (C1).
-      if (!/\{[a-zA-Z]+\}/.test(testo)) return testo;
+    if (window.I18n && typeof window.I18n.messaggioErrore === 'function') {
+      return window.I18n.messaggioErrore(dati, fallback);
     }
     return (dati && dati.error) || fallback;
   }

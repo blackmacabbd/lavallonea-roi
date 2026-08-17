@@ -69,25 +69,30 @@ async function api(path, opts = {}) {
   if (res.status === 401) {
     // Se avevamo un token era una sessione scaduta/invalida: torna al login.
     // Se non c'era token (ospite su una rotta privata) è un 401 atteso: non forzare il logout.
+    // Il codice va sull'oggetto Error perche' il messaggio ora cambia con la
+    // lingua e non puo' piu' servire a distinguere il caso.
     if (S.auth && S.auth.token) {
       authLogout(true);
-      throw new Error(t('errore.sessioneScaduta'));
+      const err = new Error(t('errore.sessioneScaduta'));
+      err.codice = 'SESSIONE_SCADUTA';
+      throw err;
     }
-    throw new Error(t('errore.accediPerVedere'));
+    const err = new Error(t('errore.accediPerVedere'));
+    err.codice = 'AUTENTICAZIONE_RICHIESTA';
+    throw err;
   }
   if (!res.ok) {
     const dati = await res.json().catch(() => ({ error: res.statusText }));
-    const codice = dati && dati.codice;
-    // Il server manda un codice piu' il testo italiano: quando conosciamo la
-    // traduzione del codice, l'errore lanciato la porta; altrimenti resta il
-    // testo del server, come prima (rilievo I8). Il codice resta comunque
-    // sull'oggetto Error, cosi' chi chiama puo' distinguere il caso senza
-    // leggere una frase che ora cambia con la lingua.
-    const tradotta = codice && window.I18n && typeof window.I18n.esiste === 'function' && window.I18n.esiste('errore.' + codice)
-      ? t('errore.' + codice)
-      : null;
-    const err = new Error(tradotta || (dati && dati.error) || res.statusText);
-    if (codice) err.codice = codice;
+    // Stessa guardia della finestra di import, in un solo posto: traduce il
+    // codice quando lo conosciamo, altrimenti lascia il testo del server.
+    // Con un corpo non JSON e statusText vuoto (HTTP/2, proxy) resterebbe una
+    // frase vuota: l'ultima ricaduta e' lo stato numerico, tradotto.
+    const fallback = res.statusText || t('errore.rispostaServer', { stato: res.status });
+    const messaggio = (window.I18n && typeof window.I18n.messaggioErrore === 'function')
+      ? window.I18n.messaggioErrore(dati, fallback)
+      : ((dati && dati.error) || fallback);
+    const err = new Error(messaggio);
+    if (dati && dati.codice) err.codice = dati.codice;
     throw err;
   }
   return res.json();
@@ -1252,7 +1257,7 @@ async function renderConfronto() {
   setMain(`
     <div class="page-header">
       <div><div class="page-title">${t('pagina.confrontoStrutture.titolo')}</div>
-        <div class="page-subtitle">${t('pagina.confrontoStrutture.sottotitolo', { n: data.length })}</div>
+        <div class="page-subtitle">${t('pagina.confrontoStrutture.sottotitolo' + (data.length === 1 ? '.uno' : ''), { n: data.length })}</div>
       </div>
     </div>
     <div class="page-body">
@@ -1499,7 +1504,7 @@ async function renderPiani() {
   setMain(`
     <div class="page-header">
       <div><div class="page-title">${t('pagina.piani.titolo')}</div>
-        <div class="page-subtitle">${t('pagina.piani.sottotitolo', { n: elenco.length })}</div>
+        <div class="page-subtitle">${t('pagina.piani.sottotitolo' + (elenco.length === 1 ? '.uno' : ''), { n: elenco.length })}</div>
       </div>
       <div class="page-actions">
         ${admin ? `<label class="btn-outline" for="piani-import-input">${t('piani.importaJson')}</label>
@@ -2092,7 +2097,7 @@ async function renderConcorrentiAdmin() {
   setMain(`
     <div class="page-header">
       <div><div class="page-title">${t('pagina.concorrenti.titolo')}</div>
-        <div class="page-subtitle">${t('pagina.concorrenti.sottotitolo', { n: elenco.length })}</div>
+        <div class="page-subtitle">${t('pagina.concorrenti.sottotitolo' + (elenco.length === 1 ? '.uno' : ''), { n: elenco.length })}</div>
       </div>
       <div class="page-actions">
         <label class="btn-outline" for="concorrenti-import-input">${t('concorrenti.importaListinoExcel')}</label>
