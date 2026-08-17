@@ -529,10 +529,10 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
   try {
     const email = auth.normEmail(req.body?.email);
     const password = String(req.body?.password || '');
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Email non valida' });
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'Email non valida', codice: 'EMAIL_NON_VALIDA' });
     const pv = auth.validaPassword(password);
     if (!pv.ok) return res.status(400).json({ error: pv.motivo });
-    if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return res.status(409).json({ error: 'Email già registrata' });
+    if (db.prepare(`SELECT 1 FROM users WHERE email = ?`).get(email)) return res.status(409).json({ error: 'Email già registrata', codice: 'EMAIL_GIA_REGISTRATA' });
 
     const recoveryCode = auth.genRecoveryCode();
     const info = db.prepare(`INSERT INTO users (email, pass_hash, recovery_hash, recovery_lookup) VALUES (?, ?, ?, ?)`)
@@ -557,7 +557,7 @@ app.post('/api/auth/login', authRateLimit, express.json(), (req, res) => {
     const email = auth.normEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
-    if (!u || !auth.verifyPassword(password, u.pass_hash)) return res.status(401).json({ error: 'Email o password errati' });
+    if (!u || !auth.verifyPassword(password, u.pass_hash)) return res.status(401).json({ error: 'Email o password errati', codice: 'CREDENZIALI_ERRATE' });
     rateLimitReset(req._rateLimitKey);
     const token = auth.genToken();
     db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, u.id);
@@ -615,10 +615,10 @@ app.post('/api/auth/reset-password', authRateLimit, express.json(), (req, res) =
     const pv = auth.validaPassword(String(req.body?.newPassword || ''));
     if (!pv.ok) return res.status(400).json({ error: pv.motivo });
     const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
-    if (!u) return res.status(400).json({ error: 'Codice non valido' });
+    if (!u) return res.status(400).json({ error: 'Codice non valido', codice: 'CODICE_NON_VALIDO' });
     const rc = db.prepare(`SELECT * FROM reset_codes WHERE user_id = ? AND code = ? AND used = 0 AND expires_at > ? ORDER BY id DESC`)
       .get(u.id, code, Date.now());
-    if (!rc) return res.status(400).json({ error: 'Codice non valido o scaduto' });
+    if (!rc) return res.status(400).json({ error: 'Codice non valido o scaduto', codice: 'CODICE_NON_VALIDO_O_SCADUTO' });
     db.prepare(`UPDATE users SET pass_hash = ? WHERE id = ?`).run(auth.hashPassword(req.body.newPassword), u.id);
     db.prepare(`UPDATE reset_codes SET used = 1 WHERE id = ?`).run(rc.id);
     res.json({ ok: true });
@@ -631,11 +631,11 @@ app.post('/api/auth/recover-full', authRateLimit, express.json(), (req, res) => 
     const newEmail = auth.normEmail(req.body?.newEmail);
     const pv = auth.validaPassword(String(req.body?.newPassword || ''));
     if (!pv.ok) return res.status(400).json({ error: pv.motivo });
-    if (!newEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) return res.status(400).json({ error: 'Email non valida' });
+    if (!newEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail)) return res.status(400).json({ error: 'Email non valida', codice: 'EMAIL_NON_VALIDA' });
     const u = db.prepare(`SELECT * FROM users WHERE recovery_lookup = ?`).get(auth.lookupHash(recoveryCode));
-    if (!u || !auth.verifyPassword(recoveryCode, u.recovery_hash)) return res.status(400).json({ error: 'Codice di recupero non valido' });
+    if (!u || !auth.verifyPassword(recoveryCode, u.recovery_hash)) return res.status(400).json({ error: 'Codice di recupero non valido', codice: 'CODICE_RECUPERO_NON_VALIDO' });
     const other = db.prepare(`SELECT 1 FROM users WHERE email = ? AND id <> ?`).get(newEmail, u.id);
-    if (other) return res.status(409).json({ error: 'Email già in uso da un altro account' });
+    if (other) return res.status(409).json({ error: 'Email già in uso da un altro account', codice: 'EMAIL_GIA_IN_USO' });
     db.prepare(`UPDATE users SET email = ?, pass_hash = ? WHERE id = ?`).run(newEmail, auth.hashPassword(req.body.newPassword), u.id);
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ error: err.message }); }

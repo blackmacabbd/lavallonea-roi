@@ -341,8 +341,33 @@ function navigate(view, params = {}) {
 // secondo percorso di disegno, cosi' ogni vista resta l'unica responsabile
 // del proprio markup. Se la vista corrente azzera stato al suo ingresso
 // (es. 'macchinari' chiude il listino aperto), l'effetto e' accettato.
+//
+// Il main e' pero' coperto da #auth-overlay quando l'operatore non ha ancora
+// fatto accesso: ridisegnare 'main-content' in quel caso non serve a nulla
+// (resta invisibile) e lascia la schermata di accesso, che sta sopra, nella
+// lingua precedente. _authUltimo ricorda l'ultimo disegno mostrato
+// nell'overlay per poterlo riprodurre nella lingua nuova, riusando le
+// funzioni di disegno esistenti invece di duplicarle.
+let _authUltimo = null; // { tipo: 'vista' | 'step2' | 'codice', arg }
+
+function ridisegnaAuth(ultimo) {
+  if (!ultimo) return;
+  if (ultimo.tipo === 'vista') mostraAuthScreen(ultimo.arg);
+  else if (ultimo.tipo === 'step2') renderResetStep2(ultimo.arg);
+  else if (ultimo.tipo === 'codice') renderCodiceRecupero(ultimo.arg);
+}
+
 window.ridisegnaTutto = function () {
   traduciMarkupStatico();
+  const ov = el('auth-overlay');
+  if (ov && ov.style.display !== 'none' && _authUltimo) {
+    // I valori gia' digitati (es. il codice di reset ricevuto via email) non
+    // devono sparire solo perche' si cambia lingua.
+    const valori = [...ov.querySelectorAll('input')].map(i => [i.id, i.value]);
+    ridisegnaAuth(_authUltimo);
+    valori.forEach(([id, v]) => { const i = el(id); if (i) i.value = v; });
+    return; // il main e' coperto: ridisegnarlo non serve
+  }
   navigate(window._currentView || 'dashboard', window._currentParams || {});
 };
 
@@ -1357,7 +1382,7 @@ async function doUpload(file, force = false) {
     resp = await res.json();
 
     if (res.status === 409 && resp.conflict) {
-      el('confirm-msg').textContent = resp.message;
+      el('confirm-msg').textContent = t('caricamento.confermaSovrascrivi', { file: file.name, struttura: resp.struttura });
       el('confirm-modal').hidden = false;
       el('confirm-ok').onclick  = () => { el('confirm-modal').hidden = true; doUpload(file, true); };
       el('confirm-cancel').onclick = () => { el('confirm-modal').hidden = true; };
@@ -1579,7 +1604,7 @@ async function togglePianoAttivo(id, attivo) {
     await loadPiani();
     renderPiani();
   } catch (e) {
-    alert(`${t('stato.errore')}: ${e.message}`);
+    alert(t('errore.generico', { msg: e.message }));
   }
 }
 
@@ -1588,7 +1613,7 @@ async function renderPianoEdit(id) {
   try {
     data = await api(`/api/piani/${id}`);
   } catch (e) {
-    alert(`${t('stato.errore')}: ${e.message}`);
+    alert(t('errore.generico', { msg: e.message }));
     return;
   }
   const wrap = el('piano-edit-wrap');
@@ -1628,7 +1653,7 @@ async function salvaPianoPrezzi(id) {
     });
     alert(t('piani.prezziSalvati'));
   } catch (e) {
-    alert(`${t('stato.errore')}: ${e.message}`);
+    alert(t('errore.generico', { msg: e.message }));
   }
 }
 
@@ -1644,7 +1669,10 @@ async function importaPianiJson(inputEl) {
       method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(data)
     });
-    if (!resp.ok) throw new Error((await resp.json()).error);
+    if (!resp.ok) {
+      const dati = await resp.json().catch(() => ({}));
+      throw new Error(I18n.messaggioErrore(dati, t('errore.rispostaServer', { stato: resp.status })));
+    }
     await loadPiani();
     renderPiani();
     alert(t('comune.importCompletato'));
@@ -1790,7 +1818,7 @@ async function eliminaListinoUI(id) {
   try {
     await api(`/api/listini-macchine/${id}`, { method: 'DELETE' });
     renderMacchinari();
-  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 // Le macchine del listino aperto. L'aggiunta a mano serve a correggere o
@@ -1799,7 +1827,7 @@ async function eliminaListinoUI(id) {
 async function renderListinoMacchine(id) {
   let dettaglio;
   try { dettaglio = await api(`/api/listini-macchine/${id}`); }
-  catch (e) { alert(`${t('stato.errore')}: ${e.message}`); return; }
+  catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
 
   // La ricerca appartiene al listino aperto: aprendone un altro si ricomincia da
   // un elenco intero. Si azzera solo al cambio di listino, non a ogni disegno,
@@ -1921,7 +1949,7 @@ async function salvaMacchinaUI() {
     S.macchinaInModifica = null;
     await renderMacchinari();
     renderListinoMacchine(inMod.listinoId);
-  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
   finally { S.salvataggioMacchinaInCorso = false; }
 }
 
@@ -1933,7 +1961,7 @@ async function eliminaMacchinaUI(id) {
     await api(`/api/macchine/${id}`, { method: 'DELETE' });
     await renderMacchinari();
     if (l) renderListinoMacchine(l.id);
-  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 // ── Confronto macchine ──
@@ -2148,7 +2176,10 @@ async function avviaImportConcorrente(inputEl) {
   let parsed;
   try {
     const resp = await fetch('/api/concorrenti/import', { method: 'POST', headers: authHeaders(), body: formData });
-    if (!resp.ok) throw new Error((await resp.json()).error);
+    if (!resp.ok) {
+      const dati = await resp.json().catch(() => ({}));
+      throw new Error(I18n.messaggioErrore(dati, t('errore.rispostaServer', { stato: resp.status })));
+    }
     parsed = await resp.json();
   } catch (e) {
     alert(`${t('concorrenti.erroreLetturaFile')}: ${e.message}`);
@@ -2249,7 +2280,7 @@ async function eliminaConcorrenteUI(id) {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     await loadConcorrenti();
     renderConcorrentiAdmin();
-  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 // ── Import PDF ──
@@ -2270,7 +2301,7 @@ function importaPdfConcorrente() {
 async function renderConcorrenteDettaglio(id) {
   let dettaglio;
   try { dettaglio = await api(`/api/concorrenti/${id}`); }
-  catch (e) { alert(`${t('stato.errore')}: ${e.message}`); return; }
+  catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
 
   const wrap = el('concorrente-dettaglio-wrap');
   if (!wrap) return;
@@ -2381,7 +2412,7 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
       const dl = el('mylav-esami-list');
       if (dl) { const opt = document.createElement('option'); opt.value = esameMylavNome; dl.appendChild(opt); }
     }
-  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
@@ -2396,7 +2427,7 @@ async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
       if (row) { row.esame_mylav_nome = null; row.confermato = 0; }
       renderDettaglioBody();
     }
-  } catch (e) { alert(`${t('stato.errore')}: ${e.message}`); }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 // ══════════════════════════════════════════════════
@@ -2951,7 +2982,7 @@ async function mostraConsiglioTotale() {
 
   const stesso = resp.pianoId === S.roi.pianoId;
   const saltati = resp.nSaltati > 0
-    ? `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.esamiEsclusi', { n: resp.nSaltati })}</span>` : '';
+    ? `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.esamiEsclusi' + (resp.nSaltati === 1 ? '.uno' : '.molti'), { n: resp.nSaltati })}</span>` : '';
   let messaggio;
   if (stesso) {
     messaggio = t('roi.consiglio.stessoPiano' + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(resp.pianoNome), totale: fmtE(resp.totale) }) + saltati;
@@ -3317,34 +3348,22 @@ async function avviaApp() {
 // sidebar) che non passano mai da un t() perche' non li disegna nessun render
 // di questo file: li aggiorniamo a mano qui, richiamata sia all'avvio sia da
 // ridisegnaTutto() a ogni cambio lingua.
+//
+// L'accoppiamento testo/chiave vive nel markup stesso (data-i18n/data-i18n-attr
+// su ciascun nodo in index.html), non in un elenco di selettori CSS qui dentro:
+// rinominare una classe non fa piu' silenziosamente sparire una traduzione, e
+// una chiave mancante fa gia' scattare l'avviso di t() invece di essere
+// scavalcata da un `if (nodo)` che non trova nulla.
 function traduciMarkupStatico() {
-  const loading = document.querySelector('#sidebar-nav .sidebar-loading');
-  if (loading) loading.textContent = t('stato.caricamento');
-
-  const modal = el('upload-modal');
-  if (modal) {
-    modal.setAttribute('aria-label', t('menu.upload'));
-    const titolo = modal.querySelector('h2');
-    if (titolo) titolo.textContent = t('menu.upload');
-    const dzText = modal.querySelector('.dropzone-text');
-    if (dzText) dzText.innerHTML = t('caricamento.trascina');
-    const dzSub = modal.querySelector('.dropzone-sub');
-    if (dzSub) dzSub.textContent = t('caricamento.oppure');
-    const dzLabel = modal.querySelector('label[for="file-input"]');
-    if (dzLabel) dzLabel.textContent = t('caricamento.selezionaFile');
-  }
-  const modalClose = el('modal-close');
-  if (modalClose) modalClose.setAttribute('aria-label', t('comune.chiudi'));
-
-  const confirmModal = el('confirm-modal');
-  if (confirmModal) {
-    const titolo = confirmModal.querySelector('h2');
-    if (titolo) titolo.textContent = t('caricamento.filePresenteTitolo');
-  }
-  const confirmCancel = el('confirm-cancel');
-  if (confirmCancel) confirmCancel.textContent = t('comune.annulla');
-  const confirmOk = el('confirm-ok');
-  if (confirmOk) confirmOk.textContent = t('caricamento.sovrascrivi');
+  document.querySelectorAll('[data-i18n]').forEach(nodo => {
+    nodo.innerHTML = t(nodo.getAttribute('data-i18n'));
+  });
+  document.querySelectorAll('[data-i18n-attr]').forEach(nodo => {
+    nodo.getAttribute('data-i18n-attr').split(';').forEach(coppia => {
+      const [attr, chiave] = coppia.split(':').map(s => s.trim());
+      if (attr && chiave) nodo.setAttribute(attr, t(chiave));
+    });
+  });
 }
 
 async function boot() {
@@ -3446,6 +3465,7 @@ function authErr(msg) {
 }
 
 function mostraAuthScreen(vista = 'login') {
+  _authUltimo = { tipo: 'vista', arg: vista };
   const ov = el('auth-overlay');
   ov.innerHTML = `
     <div class="auth-card">
@@ -3454,15 +3474,15 @@ function mostraAuthScreen(vista = 'login') {
         <polygon points="94,94 60,10 48,10 78,94" fill="#0f76bc"/></svg>V<span class="auth-reg">®</span></div>
       <div class="auth-rule"></div>
       <div class="auth-tabs" id="auth-tabs">
-        <button class="auth-tab ${vista === 'login' ? 'active' : ''}" onclick="mostraAuthScreen('login')">${t('comune.accedi')}</button>
-        <button class="auth-tab ${vista === 'register' ? 'active' : ''}" onclick="mostraAuthScreen('register')">${t('auth.registrati')}</button>
+        <button class="auth-tab ${vista === 'login' ? 'active' : ''}" data-i18n="comune.accedi" onclick="mostraAuthScreen('login')">${t('comune.accedi')}</button>
+        <button class="auth-tab ${vista === 'register' ? 'active' : ''}" data-i18n="auth.registrati" onclick="mostraAuthScreen('register')">${t('auth.registrati')}</button>
       </div>
       <div id="auth-err" class="auth-err" style="display:none"></div>
       <div id="auth-body"></div>
       <div class="auth-links">
-        <a onclick="authGuest()">${t('auth.ospiteEntra')}</a>
-        <a onclick="mostraAuthScreen('reset')">${t('auth.passwordDimenticata')}</a>
-        <a onclick="mostraAuthScreen('recover')">${t('auth.recuperoCompleto')}</a>
+        <a data-i18n="auth.ospiteEntra" onclick="authGuest()">${t('auth.ospiteEntra')}</a>
+        <a data-i18n="auth.passwordDimenticata" onclick="mostraAuthScreen('reset')">${t('auth.passwordDimenticata')}</a>
+        <a data-i18n="auth.recuperoCompleto" onclick="mostraAuthScreen('recover')">${t('auth.recuperoCompleto')}</a>
       </div>
     </div>`;
   ov.style.display = 'flex';
@@ -3470,6 +3490,7 @@ function mostraAuthScreen(vista = 'login') {
 }
 
 function nascondiAuthScreen() {
+  _authUltimo = null;
   const ov = el('auth-overlay');
   if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; }
 }
@@ -3606,6 +3627,7 @@ function renderAuthBody(vista) {
 }
 
 function renderResetStep2(email) {
+  _authUltimo = { tipo: 'step2', arg: email };
   const body = el('auth-body');
   authErr('');
   body.innerHTML = `
@@ -3648,6 +3670,7 @@ function renderResetStep2(email) {
 }
 
 function renderCodiceRecupero(recoveryCode) {
+  _authUltimo = { tipo: 'codice', arg: recoveryCode };
   const tabs = el('auth-tabs');
   if (tabs) tabs.style.display = 'none';
   authErr('');
