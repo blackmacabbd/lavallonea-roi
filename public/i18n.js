@@ -19,6 +19,7 @@
     it: {
       // Menu laterale (voci di navigazione)
       'menu.upload': 'Carica file Excel',
+      'brand.tagline': 'Il laboratorio dei <b>clinici</b> per i <b>clinici</b>',
       'menu.dashboard': 'Dashboard',
       'menu.piani': 'Gestione piani',
       'menu.concorrenti': 'Gestione concorrenti',
@@ -539,6 +540,7 @@
     },
     en: {
       'menu.upload': 'Upload Excel file',
+      'brand.tagline': 'The lab run by <b>clinicians</b>, for <b>clinicians</b>',
       'menu.dashboard': 'Dashboard',
       'menu.piani': 'Manage discount plans',
       'menu.concorrenti': 'Manage competitors',
@@ -1039,6 +1041,7 @@
     },
     fr: {
       'menu.upload': 'Importer un fichier Excel',
+      'brand.tagline': 'Le laboratoire des <b>cliniciens</b> pour les <b>cliniciens</b>',
       'menu.dashboard': 'Tableau de bord',
       'menu.piani': 'Gestion des plans de remises',
       'menu.concorrenti': 'Gestion des concurrents',
@@ -1539,6 +1542,7 @@
     },
     es: {
       'menu.upload': 'Subir archivo Excel',
+      'brand.tagline': 'El laboratorio de los <b>clínicos</b> para los <b>clínicos</b>',
       'menu.dashboard': 'Panel',
       'menu.piani': 'Gestión de planes de descuentos',
       'menu.concorrenti': 'Gestión de competidores',

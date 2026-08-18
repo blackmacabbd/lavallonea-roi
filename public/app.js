@@ -239,6 +239,18 @@ function buildSidebar() {
     </div>`;
 
   nav.innerHTML = html;
+  titoliVociTroncate();
+}
+
+// Le etichette tradotte possono essere piu' lunghe dell'italiano: dove non
+// stanno nella barra vengono troncate, e il nome della sezione si perde. Il
+// titolo si mette solo dove il troncamento avviene davvero, cosi' vale anche
+// per le lingue che verranno, senza sporcare le voci che stanno larghe.
+function titoliVociTroncate() {
+  document.querySelectorAll('#sidebar-nav .nav-item, #sidebar-nav .nav-upload').forEach(voce => {
+    if (voce.scrollWidth > voce.clientWidth + 1) voce.title = voce.textContent.trim();
+    else voce.removeAttribute('title');
+  });
 }
 
 function toggleAccountMenu() {
@@ -306,6 +318,20 @@ async function navigateToStruttura(strutturaId, foglio) {
   navigate('foglio', { fileId: f.id, foglio, strutturaId });
 }
 
+// Sotto-vista aperta dentro la pagina corrente: editor prezzi di un piano,
+// dettaglio di un listino macchine, dettaglio di un concorrente. Non passano da
+// navigate, quindi un ridisegno le farebbe sparire portandosi via quello che
+// l'operatore aveva digitato: le si ricorda per riaprirle dopo un cambio lingua.
+let _sottoVista = null; // { tipo: 'pianoEdit' | 'listinoMacchine' | 'concorrente', arg }
+
+function riapriSottoVista(sotto) {
+  if (!sotto) return Promise.resolve();
+  if (sotto.tipo === 'pianoEdit') return Promise.resolve(renderPianoEdit(sotto.arg));
+  if (sotto.tipo === 'listinoMacchine') return Promise.resolve(renderListinoMacchine(sotto.arg));
+  if (sotto.tipo === 'concorrente') return Promise.resolve(renderConcorrenteDettaglio(sotto.arg));
+  return Promise.resolve();
+}
+
 // ── Navigation ─────────────────────────────────────
 function navigate(view, params = {}) {
   window._currentView        = view;
@@ -314,27 +340,39 @@ function navigate(view, params = {}) {
   window._currentFoglio      = params.foglio      || null;
   window._currentFileId      = params.fileId      || null;
 
+  // Un cambio lingua non e' una navigazione: la sotto-vista aperta resta.
+  if (!window._cambioLingua) _sottoVista = null;
+
   setMain('<div class="page-loading"><div class="spinner"></div></div>');
 
+  // Il disegno delle viste e' asincrono: restituire la promessa permette a
+  // ridisegnaTutto di aspettare la pagina prima di riaprirci la sotto-vista.
+  let disegno;
   switch (view) {
-    case 'dashboard':  renderDashboard();                              break;
-    case 'foglio':     renderFoglio(params.fileId, params.foglio);     break;
-    case 'totali':     renderTotali(params.strutturaId, params.nome);  break;
-    case 'cronologia': renderCronologia();                             break;
-    case 'confronto':  renderConfronto();                              break;
-    case 'debug':      renderDebug();                                  break;
-    case 'risparmio-totale': renderRisparmioTotale();                  break;
-    case 'piani':      renderPiani();                                  break;
-    case 'concorrenti': renderConcorrentiAdmin();                      break;
+    case 'dashboard':  disegno = renderDashboard();                              break;
+    case 'foglio':     disegno = renderFoglio(params.fileId, params.foglio);     break;
+    case 'totali':     disegno = renderTotali(params.strutturaId, params.nome);  break;
+    case 'cronologia': disegno = renderCronologia();                             break;
+    case 'confronto':  disegno = renderConfronto();                              break;
+    case 'debug':      disegno = renderDebug();                                  break;
+    case 'risparmio-totale': disegno = renderRisparmioTotale();                  break;
+    case 'piani':      disegno = renderPiani();                                  break;
+    case 'concorrenti': disegno = renderConcorrentiAdmin();                      break;
     // Si arriva qui dalla voce di menu, mai da nuovaMacchina/modificaMacchina
     // (che ridisegnano chiamando renderListinoMacchine() direttamente): azzerare
     // la riga in modifica quando si entra nella sezione da un'altra pagina non
     // rompe il flusso di modifica, e toglie uno stato residuo che l'operatore
     // non ha piu' motivo di ritrovare aperto.
-    case 'macchinari': S.macchinaInModifica = null; S.listinoAperto = null; renderMacchinari();  break;
-    case 'confronto-macchine': renderConfrontoMacchine();               break;
+    case 'macchinari':
+      // Un cambio lingua non e' una navigazione: non deve chiudere quello che
+      // l'operatore ha aperto ne' buttare via cio' che ha digitato.
+      if (!window._cambioLingua) { S.macchinaInModifica = null; S.listinoAperto = null; }
+      disegno = renderMacchinari();
+      break;
+    case 'confronto-macchine': disegno = renderConfrontoMacchine();               break;
   }
   buildSidebar();
+  return Promise.resolve(disegno);
 }
 
 // Cambio lingua a caldo: si riusa la navigazione esistente invece di un
@@ -368,7 +406,33 @@ window.ridisegnaTutto = function () {
     valori.forEach(([id, v]) => { const i = el(id); if (i) i.value = v; });
     return; // il main e' coperto: ridisegnarlo non serve
   }
-  navigate(window._currentView || 'dashboard', window._currentParams || {});
+
+  // Stessa regola fuori dall'overlay: un editor aperto con dei prezzi appena
+  // digitati non deve svuotarsi perche' l'operatore ha cambiato lingua. Si
+  // fotografa quello che c'e' nei campi, si ridisegna la pagina, si riapre la
+  // sotto-vista che era aperta e si rimette dentro quello che c'era.
+  // Non tutti i campi hanno un id: quelli dell'editor dei prezzi si
+  // riconoscono dall'esame a cui appartengono. La chiave usa quello che c'e',
+  // altrimenti la fotografia salta proprio i campi che contano.
+  const chiaveCampo = i => i.id
+    || (i.dataset && i.dataset.esameId ? 'esame:' + i.dataset.esameId : '')
+    || i.name || '';
+  const campiOra = () => [...document.querySelectorAll('#main-content input, #main-content select')]
+    .filter(i => chiaveCampo(i));
+  const valori = campiOra().map(i => [chiaveCampo(i), i.value]);
+  const sotto = _sottoVista;
+  window._cambioLingua = true;
+  navigate(window._currentView || 'dashboard', window._currentParams || {})
+    .then(() => riapriSottoVista(sotto))
+    .then(() => {
+      const mappa = new Map(valori);
+      campiOra().forEach(i => {
+        const v = mappa.get(chiaveCampo(i));
+        if (v !== undefined && i.value !== v) i.value = v;
+      });
+    })
+    .catch(e => console.warn('ridisegno dopo cambio lingua:', e && e.message))
+    .finally(() => { window._cambioLingua = false; });
 };
 
 // ── Dashboard ──────────────────────────────────────
@@ -1609,6 +1673,7 @@ async function togglePianoAttivo(id, attivo) {
 }
 
 async function renderPianoEdit(id) {
+  _sottoVista = { tipo: 'pianoEdit', arg: id };
   let data;
   try {
     data = await api(`/api/piani/${id}`);
@@ -1825,6 +1890,7 @@ async function eliminaListinoUI(id) {
 // completare un import, quindi la riga nuova appartiene a questo listino: la
 // provenienza non si richiede di nuovo, la eredita.
 async function renderListinoMacchine(id) {
+  _sottoVista = { tipo: 'listinoMacchine', arg: id };
   let dettaglio;
   try { dettaglio = await api(`/api/listini-macchine/${id}`); }
   catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
@@ -1902,6 +1968,7 @@ function filtraMacchine(v) {
 }
 
 function chiudiListinoMacchine() {
+  _sottoVista = null;
   S.listinoAperto = null;
   S.macchinaInModifica = null;
   const wrap = el('listino-macchine-wrap');
@@ -2299,6 +2366,7 @@ function importaPdfConcorrente() {
 }
 
 async function renderConcorrenteDettaglio(id) {
+  _sottoVista = { tipo: 'concorrente', arg: id };
   let dettaglio;
   try { dettaglio = await api(`/api/concorrenti/${id}`); }
   catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
