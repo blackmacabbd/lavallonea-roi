@@ -324,6 +324,13 @@ async function navigateToStruttura(strutturaId, foglio) {
 // l'operatore aveva digitato: le si ricorda per riaprirle dopo un cambio lingua.
 let _sottoVista = null; // { tipo: 'pianoEdit' | 'listinoMacchine' | 'concorrente', arg }
 
+// Se l'oggetto della sotto-vista viene eliminato, ricordarsela non ha piu'
+// senso: riaprirla dopo un cambio lingua darebbe un errore all'operatore per
+// qualcosa che ha appena cancellato lui.
+function scordaSottoVista(tipo, arg) {
+  if (_sottoVista && _sottoVista.tipo === tipo && Number(_sottoVista.arg) === Number(arg)) _sottoVista = null;
+}
+
 function riapriSottoVista(sotto) {
   if (!sotto) return Promise.resolve();
   if (sotto.tipo === 'pianoEdit') return Promise.resolve(renderPianoEdit(sotto.arg));
@@ -421,8 +428,18 @@ window.ridisegnaTutto = function () {
     .filter(i => chiaveCampo(i));
   const valori = campiOra().map(i => [chiaveCampo(i), i.value]);
   const sotto = _sottoVista;
+  // Un contatore e non un interruttore: due cambi lingua ravvicinati
+  // sovrappongono due ridisegni, e il primo che finisce non deve spegnere la
+  // bandiera mentre il secondo e' ancora in corso — la spegnerebbe sotto i
+  // piedi al secondo, che tornerebbe a chiudere il listino aperto.
+  window._cambiLinguaInCorso = (window._cambiLinguaInCorso || 0) + 1;
   window._cambioLingua = true;
-  navigate(window._currentView || 'dashboard', window._currentParams || {})
+  // navigate dentro la catena: se lanciasse in modo sincrono (per esempio con
+  // il contenitore principale non ancora nel documento) la bandiera resterebbe
+  // accesa per sempre, e da quel momento nessuna navigazione vera chiuderebbe
+  // piu' quello che l'operatore ha aperto.
+  Promise.resolve()
+    .then(() => navigate(window._currentView || 'dashboard', window._currentParams || {}))
     .then(() => riapriSottoVista(sotto))
     .then(() => {
       const mappa = new Map(valori);
@@ -432,7 +449,10 @@ window.ridisegnaTutto = function () {
       });
     })
     .catch(e => console.warn('ridisegno dopo cambio lingua:', e && e.message))
-    .finally(() => { window._cambioLingua = false; });
+    .finally(() => {
+      window._cambiLinguaInCorso = Math.max(0, (window._cambiLinguaInCorso || 1) - 1);
+      if (!window._cambiLinguaInCorso) window._cambioLingua = false;
+    });
 };
 
 // ── Dashboard ──────────────────────────────────────
@@ -1882,6 +1902,7 @@ async function eliminaListinoUI(id) {
   if (!confirm(t(chiave, { nome: l ? l.nome : '', n: quante }))) return;
   try {
     await api(`/api/listini-macchine/${id}`, { method: 'DELETE' });
+    scordaSottoVista('listinoMacchine', id);
     renderMacchinari();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
@@ -2345,6 +2366,7 @@ async function eliminaConcorrenteUI(id) {
   if (!confirm(t(chiave, { nome, n: nEsami }))) return;
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
+    scordaSottoVista('concorrente', id);
     await loadConcorrenti();
     renderConcorrentiAdmin();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
