@@ -1,14 +1,12 @@
 /* Import PDF condiviso — analisi guidata, revisione e conferma.
  *
- * Componente unico usato da Gestione piani, Gestione concorrenti e Macchinari.
+ * Componente unico usato da Gestione piani e Gestione concorrenti.
  * Il PDF non viene mai riscaricato dal server: il browser rende il file
  * locale scelto dall'utente, mentre le coordinate delle righe riconosciute
  * arrivano dall'analisi lato server (punti PDF a scala 1, origine in alto a
  * sinistra).
  *
- * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'macchina', lato, nomeDefault, file, alFine })
- * `lato` conta solo per entita' 'macchina': 'mie' o 'concorrente' (qualunque
- * altro valore, o assente, vale 'mie').
+ * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente', nomeDefault, file, alFine })
  * Senza `file` il documento viene chiesto all'utente; con `file` si usa quello
  * (serve quando il documento e' gia' stato scelto da un input della pagina).
  * `alFine` viene chiamata dopo un import confermato con successo.
@@ -45,7 +43,7 @@
   // qui, a decidere dove finiscono le righe. Un valore fuori da questa lista
   // (o assente, come nelle chiamate storiche di Gestione piani) ricade su
   // 'piano', il comportamento di sempre.
-  const ENTITA_VALIDE = ['piano', 'concorrente', 'macchina'];
+  const ENTITA_VALIDE = ['piano', 'concorrente'];
 
   // Fascia, sopra e sotto la vista, di pagine tenute gia' disegnate.
   const MARGINE_ANTEPRIMA = 800;
@@ -251,32 +249,21 @@
   async function avvia(opzioni) {
     const opts = opzioni || {};
     const entita = ENTITA_VALIDE.includes(opts.entita) ? opts.entita : 'piano';
-    // Solo per 'macchina': quale dei due blocchi di Macchinari ha aperto
-    // l'import. Un valore diverso da 'concorrente' vale 'mie', il comportamento
-    // di sempre (import diretto, senza chiedere la provenienza).
-    const lato = opts.lato === 'concorrente' ? 'concorrente' : 'mie';
     const file = opts.file || await scegliFile();
     if (!file) return;
 
     montaFinestra(t('importPdf.titoloFinestra'), file.name);
     S = {
-      entita, lato, file,
+      entita, file,
       nomeDefault: opts.nomeDefault || file.name.replace(/\.pdf$/i, ''),
       alFine: typeof opts.alFine === 'function' ? opts.alFine : null,
       fase: 'carica', nota: '', percento: 4,
       buffer: null, analisi: null, righe: [], coord: new Map(),
       scala: 1.2, pdfDoc: null, selezionata: null,
       pagine: [], dpr: 1,
-      mostraScartate: false, inCorso: false,
-      // Solo per l'entita' 'macchina' e lato 'concorrente': elenco dei
-      // concorrenti fra cui scegliere. Il pulsante premuto in Macchinari ha
-      // gia' deciso fra proprie e concorrenza, quindi qui non si offre piu'
-      // "Le mie macchine" come scelta. Il caricamento parte subito ma non deve
-      // rallentare l'apertura della finestra (vedi caricaProvenienza).
-      provenienza: entita === 'macchina' && lato === 'concorrente' ? { stato: 'carico', lista: [] } : null
+      mostraScartate: false, inCorso: false
     };
     renderFasi();
-    if (entita === 'macchina' && lato === 'concorrente') caricaProvenienza();
 
     // Apertura locale del PDF in parallelo all'analisi: serve il numero di
     // pagine da mostrare subito e il documento per l'anteprima, senza allungare
@@ -297,8 +284,6 @@
     }
     if (!S) return; // finestra chiusa durante l'attesa
 
-    // "righe riconosciute", non "esami": il totale comprende anche le macchine,
-    // e su un listino di soli analizzatori dire "esami" sarebbe falso.
     fase('riconosci', t('importPdf.nota.risultatoRiconoscimento', {
       classificate: S.analisi.classificate, totale: S.analisi.totaliTabellari
     }), 72);
@@ -356,52 +341,6 @@
       xhr.addEventListener('error', () => rifiuta(new Error(t('importPdf.connessioneInterrotta'))));
       xhr.send(fd);
     });
-  }
-
-  // Elenco dei concorrenti esistenti per il selettore di provenienza (solo
-  // entita' 'macchina' e lato 'concorrente': il pulsante premuto in Macchinari
-  // ha gia' scelto fra proprie e concorrenza, qui si sceglie solo quale
-  // concorrente). Parte in parallelo all'analisi del PDF, senza bloccare
-  // l'apertura della finestra: se fallisce o non e' ancora arrivato, il
-  // selettore lo dichiara (vedi opzioniProvenienza).
-  function caricaProvenienza() {
-    fetch('/api/concorrenti', { headers: authHeaders() })
-      .then(r => r.ok ? r.json() : Promise.reject(new Error('errore')))
-      .then(lista => {
-        if (!S) return; // finestra chiusa nel frattempo
-        S.provenienza = { stato: 'pronto', lista: Array.isArray(lista) ? lista : [] };
-        aggiornaSelettoreProvenienza();
-      })
-      .catch(() => {
-        if (!S) return;
-        S.provenienza = { stato: 'errore', lista: [] };
-        aggiornaSelettoreProvenienza();
-      });
-  }
-
-  // Solo i concorrenti esistenti: la scelta fra proprie e concorrenza e' gia'
-  // stata fatta col pulsante premuto in Macchinari, quindi "Le mie macchine"
-  // non e' piu' un'opzione qui. Finche' l'elenco non e' arrivato, o se e'
-  // arrivato vuoto, una voce non selezionabile lo dichiara invece di lasciare
-  // il selettore silenziosamente senza scelte.
-  function opzioniProvenienza() {
-    const p = S.provenienza || { stato: 'carico', lista: [] };
-    if (p.stato === 'pronto' && p.lista.length) {
-      return p.lista.map(c => `<option value="${esc(c.id)}">${esc(c.nome)}</option>`).join('');
-    }
-    if (p.stato === 'pronto') return `<option value="" disabled>${esc(t('importPdf.provenienza.nessunConcorrente'))}</option>`;
-    // Stato 'carico' o 'errore': l'elenco non e' ancora disponibile.
-    return `<option value="" disabled>${esc(t('importPdf.provenienza.caricamento'))}</option>`;
-  }
-
-  function aggiornaSelettoreProvenienza() {
-    const sel = document.getElementById('imp-provenienza');
-    if (!sel) return;
-    const valorePrecedente = sel.value;
-    sel.innerHTML = opzioniProvenienza();
-    // Se l'operatore aveva gia' scelto un concorrente prima che l'elenco
-    // finisse di arrivare, la selezione resta quella.
-    if (Array.from(sel.options).some(o => o.value === valorePrecedente)) sel.value = valorePrecedente;
   }
 
   // Modello editabile: e' questo, non l'analisi, a decidere cosa verra'
@@ -470,11 +409,6 @@
               <label for="imp-nome-conc">${esc(t('importPdf.labelNomeConcorrente'))}</label>
               <input class="roi-input" id="imp-nome-conc" value="${esc(S.nomeDefault)}" placeholder="${esc(t('concorrenti.placeholderNomeEsempio'))}">
             </div>` : ''}
-          ${S.entita === 'macchina' && S.lato === 'concorrente' ? `
-            <div class="imp-campo">
-              <label for="imp-provenienza">${esc(t('macchinari.tabella.concorrente'))}</label>
-              <select class="roi-input" id="imp-provenienza">${opzioniProvenienza()}</select>
-            </div>` : ''}
           <div class="imp-tab" id="imp-tab"></div>
         </div>
       </div>
@@ -518,12 +452,8 @@
     const incerte = S.righe.filter(r => r.confidenza === 'incerta' && !r.modificata).length;
     const conf = Math.round((a.confidenzaComplessiva || 0) * 100);
 
-    // Un import ha una sola destinazione: per piano e concorrente le righe
-    // sono esami, per macchina sono macchine. Le parole del banner devono
-    // dirlo, non parlare genericamente di "righe" come quando l'import era
-    // misto.
-    const entitaPlurale = t(S.entita === 'macchina' ? 'importPdf.parolaMacchine' : 'importPdf.parolaEsami');
-    const estratte = t(S.entita === 'macchina' ? 'importPdf.estrattiFem' : 'importPdf.estrattiMasc');
+    const entitaPlurale = t('importPdf.parolaEsami');
+    const estratte = t('importPdf.estrattiMasc');
 
     let tipo = 'ok', titolo, messaggio, azioni = '';
     titolo = t('importPdf.banner.titolo', {
@@ -539,13 +469,6 @@
       if (persi > 0) azioni += `<button type="button" class="imp-link" id="imp-vedi-scartate">${esc(t(S.mostraScartate ? 'importPdf.banner.nascondiScartate' : 'importPdf.banner.mostraScartate'))}</button>`;
     } else {
       messaggio = t('importPdf.banner.tuttoOk');
-    }
-
-    // Unico uso rimasto del tipo di riga: se in un import verso Macchinari non
-    // si riconosce nessun analizzatore, quel PDF sembra un listino di esami.
-    // Avvisa senza bloccare: la scelta resta dell'operatore.
-    if (S.entita === 'macchina' && S.analisi.macchine === 0) {
-      messaggio += `<div class="imp-banner-dest">${esc(t('importPdf.banner.nessunAnalizzatore'))}</div>`;
     }
 
     document.getElementById('imp-banner').innerHTML = `
@@ -579,13 +502,13 @@
     const cont = document.getElementById('imp-tab');
     if (!cont) return;
     const scartate = scartateTabellari();
-    const colonnaNome = S.entita === 'macchina' ? t('macchinari.tabella.macchina') : t('piani.tabella.esame');
+    const colonnaNome = t('piani.tabella.esame');
 
     cont.innerHTML = `
       <table class="imp-tabella imp-tabella-edit">
         <thead><tr>
           <th style="width:30px">#</th><th>${esc(colonnaNome)}</th>
-          <th style="width:96px">${esc(t('macchinari.tabella.prezzo'))}</th><th style="width:104px">${esc(t('concorrenti.tabella.stato'))}</th><th style="width:34px"></th>
+          <th style="width:96px">${esc(t('comune.prezzo'))}</th><th style="width:104px">${esc(t('concorrenti.tabella.stato'))}</th><th style="width:34px"></th>
         </tr></thead>
         <tbody>
           ${S.righe.length ? S.righe.map((r, i) => rigaHtml(r, i)).join('')
@@ -779,24 +702,13 @@
     const righe = valide();
     if (!righe.length) return;
     // Per l'entita' 'concorrente' il nome e' testo libero digitato
-    // dall'operatore. Per 'macchina' il lato scelto col pulsante in Macchinari
-    // decide il concorrenteId: null per 'mie', l'id scelto nel selettore per
-    // 'concorrente'. Nessun altro caso invia questi due campi.
+    // dall'operatore. Nessun altro caso invia questo campo.
     const nomeConc = S.entita === 'concorrente'
       ? String((document.getElementById('imp-nome-conc') || {}).value || '').trim()
       : '';
-    const concorrenteId = S.entita === 'macchina' && S.lato === 'concorrente'
-      ? (String((document.getElementById('imp-provenienza') || {}).value || '').trim() || null)
-      : null;
     if (S.entita === 'concorrente' && !nomeConc) {
       alert(t('importPdf.alertNomeConcorrente'));
       const i = document.getElementById('imp-nome-conc');
-      if (i) i.focus();
-      return;
-    }
-    if (S.entita === 'macchina' && S.lato === 'concorrente' && !concorrenteId) {
-      alert(t('importPdf.alertSelezionaConcorrente'));
-      const i = document.getElementById('imp-provenienza');
       if (i) i.focus();
       return;
     }
@@ -807,7 +719,7 @@
       const resp = await fetch(`/api/import-pdf/${S.analisi.importId}/conferma`, {
         method: 'POST',
         headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
-        body: JSON.stringify({ nome: nomeConc, righe, confermaCompletezza: true, concorrenteId })
+        body: JSON.stringify({ nome: nomeConc, righe, confermaCompletezza: true })
       });
       const dati = await resp.json().catch(() => null);
       if (!resp.ok) throw new Error(messaggioErrore(dati, t('errore.rispostaServer', { stato: resp.status })));

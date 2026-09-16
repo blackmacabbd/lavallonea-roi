@@ -1678,59 +1678,9 @@ body.imp-aperto { overflow: hidden; }
 .imp-banner-dest { margin-top: 6px; font-size: 12.5px; color: var(--ink-soft); }
 .imp-azioni-riga { display: flex; gap: 2px; }
 
-/* Sezione Macchinari: l'avviso dice a cosa serve la pagina, prima che
-   qualcuno ci carichi il listino sbagliato. */
-.macc-avviso {
-  display: flex; align-items: flex-start; gap: 11px;
-  padding: 12px 16px; margin-bottom: 14px;
-  background: var(--blue-tint); border: 1px solid var(--blue-line);
-  border-radius: 10px; font-size: 13px; color: var(--ink-soft); line-height: 1.45;
-}
-.macc-avviso-ico { font-size: 18px; line-height: 1.2; }
-
 /* Le colonne di importi si leggono incolonnate a destra. La classe non
    esisteva: qui viene definita una volta e riusata dal calcolatore. */
 .td-num { text-align: right; font-variant-numeric: tabular-nums; }
-
-/* La riga in inserimento o modifica si distingue dalle altre senza uscire
-   dalla tabella: il progetto non usa finestre di dialogo native. */
-.macc-riga-modifica { background: var(--blue-tint); }
-.macc-riga-modifica .roi-input { width: 100%; }
-
-/* Confronto macchine: stessa lettura del risparmio del calcolatore esami —
-   blu quando conviene Mylav, rosso quando conviene il concorrente. */
-.macc-confronto { width: 100%; border-collapse: collapse; font-size: 13px; }
-.macc-confronto th {
-  text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line);
-  font-size: 11px; font-weight: 650; text-transform: uppercase;
-  letter-spacing: .04em; color: var(--ink-soft);
-}
-.macc-confronto td { padding: 6px 10px; border-bottom: 1px solid var(--line); }
-.macc-confronto tfoot td { border-bottom: none; border-top: 2px solid var(--line); }
-.macc-meglio { color: var(--blue); }
-.macc-peggio { color: var(--red); }
-
-/* Macchinari: due blocchi distinti dal colore. Blu = Mylav, rosso =
-   concorrenza, la stessa convenzione usata nei calcolatori. */
-.macc-blocco {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-  margin-bottom: 18px;
-}
-.macc-blocco-testa {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 12px 16px;
-  border-left: 4px solid var(--line);
-  border-bottom: 1px solid var(--line);
-}
-.macc-blocco-mie  .macc-blocco-testa { border-left-color: var(--blue); background: var(--blue-tint); }
-.macc-blocco-loro .macc-blocco-testa { border-left-color: var(--red);  background: var(--red-tint); }
-.macc-blocco-tit { font-size: 14px; font-weight: 650; color: var(--ink); }
-.macc-blocco-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.macc-blocco-corpo { padding: 12px 16px 4px; }
-.macc-blocco-corpo .dett-search { width: 100%; max-width: 340px; }
 
 /* Selettore della lingua: fissato in alto a destra, fuori dal disegno delle
    pagine, che si ridisegnano continuamente. */

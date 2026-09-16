@@ -11,7 +11,6 @@ const concorrenti = require('./lib/concorrenti');
 const pdfestrazione = require('./lib/pdfestrazione');
 const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
-const macchineLib = require('./lib/macchine');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -140,8 +139,22 @@ addColIfMissing('concorrenti', 'user_id', 'INTEGER');
 // ── Bozze di import PDF e audit ─────────────────────
 importbozze.ensureSchema(db);
 
-// ── Catalogo analizzatori ───────────────────────────
-macchineLib.ensureSchema(db);
+// ── Rimozione del catalogo analizzatori ─────────────
+// I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
+// e' la decisione che il veterinario prende. La logica e' stata sostituita dal
+// calcolatore clip: le due tabelle non servono piu'.
+// Il DROP gira solo a tabella vuota: se qualcuno avesse dei dati, e' meglio
+// fallire l'avvio e accorgersene che cancellarglieli.
+for (const t of ['macchine', 'listini_macchine']) {
+  const esiste = db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(t);
+  if (!esiste) continue;
+  const righe = db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c;
+  if (righe > 0) {
+    throw new Error(`La tabella ${t} contiene ${righe} righe: rimuovile prima di aggiornare.`);
+  }
+  db.exec(`DROP TABLE ${t}`);
+}
 
 // ── Autenticazione ──────────────────────────────────
 auth.ensureSchema(db);
@@ -1550,10 +1563,6 @@ app.post('/api/import-pdf/analizza', requireAuth, uploadPdf.single('file'), asyn
       righe: cls.righe,
       totaliTabellari: cls.totaliTabellari,
       classificate: cls.classificate,
-      // Il conteggio delle macchine serve solo all'avviso mostrato in
-      // revisione: se un import verso Macchinari non riconosce nessun
-      // analizzatore, il documento sembra invece un listino di esami.
-      macchine: cls.macchine,
       alta: cls.alta,
       incerte: cls.incerte,
       scartate: cls.scartate,
@@ -1607,10 +1616,9 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       return res.status(400).json({ error: 'Nessuna riga importabile nell\'elenco confermato', codice: 'NESSUNA_RIGA_IMPORTABILE' });
     }
 
-    // Una sola destinazione per import. Le macchine entrano solo dalla sezione
-    // Macchinari: uno smistamento automatico spostava righe in una sezione che
-    // l'operatore non aveva scelto, e una singola riga riconosciuta male bastava
-    // a tipizzare male tutte le successive.
+    // Una sola destinazione per import: per l'entita' 'concorrente' le righe
+    // vanno nel listino del concorrente, altrimenti nella propria copia del
+    // catalogo piani.
     //
     // Il catalogo si scrive prima di confermare la bozza: gli upsert sono
     // idempotenti (ripetere la scrittura non crea doppioni), mentre l'ordine
@@ -1628,19 +1636,6 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
         valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
         req.user.id
       );
-    } else if (bozza.entita === 'macchina') {
-      // Ogni import crea il suo listino: il nome del file lo identifica, la
-      // provenienza scelta dall'operatore dice di chi sono quelle macchine.
-      const listino = macchineLib.creaListino(db, {
-        userId: req.user.id,
-        nome: bozza.nomeFile,
-        concorrenteId: req.body && req.body.concorrenteId
-      });
-      macchineLib.upsertMacchine(db, {
-        listinoId: listino.id, userId: req.user.id,
-        righe: valide.map(r => ({ nome: r.nome, prezzo: r.prezzo, note: null }))
-      });
-      risultato = { listinoId: listino.id };
     } else {
       // Aggiorna i prezzi base della PROPRIA copia del catalogo: upsert per nome,
       // nessuna cancellazione degli esami assenti dal PDF e nessun piano toccato.
@@ -1657,68 +1652,12 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
       { nRighe: valide.length });
     res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
-  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) }); }
-});
-
-// ── Macchinari (analizzatori) ──────────────────────
-// Un errore che dice "non trovato" e' una risorsa inesistente per questo
-// account: 404. Gli altri sono dati non validi: 400. Con un codice, la
-// decisione si basa su quello (stessa informazione, in forma robusta); senza
-// codice ricade sulla vecchia espressione regolare sul testo italiano, per
-// gli errori che non passano da qui con un codice attaccato.
-const ERRORI_NON_TROVATO = /non trovat/i;
-const CODICI_NON_TROVATO = new Set(['LISTINO_NON_TROVATO', 'MACCHINA_NON_TROVATA', 'CONCORRENTE_NON_TROVATO']);
-function statoErroreMacchina(err) {
-  if (err && err.codice) return CODICI_NON_TROVATO.has(err.codice) ? 404 : 400;
-  return ERRORI_NON_TROVATO.test(String(err && err.message)) ? 404 : 400;
-}
-
-app.get('/api/listini-macchine', requireAuth, (req, res) => {
-  try { res.json(macchineLib.listaListini(db, req.user.id)); }
-  catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.get('/api/listini-macchine/:id', requireAuth, (req, res) => {
-  try {
-    const listino = macchineLib.getListino(db, req.params.id, req.user.id);
-    if (!listino) return res.status(404).json({ error: 'Listino non trovato', codice: 'LISTINO_NON_TROVATO' });
-    res.json({ ...listino, macchine: macchineLib.macchineDiListino(db, req.params.id, req.user.id) });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.delete('/api/listini-macchine/:id', requireAuth, (req, res) => {
-  try {
-    const ok = macchineLib.eliminaListino(db, req.params.id, req.user.id);
-    if (!ok) return res.status(404).json({ error: 'Listino non trovato', codice: 'LISTINO_NON_TROVATO' });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.get('/api/macchine', requireAuth, (req, res) => {
-  try { res.json(macchineLib.listaMacchine(db, req.user.id)); }
-  catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-app.post('/api/macchine', requireAuth, express.json(), (req, res) => {
-  try {
-    const { listinoId, nome, prezzo, note } = req.body || {};
-    res.json({ success: true, ...macchineLib.salvaMacchina(db, { userId: req.user.id, listinoId, nome, prezzo, note }) });
-  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) }); }
-});
-
-app.put('/api/macchine/:id', requireAuth, express.json(), (req, res) => {
-  try {
-    const { listinoId, nome, prezzo, note } = req.body || {};
-    res.json({ success: true, ...macchineLib.salvaMacchina(db, { id: req.params.id, userId: req.user.id, listinoId, nome, prezzo, note }) });
-  } catch (err) { res.status(statoErroreMacchina(err)).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) }); }
-});
-
-app.delete('/api/macchine/:id', requireAuth, (req, res) => {
-  try {
-    const ok = macchineLib.eliminaMacchina(db, req.params.id, req.user.id);
-    if (!ok) return res.status(404).json({ error: 'Macchina non trovata', codice: 'MACCHINA_NON_TROVATA' });
-    res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) {
+    // Un errore che dice "non trovato" e' una risorsa inesistente per questo
+    // account: 404. Gli altri sono dati non validi: 400.
+    const nonTrovato = /non trovat/i.test(String(err && err.message));
+    res.status(nonTrovato ? 404 : 400).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
+  }
 });
 
 app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {

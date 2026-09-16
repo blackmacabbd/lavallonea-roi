@@ -12,15 +12,6 @@ const S = {
   charts:    {},
   piani:     [],
   concorrenti: [],
-  listiniMacchine: [],
-  listinoAperto: null,
-  macchinaInModifica: null,
-  filtroMacchine: '',
-  filtroListiniMie: '',
-  filtroListiniLoro: '',
-  salvataggioMacchinaInCorso: false,
-  macchine: [],
-  confrontoMacchine: null,
   foglio: { dati: null, totali: null, file: null, foglio: null, fileId: null },
   roi: {
     struttura: '',
@@ -201,12 +192,6 @@ function buildSidebar() {
     <div class="nav-item ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
       <span class="nav-icon">🏷️</span> ${t('menu.concorrenti')}
     </div>
-    <div class="nav-item ${isActive('macchinari')}" onclick="navigate('macchinari')">
-      <span class="nav-icon">🔬</span> ${t('menu.macchinari')}
-    </div>
-    <div class="nav-item ${isActive('confronto-macchine')}" onclick="navigate('confronto-macchine')">
-      <span class="nav-icon">🆚</span> ${t('menu.confrontoMacchine')}
-    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -331,10 +316,10 @@ async function navigateToStruttura(strutturaId, foglio) {
 }
 
 // Sotto-vista aperta dentro la pagina corrente: editor prezzi di un piano,
-// dettaglio di un listino macchine, dettaglio di un concorrente. Non passano da
-// navigate, quindi un ridisegno le farebbe sparire portandosi via quello che
-// l'operatore aveva digitato: le si ricorda per riaprirle dopo un cambio lingua.
-let _sottoVista = null; // { tipo: 'pianoEdit' | 'listinoMacchine' | 'concorrente', arg }
+// dettaglio di un concorrente. Non passano da navigate, quindi un ridisegno
+// le farebbe sparire portandosi via quello che l'operatore aveva digitato: le
+// si ricorda per riaprirle dopo un cambio lingua.
+let _sottoVista = null; // { tipo: 'pianoEdit' | 'concorrente', arg }
 
 // Se l'oggetto della sotto-vista viene eliminato, ricordarsela non ha piu'
 // senso: riaprirla dopo un cambio lingua darebbe un errore all'operatore per
@@ -346,7 +331,6 @@ function scordaSottoVista(tipo, arg) {
 function riapriSottoVista(sotto) {
   if (!sotto) return Promise.resolve();
   if (sotto.tipo === 'pianoEdit') return Promise.resolve(renderPianoEdit(sotto.arg));
-  if (sotto.tipo === 'listinoMacchine') return Promise.resolve(renderListinoMacchine(sotto.arg));
   if (sotto.tipo === 'concorrente') return Promise.resolve(renderConcorrenteDettaglio(sotto.arg));
   return Promise.resolve();
 }
@@ -377,18 +361,6 @@ function navigate(view, params = {}) {
     case 'risparmio-totale': disegno = renderRisparmioTotale();                  break;
     case 'piani':      disegno = renderPiani();                                  break;
     case 'concorrenti': disegno = renderConcorrentiAdmin();                      break;
-    // Si arriva qui dalla voce di menu, mai da nuovaMacchina/modificaMacchina
-    // (che ridisegnano chiamando renderListinoMacchine() direttamente): azzerare
-    // la riga in modifica quando si entra nella sezione da un'altra pagina non
-    // rompe il flusso di modifica, e toglie uno stato residuo che l'operatore
-    // non ha piu' motivo di ritrovare aperto.
-    case 'macchinari':
-      // Un cambio lingua non e' una navigazione: non deve chiudere quello che
-      // l'operatore ha aperto ne' buttare via cio' che ha digitato.
-      if (!window._cambioLingua) { S.macchinaInModifica = null; S.listinoAperto = null; }
-      disegno = renderMacchinari();
-      break;
-    case 'confronto-macchine': disegno = renderConfrontoMacchine();               break;
   }
   buildSidebar();
   return Promise.resolve(disegno);
@@ -396,8 +368,7 @@ function navigate(view, params = {}) {
 
 // Cambio lingua a caldo: si riusa la navigazione esistente invece di un
 // secondo percorso di disegno, cosi' ogni vista resta l'unica responsabile
-// del proprio markup. Se la vista corrente azzera stato al suo ingresso
-// (es. 'macchinari' chiude il listino aperto), l'effetto e' accettato.
+// del proprio markup.
 //
 // Il main e' pero' coperto da #auth-overlay quando l'operatore non ha ancora
 // fatto accesso: ridisegnare 'main-content' in quel caso non serve a nulla
@@ -1781,446 +1752,6 @@ async function importaPianiJson(inputEl) {
   inputEl.value = '';
 }
 
-// ── Macchinari (analizzatori) ──
-// Due livelli come Gestione concorrenti: prima i listini importati, poi le
-// macchine di quello aperto. Le macchine entrano solo da un import PDF.
-async function renderMacchinari() {
-  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
-  let listini = [];
-  if (loggato) {
-    try { listini = await api('/api/listini-macchine'); }
-    catch (e) {
-      setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-        <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
-      return;
-    }
-    // Il blocco concorrenza deve sapere quali concorrenti esistono per il suo
-    // pulsante di import: se non sono ancora in memoria si caricano qui,
-    // riusando loadConcorrenti invece di duplicare la chiamata all'API.
-    if (!S.concorrenti || !S.concorrenti.length) {
-      try { await loadConcorrenti(); } catch (e) { /* resta vuoto, il blocco lo segnala */ }
-    }
-  }
-  S.listiniMacchine = listini;
-  disegnaMacchinari();
-}
-
-// Disegno sincrono su S.listiniMacchine gia' in memoria: le due ricerche lo
-// richiamano a ogni carattere digitato, quindi non deve mai ricaricare dal
-// server (a differenza di renderMacchinari, che e' async e lo fa).
-function disegnaMacchinari() {
-  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
-  const listini = S.listiniMacchine || [];
-  const mie = listini.filter(l => !l.concorrenteId);
-  const loro = listini.filter(l => l.concorrenteId);
-
-  setMain(`
-    <div class="page-header">
-      <div><div class="page-title">${t('pagina.macchinari.titolo')}</div>
-        <div class="page-subtitle">${t('pagina.macchinari.sottotitolo', { mie: mie.length, loro: loro.length })}</div>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="macc-avviso">
-        <span class="macc-avviso-ico">🔬</span>
-        <div>${t('macchinari.avviso', { piani: t('menu.piani'), concorrenti: t('menu.concorrenti') })}</div>
-      </div>
-      ${loggato ? '' : `<div class="empty-state" style="padding:12px 16px;margin-bottom:14px;text-align:left">
-        <div class="empty-sub">${t('macchinari.avvisoOspite')}</div>
-      </div>`}
-      ${bloccoListiniHtml('mie', t('macchinari.mieTitolo'), t('macchinari.mieSottotitolo'), mie, loggato)}
-      ${bloccoListiniHtml('loro', t('macchinari.loroTitolo'), t('macchinari.loroSottotitolo'), loro, loggato)}
-      <div id="listino-macchine-wrap"></div>
-    </div>
-  `);
-}
-
-// Due blocchi distinti dai colori che nel progetto hanno gia' un significato:
-// blu Mylav, rosso concorrenza. Ogni blocco ha il suo import e la sua ricerca,
-// cosi' il comando dichiara da se' dove finiranno le macchine.
-function bloccoListiniHtml(lato, titolo, sottotitolo, listini, loggato) {
-  const filtro = lato === 'mie' ? (S.filtroListiniMie || '') : (S.filtroListiniLoro || '');
-  const visibili = listini.filter(l => Ricerca.corrisponde(l.nome, filtro));
-  const funzioneFiltro = lato === 'mie' ? 'filtraListiniMie' : 'filtraListiniLoro';
-  const funzioneImport = lato === 'mie' ? 'importaPdfMacchineMie' : 'importaPdfMacchineConcorrente';
-  const etichettaImport = lato === 'mie' ? t('comune.importaListinoPdf') : t('macchinari.importaListinoConcorrente');
-
-  return `
-    <div class="macc-blocco macc-blocco-${lato}">
-      <div class="macc-blocco-testa">
-        <div>
-          <div class="macc-blocco-tit">${escHtml(titolo)}</div>
-          <div class="macc-blocco-sub">${escHtml(sottotitolo)}</div>
-        </div>
-        ${loggato ? `<button class="btn-outline" onclick="${funzioneImport}()">${etichettaImport}</button>` : ''}
-      </div>
-      <div class="macc-blocco-corpo">
-        <input class="roi-input dett-search" placeholder="${escHtml(t('macchinari.cercaListinoPlaceholder'))}" value="${escHtml(filtro)}"
-               oninput="${funzioneFiltro}(this.value)" autocomplete="off" style="margin-bottom:10px">
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>${t('macchinari.tabella.listino')}</th>${lato === 'loro' ? `<th>${t('macchinari.tabella.concorrente')}</th>` : ''}<th style="width:100px">${t('macchinari.tabella.macchine')}</th><th style="width:110px">${t('macchinari.tabella.importato')}</th><th style="width:190px"></th></tr></thead>
-            <tbody>
-              ${visibili.map(l => `<tr>
-                <td>${escHtml(l.nome)}</td>
-                ${lato === 'loro' ? `<td class="td-muted">${escHtml(l.concorrenteNome || '')}</td>` : ''}
-                <td class="td-muted">${l.nMacchine}</td>
-                <td class="td-muted">${fmtDate(l.dataImport)}</td>
-                <td style="display:flex;gap:6px">
-                  <button class="btn-outline" onclick="renderListinoMacchine(${l.id})">${t('macchinari.vediMacchine')}</button>
-                  <button class="btn-outline" onclick="eliminaListinoUI(${l.id})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
-                </td>
-              </tr>`).join('')}
-              ${!visibili.length ? `<tr><td colspan="${lato === 'loro' ? 5 : 4}" class="td-muted" style="text-align:center;padding:22px">
-                ${listini.length
-                  ? t('macchinari.nessunListinoRicerca')
-                  : (loggato
-                      ? t('macchinari.nessunListinoImportato')
-                      : (lato === 'mie'
-                          ? t('macchinari.accediImportareMie')
-                          : t('macchinari.accediImportareLoro')))}
-              </td></tr>` : ''}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
-}
-
-function filtraListiniMie(v) { S.filtroListiniMie = v; disegnaMacchinari(); }
-function filtraListiniLoro(v) { S.filtroListiniLoro = v; disegnaMacchinari(); }
-
-function importaPdfMacchineMie() {
-  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
-  ImportPdf.avvia({ entita: 'macchina', lato: 'mie', alFine: () => renderMacchinari() });
-}
-
-async function importaPdfMacchineConcorrente() {
-  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
-  // Con l'elenco vuoto si rilegge prima di dare un verdetto: se il caricamento
-  // all'apertura della pagina e' fallito, l'archivio sembrerebbe vuoto senza
-  // esserlo, e l'operatore leggerebbe un motivo sbagliato.
-  if (!S.concorrenti || !S.concorrenti.length) {
-    try { await loadConcorrenti(); }
-    catch (e) { alert(`${t('macchinari.erroreLetturaConcorrenti')}: ${e.message}`); return; }
-  }
-  if (!S.concorrenti.length) {
-    alert(t('macchinari.nessunConcorrenteArchivio', { sezione: t('menu.concorrenti') }));
-    return;
-  }
-  ImportPdf.avvia({ entita: 'macchina', lato: 'concorrente', alFine: () => renderMacchinari() });
-}
-
-async function eliminaListinoUI(id) {
-  const l = (S.listiniMacchine || []).find(x => x.id === id);
-  const quante = l ? l.nMacchine : 0;
-  const chiave = quante === 1 ? 'macchinari.confermaEliminaListino.uno' : 'macchinari.confermaEliminaListino.molti';
-  if (!confirm(t(chiave, { nome: l ? l.nome : '', n: quante }))) return;
-  try {
-    await api(`/api/listini-macchine/${id}`, { method: 'DELETE' });
-    scordaSottoVista('listinoMacchine', id);
-    renderMacchinari();
-  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
-}
-
-// Le macchine del listino aperto. L'aggiunta a mano serve a correggere o
-// completare un import, quindi la riga nuova appartiene a questo listino: la
-// provenienza non si richiede di nuovo, la eredita.
-async function renderListinoMacchine(id) {
-  _sottoVista = { tipo: 'listinoMacchine', arg: id };
-  let dettaglio;
-  try { dettaglio = await api(`/api/listini-macchine/${id}`); }
-  catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
-
-  // La ricerca appartiene al listino aperto: aprendone un altro si ricomincia da
-  // un elenco intero. Si azzera solo al cambio di listino, non a ogni disegno,
-  // altrimenti salvare una macchina cancellerebbe la ricerca in corso.
-  if (!S.listinoAperto || S.listinoAperto.id !== dettaglio.id) S.filtroMacchine = '';
-
-  S.listinoAperto = dettaglio;
-  const wrap = el('listino-macchine-wrap');
-  if (!wrap) return;
-
-  wrap.innerHTML = `
-    <div class="section-card">
-      <div class="section-card-title">
-        ${escHtml(dettaglio.nome)} —
-        ${dettaglio.concorrenteNome ? escHtml(dettaglio.concorrenteNome) : t('macchinari.mylavMie')}
-      </div>
-      <div class="dett-toolbar" style="margin-bottom:12px">
-        <button class="btn-outline" onclick="nuovaMacchina(${id})">${t('macchinari.aggiungiMacchina')}</button>
-        <input class="roi-input dett-search" id="macc-search" placeholder="${escHtml(t('macchinari.cercaMacchinaPlaceholder'))}"
-               value="${escHtml(S.filtroMacchine || '')}" oninput="filtraMacchine(this.value)" autocomplete="off">
-        <button class="btn-ghost" onclick="chiudiListinoMacchine()">${t('comune.chiudi')}</button>
-      </div>
-      <div class="table-scroll" style="max-height:420px;overflow-y:auto">
-        <table>
-          <thead><tr><th>${t('macchinari.tabella.macchina')}</th><th style="width:120px">${t('macchinari.tabella.prezzo')}</th><th style="width:170px"></th></tr></thead>
-          <tbody id="macc-tbody"></tbody>
-        </table>
-      </div>
-    </div>`;
-  renderListinoMacchineBody();
-}
-
-function renderListinoMacchineBody() {
-  const dettaglio = S.listinoAperto;
-  const tbody = el('macc-tbody');
-  if (!tbody || !dettaglio) return;
-  const inMod = S.macchinaInModifica;
-  const filtro = S.filtroMacchine || '';
-  // Le altre righe (quella in modifica, se c'e', resta sempre visibile a parte).
-  const altre = dettaglio.macchine.filter(m => !inMod || m.id !== inMod.id);
-  const altreFiltrate = altre.filter(m => Ricerca.corrisponde(m.nome, filtro));
-
-  tbody.innerHTML = `
-    ${inMod ? `<tr class="macc-riga-modifica">
-      <td><input class="roi-input" id="macc-nome" value="${escHtml(inMod.nome)}"
-                 placeholder="${escHtml(t('macchinari.placeholderNomeEsempio'))}" autocomplete="off"></td>
-      <td><input class="roi-input roi-num" id="macc-prezzo" inputmode="decimal"
-                 value="${inMod.prezzo === '' ? '' : escHtml(String(inMod.prezzo))}" placeholder="0,00"></td>
-      <td style="display:flex;gap:6px">
-        <button class="btn-primary" onclick="salvaMacchinaUI()">${t('comune.salva')}</button>
-        <button class="btn-outline" onclick="annullaModificaMacchina()">${t('comune.annulla')}</button>
-      </td>
-    </tr>` : ''}
-    ${altreFiltrate.map(m => `<tr>
-      <td>${escHtml(m.nome)}</td>
-      <td class="td-num">${fmtEuro(m.prezzo)}</td>
-      <td style="display:flex;gap:6px">
-        <button class="btn-outline" onclick="modificaMacchina(${m.id})">${t('comune.modifica')}</button>
-        <button class="btn-outline" onclick="eliminaMacchinaUI(${m.id})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
-      </td>
-    </tr>`).join('')}
-    ${!altre.length && !inMod ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
-      ${t('macchinari.nessunaMacchinaListino')}</td></tr>` : ''}
-    ${altre.length && !altreFiltrate.length ? `<tr><td colspan="3" class="td-muted" style="text-align:center;padding:22px">
-      ${t('macchinari.nessunaMacchinaRicerca')}</td></tr>` : ''}
-  `;
-}
-
-function filtraMacchine(v) {
-  S.filtroMacchine = v;
-  renderListinoMacchineBody();
-}
-
-function chiudiListinoMacchine() {
-  _sottoVista = null;
-  S.listinoAperto = null;
-  S.macchinaInModifica = null;
-  const wrap = el('listino-macchine-wrap');
-  if (wrap) wrap.innerHTML = '';
-}
-
-function nuovaMacchina(listinoId) {
-  S.macchinaInModifica = { id: null, listinoId, nome: '', prezzo: '' };
-  renderListinoMacchine(listinoId);
-}
-
-function modificaMacchina(id) {
-  const l = S.listinoAperto;
-  if (!l) return;
-  const m = l.macchine.find(x => x.id === id);
-  if (!m) return;
-  S.macchinaInModifica = { id: m.id, listinoId: l.id, nome: m.nome, prezzo: m.prezzo };
-  renderListinoMacchine(l.id);
-}
-
-function annullaModificaMacchina() {
-  const l = S.listinoAperto;
-  S.macchinaInModifica = null;
-  if (l) renderListinoMacchine(l.id);
-}
-
-async function salvaMacchinaUI() {
-  if (S.salvataggioMacchinaInCorso) return;
-  const inMod = S.macchinaInModifica;
-  if (!inMod) return;
-  const nome = (el('macc-nome') || {}).value || '';
-  const prezzoTesto = (el('macc-prezzo') || {}).value || '';
-  const prezzo = parseFloat(String(prezzoTesto).replace(/\./g, '').replace(',', '.'));
-  if (!nome.trim()) { alert(t('macchinari.inserisciNomeMacchina')); return; }
-  if (!Number.isFinite(prezzo) || prezzo < 0) { alert(t('macchinari.inserisciPrezzoValido')); return; }
-
-  S.salvataggioMacchinaInCorso = true;
-  const corpo = JSON.stringify({ listinoId: inMod.listinoId, nome: nome.trim(), prezzo });
-  try {
-    if (inMod.id) {
-      await api(`/api/macchine/${inMod.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: corpo });
-    } else {
-      await api('/api/macchine', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: corpo });
-    }
-    S.macchinaInModifica = null;
-    await renderMacchinari();
-    renderListinoMacchine(inMod.listinoId);
-  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
-  finally { S.salvataggioMacchinaInCorso = false; }
-}
-
-async function eliminaMacchinaUI(id) {
-  const l = S.listinoAperto;
-  const m = l ? l.macchine.find(x => x.id === id) : null;
-  if (!confirm(t('macchinari.confermaEliminaMacchina', { nome: m ? m.nome : t('macchinari.questaMacchina') }))) return;
-  try {
-    await api(`/api/macchine/${id}`, { method: 'DELETE' });
-    await renderMacchinari();
-    if (l) renderListinoMacchine(l.id);
-  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
-}
-
-// ── Confronto macchine ──
-// Sezione propria, con la stessa barra di comandi del simulatore esami.
-// L'accoppiamento fra una macchina propria e una del concorrente e' scelto a
-// mano riga per riga: nessuna mappatura salvata, nessun algoritmo di somiglianza.
-async function renderConfrontoMacchine() {
-  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
-  let elenco = [];
-  if (loggato) {
-    try { elenco = await api('/api/macchine'); }
-    catch (e) {
-      setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-        <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
-      return;
-    }
-  }
-  S.macchine = elenco;
-  const mie = elenco.filter(m => !m.concorrenteId);
-  const loro = elenco.filter(m => m.concorrenteId);
-
-  // La riga di default nasce solo qui, al primo ingresso nella sezione (mai in
-  // renderCorpoConfrontoMacchine, che ridisegna a ogni modifica): altrimenti
-  // "Rimuovi tutto" verrebbe vanificato dal ridisegno immediato che segue.
-  if (S.confrontoMacchine == null && mie.length && loro.length) {
-    S.confrontoMacchine = [{ mia: mie[0].id, sua: loro[0].id }];
-  }
-
-  setMain(`
-    <div class="page-header">
-      <div><div class="page-title">${t('pagina.confrontoMacchine.titolo')}</div>
-        <div class="page-subtitle">${t('pagina.confrontoMacchine.sottotitolo', { mie: mie.length, loro: loro.length })}</div>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="section-card">
-        <div class="roi-toolbar" style="justify-content:flex-end">
-          <div class="roi-toolbar-controls">
-            ${mie.length && loro.length ? `<button class="btn-outline" onclick="aggiungiConfrontoMacchina()" style="font-size:12px">${t('confronto.aggiungiRiga')}</button>
-            <button class="btn-outline" onclick="rimuoviTuttoConfrontoMacchine()" style="font-size:12px">${t('confronto.rimuoviTutto')}</button>` : ''}
-            <button class="btn-outline" onclick="navigate('macchinari')" style="font-size:12px">${t('confronto.gestisciMacchinari')}</button>
-          </div>
-        </div>
-        <div id="confronto-macchine-corpo"></div>
-      </div>
-    </div>
-  `);
-  renderCorpoConfrontoMacchine();
-}
-
-function renderCorpoConfrontoMacchine() {
-  const wrap = el('confronto-macchine-corpo');
-  if (!wrap) return;
-  const loggato = !!(S.auth && S.auth.token && !S.auth.guest);
-  const mie = (S.macchine || []).filter(m => !m.concorrenteId);
-  const loro = (S.macchine || []).filter(m => m.concorrenteId);
-
-  if (!mie.length || !loro.length) {
-    const manca = !loggato
-      ? t('confronto.mancaOspite')
-      : !mie.length && !loro.length
-        ? t('confronto.mancaEntrambe')
-        : !mie.length
-          ? t('confronto.mancaMie')
-          : t('confronto.mancaLoro');
-    wrap.innerHTML = `
-      <div class="td-muted" style="padding:6px 0;line-height:1.5">${manca}</div>
-      <button class="btn-primary" style="margin-top:12px" onclick="navigate('macchinari')">${loggato ? t('confronto.vaiMacchinari') : t('comune.accedi')}</button>`;
-    return;
-  }
-
-  // Una riga che punta a una macchina non piu' esistente direbbe una cosa
-  // diversa da quella scelta: si scarta invece di ripiegare su un'altra. Non
-  // viene ricreata una riga di ripiego: quella di default nasce solo al primo
-  // ingresso nella sezione, in renderConfrontoMacchine.
-  const righe = Array.isArray(S.confrontoMacchine)
-    ? S.confrontoMacchine.filter(r => mie.some(m => m.id === r.mia) && loro.some(m => m.id === r.sua))
-    : [];
-  S.confrontoMacchine = righe;
-
-  if (!righe.length) {
-    wrap.innerHTML = `
-      <div class="td-muted" style="padding:16px 0;line-height:1.5;text-align:center">
-        ${t('confronto.nessunaRiga')}
-      </div>`;
-    return;
-  }
-
-  const opzioni = (lista, sel) => lista
-    .map(m => `<option value="${m.id}" ${m.id === sel ? 'selected' : ''}>${escHtml(m.nome)}</option>`).join('');
-
-  let totMia = 0, totSua = 0;
-  const righeHtml = righe.map((r, i) => {
-    const a = mie.find(m => m.id === r.mia);
-    const b = loro.find(m => m.id === r.sua);
-    totMia += a.prezzo; totSua += b.prezzo;
-    const diff = a.prezzo - b.prezzo;
-    return `<tr>
-      <td><select class="roi-input" onchange="cambiaConfrontoMacchina(${i},'mia',this.value)">${opzioni(mie, a.id)}</select></td>
-      <td><select class="roi-input" onchange="cambiaConfrontoMacchina(${i},'sua',this.value)">${opzioni(loro, b.id)}</select></td>
-      <td class="td-num">${fmtEuro(a.prezzo)}</td>
-      <td class="td-num">${fmtEuro(b.prezzo)}</td>
-      <td class="td-num ${diff <= 0 ? 'macc-meglio' : 'macc-peggio'}">${diff <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diff))}</td>
-      <td>${righe.length > 1 ? `<button class="imp-x-riga" onclick="togliConfrontoMacchina(${i})" title="${t('confronto.togliRiga')}">✕</button>` : ''}</td>
-    </tr>`;
-  }).join('');
-
-  const diffTot = totMia - totSua;
-  wrap.innerHTML = `
-    <div class="table-scroll">
-      <table class="macc-confronto">
-        <thead><tr>
-          <th>${t('confronto.tabella.miaMacchina')}</th><th>${t('confronto.tabella.concorrenzaMacchina')}</th>
-          <th style="width:110px">${t('confronto.tabella.mylav')}</th><th style="width:110px">${t('confronto.tabella.concorrenza')}</th>
-          <th style="width:120px">${t('confronto.tabella.differenza')}</th><th style="width:40px"></th>
-        </tr></thead>
-        <tbody>${righeHtml}</tbody>
-        <tfoot><tr>
-          <td colspan="2"><b>${t('confronto.totale')}</b></td>
-          <td class="td-num"><b>${fmtEuro(totMia)}</b></td>
-          <td class="td-num"><b>${fmtEuro(totSua)}</b></td>
-          <td class="td-num ${diffTot <= 0 ? 'macc-meglio' : 'macc-peggio'}"><b>${diffTot <= 0 ? '−' : '+'}${fmtEuro(Math.abs(diffTot))}</b></td>
-          <td></td>
-        </tr></tfoot>
-      </table>
-    </div>`;
-}
-
-function cambiaConfrontoMacchina(i, lato, valore) {
-  if (!S.confrontoMacchine || !S.confrontoMacchine[i]) return;
-  S.confrontoMacchine[i][lato] = Number(valore);
-  renderCorpoConfrontoMacchine();
-}
-
-function aggiungiConfrontoMacchina() {
-  const mie = (S.macchine || []).filter(m => !m.concorrenteId);
-  const loro = (S.macchine || []).filter(m => m.concorrenteId);
-  if (!mie.length || !loro.length) return;
-  if (!Array.isArray(S.confrontoMacchine)) S.confrontoMacchine = [];
-  S.confrontoMacchine.push({ mia: mie[0].id, sua: loro[0].id });
-  renderCorpoConfrontoMacchine();
-}
-
-function togliConfrontoMacchina(i) {
-  if (!S.confrontoMacchine) return;
-  S.confrontoMacchine.splice(i, 1);
-  renderCorpoConfrontoMacchine();
-}
-
-function rimuoviTuttoConfrontoMacchine() {
-  if (!confirm(t('confronto.confermaSvuota'))) return;
-  S.confrontoMacchine = [];
-  renderCorpoConfrontoMacchine();
-}
-
 // ══════════════════════════════════════════════════
 // GESTIONE CONCORRENTI
 // ══════════════════════════════════════════════════
@@ -2372,9 +1903,6 @@ async function confermaImportConcorrente() {
 async function eliminaConcorrenteUI(id) {
   const c = S.concorrenti.find(x => x.id === id);
   const nome = c ? c.nome : t('concorrenti.questoConcorrente');
-  // I listini di analizzatori di questo concorrente (e le loro macchine)
-  // vengono eliminati insieme a lui: l'operatore deve saperlo prima di
-  // confermare, non scoprirlo dopo.
   const nEsami = c && c.n_esami != null ? c.n_esami : null;
   const chiave = nEsami == null
     ? 'concorrenti.confermaElimina.senzaConteggio'
@@ -3584,21 +3112,6 @@ function roiMsg(msg, tipo) {
 
 // ── Init ───────────────────────────────────────────
 async function avviaApp() {
-  // Chiamata a ogni login/registrazione/accesso ospite e a ogni avvio con
-  // sessione valida: una riga macchina in modifica catturata dall'account
-  // precedente (o da un avvio interrotto) non appartiene a questa sessione,
-  // e se sopravvivesse un "Salva" successivo scriverebbe dati vecchi sopra
-  // al catalogo dell'account ora attivo.
-  S.macchinaInModifica = null;
-  S.listinoAperto = null;
-  // Le coppie del confronto macchine sono accoppiate per id, e gli id sono
-  // globali ma appartengono al catalogo di un account: quelli salvati
-  // dall'account precedente quasi certamente non esistono in questo catalogo.
-  // Il redraw scarta da solo le righe che puntano a macchine non piu'
-  // esistenti, ma azzerare qui evita di trascinarsi dietro un confronto
-  // dell'account precedente: la sezione ripartira' dalla riga di default
-  // sulle macchine del nuovo account, alla prossima visita.
-  S.confrontoMacchine = null;
   // loadStrutture/loadConcorrenti richiedono un account (dati privati per utente):
   // in modalita' ospite falliscono con 401, atteso. Non deve bloccare il boot.
   await loadStrutture().catch(() => { S.strutture = []; });
@@ -3681,14 +3194,6 @@ async function authLogout(silent) {
   if (S.auth.token) { try { await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }); } catch (_) {} }
   S.auth = { token: null, email: null, isAdmin: false, guest: false };
   localStorage.removeItem('authToken'); localStorage.removeItem('authEmail'); localStorage.removeItem('authIsAdmin');
-  // La riga in modifica appartiene all'account che sta uscendo: valori
-  // catturati prima del logout non devono ripresentarsi (e finire salvati)
-  // sotto l'account che accedera' dopo.
-  S.macchinaInModifica = null;
-  S.listinoAperto = null;
-  // Stesso motivo: gli id delle macchine accoppiate nel confronto sono del
-  // catalogo dell'account che esce e non hanno senso per quello successivo.
-  S.confrontoMacchine = null;
   mostraAuthScreen();
 }
 
