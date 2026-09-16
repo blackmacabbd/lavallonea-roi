@@ -147,6 +147,13 @@ macchineLib.ensureSchema(db);
 auth.ensureSchema(db);
 addColIfMissing('prezzi_esami_custom', 'user_id', 'INTEGER');
 
+// Il calcolatore ROI accoppia l'esame del concorrente con quello Mylav nella
+// riga stessa, con quantita' indipendenti: il concorrente puo' fatturare tre
+// esami dove Mylav ne ha uno solo. Colonne nuove e vuote: le righe salvate
+// prima continuano a valere, con il loro esame Mylav dove e' sempre stato.
+addColIfMissing('dati_foglio', 'esame_concorrente', 'TEXT');
+addColIfMissing('dati_foglio', 'n_concorrenza', 'INTEGER');
+
 // Backfill: gli account creati prima del catalogo per-utente non hanno ancora la
 // loro copia. copiaCatalogoPerUtente e' idempotente, quindi girare a ogni boot e'
 // sicuro e recupera anche eventuali copie fallite.
@@ -1735,23 +1742,27 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
 
       const ins = db.prepare(`
         INSERT INTO dati_foglio
-          (file_id, foglio, esame, n_esami,
+          (file_id, foglio, esame, n_esami, esame_concorrente, n_concorrenza,
            listino_concorrenza, totale_concorrenza, prezzo_scontato_concorrenza,
            listino_lav, totale_listino_lav, prezzo_scontato_lav, totale_scontato_lav,
            risparmio_dottore, sconto_concorrenza, sconto_lav, piano_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const r of righe) {
         const n        = r.n_esami || 1;
+        // Quantita' del lato concorrenza: la sua se c'e', altrimenti quella
+        // Mylav — che e' come si comportavano tutte le righe prima che le due
+        // colonne esistessero.
+        const nConc    = r.n_concorrenza || n;
         const lConc    = r.listino_concorrenza || 0;
-        const tConc    = lConc * n;
+        const tConc    = lConc * nConc;
         const pConc    = parseFloat((tConc * 0.9).toFixed(2));
         const lLav     = r.listino_lav || 0;
         const tLLav    = lLav * n;
         const pLav     = r.prezzo_scontato_lav || 0;
         const tPLav    = pLav * n;
-        ins.run(fileId, foglio, r.esame, n,
+        ins.run(fileId, foglio, r.esame, n, r.esame_concorrente || null, nConc,
           lConc, tConc, pConc, lLav, tLLav, pLav, tPLav,
           pConc - tPLav, tConc - pConc, tLLav - tPLav, piano_id || null);
       }

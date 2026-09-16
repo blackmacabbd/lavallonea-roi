@@ -1762,3 +1762,14 @@ body.imp-aperto #selettore-lingua { display: none; }
 /* I comandi di pagina stanno in alto a destra come il selettore: senza questo
    spazio finirebbero sotto di esso. */
 .page-header { padding-right: 92px; }
+
+/* Calcolatore: il comando che lega l'esame del concorrente a quello Mylav.
+   Compare solo quando c'e' davvero qualcosa da legare, sovrapposto al campo
+   perche' una colonna in piu' allargherebbe una tabella gia' larga. */
+.roi-lega-btn {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  border: 1px solid var(--blue-line); background: var(--surface);
+  border-radius: 6px; padding: 1px 5px; font-size: 12px; line-height: 1.4;
+  cursor: pointer; opacity: .75;
+}
+.roi-lega-btn:hover { opacity: 1; border-color: var(--blue); }

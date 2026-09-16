@@ -26,6 +26,7 @@ const S = {
     struttura: '',
     pianoId: null,
     concorrenteId: null,
+    esamiConc: [],          // listino del concorrente selezionato, per i suggerimenti
     righe: [roiRigaVuota()]
   },
   auth: {
@@ -37,7 +38,14 @@ const S = {
 };
 
 function roiRigaVuota() {
-  return { esame: '', n_esami: 1, listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: '' };
+  // `esame` e `n_esami` restano il lato MYLAV, come sono sempre stati: i calcoli
+  // salvati prima si riaprono col nome nella colonna giusta senza migrazioni.
+  // I due campi nuovi sono il lato concorrenza.
+  return {
+    esame_concorrente: '', n_concorrenza: '',
+    esame: '', n_esami: 1,
+    listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: ''
+  };
 }
 
 // ── Utils ──────────────────────────────────────────
@@ -123,6 +131,10 @@ async function loadConcorrenti() {
   if (S.roi.concorrenteId == null && S.concorrenti.length === 1) {
     S.roi.concorrenteId = S.concorrenti[0].id;
   }
+  // Il listino serve ai suggerimenti della colonna concorrenza del calcolatore.
+  // Si carica anche qui, e non solo al disegno della dashboard, perche' li' il
+  // concorrente di default poteva non essere ancora stato scelto.
+  if (S.roi.concorrenteId != null) caricaEsamiConcorrente();
 }
 
 function buildSidebar() {
@@ -513,6 +525,10 @@ async function renderDashboard() {
   // Calcolatore ROI — eroe in cima alla dashboard
   el('roi-hero').innerHTML = buildRoiSectionHtml();
   initRoiEvents();
+  // I suggerimenti della colonna concorrenza arrivano dal listino del
+  // concorrente gia' selezionato: senza questo comparirebbero solo dopo averlo
+  // riselezionato a mano.
+  caricaEsamiConcorrente();
   updateDashRisparmio();
 }
 
@@ -2529,6 +2545,7 @@ function buildRoiSectionHtml() {
 
   return `
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
+    <datalist id="roi-esami-conc-list">${(S.roi.esamiConc || []).map(e => `<option value="${escHtml(e.nome_originale)}">`).join('')}</datalist>
     <div class="roi-toolbar">
       <div>
         <div class="roi-toolbar-title">${t('roi.toolbarTitolo')}</div>
@@ -2676,9 +2693,129 @@ function selezionaConcorrente(id) {
     btn.textContent = t('roi.concorrenteBtn', { nome: concorrenteSelezionatoNome() || t('roi.nessuno') });
     btn.title = concorrenteSelezionatoNome() || '';
   }
+  caricaEsamiConcorrente();
   const tbody = el('roi-tbody');
   if (tbody) {
     tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaMatchConcorrente(tr));
+  }
+}
+
+// Il listino del concorrente selezionato, tenuto in memoria: serve a suggerire i
+// nomi nella colonna concorrenza e a riempire prezzo, sconto ed esame Mylav
+// abbinato senza una chiamata per ogni tasto premuto.
+async function caricaEsamiConcorrente() {
+  const id = S.roi.concorrenteId;
+  if (!id) { S.roi.esamiConc = []; aggiornaElencoEsamiConc(); return; }
+  try {
+    const d = await api(`/api/concorrenti/${id}`);
+    S.roi.esamiConc = (d && d.esami) || [];
+  } catch (_) {
+    // Elenco non leggibile: si resta senza suggerimenti, i campi restano a mano.
+    S.roi.esamiConc = [];
+  }
+  aggiornaElencoEsamiConc();
+}
+
+function aggiornaElencoEsamiConc() {
+  const dl = el('roi-esami-conc-list');
+  if (!dl) return;
+  dl.innerHTML = (S.roi.esamiConc || [])
+    .map(e => `<option value="${escHtml(e.nome_originale)}">`).join('');
+}
+
+// Cerca nel listino del concorrente il nome digitato. Prima la corrispondenza
+// esatta; poi quella tollerante (errori di battitura, parole in altro ordine),
+// ma solo se e' l'unica, perche' riempire prezzi con l'esame sbagliato e' peggio
+// che non riempirli.
+function trovaEsameConcorrente(nome) {
+  const elenco = S.roi.esamiConc || [];
+  const n = String(nome || '').trim();
+  if (!n || !elenco.length) return null;
+  const esatto = elenco.find(e => (e.nome_originale || '').trim().toLowerCase() === n.toLowerCase());
+  if (esatto) return esatto;
+  if (!window.Ricerca) return null;
+  const vicini = elenco.filter(e => Ricerca.corrisponde(e.nome_originale, n));
+  return vicini.length === 1 ? vicini[0] : null;
+}
+
+// Riempie la riga a partire dall'esame del concorrente: prezzo e sconto suoi, e
+// se quell'esame e' gia' abbinato a un esame Mylav anche il nome Mylav, da cui
+// riparte la cascata dei prezzi Mylav che esisteva gia'.
+async function compilaDaEsameConcorrente(tr) {
+  const inp = tr.querySelector('[data-col="esame_concorrente"]');
+  if (!inp) return;
+  const nome = inp.value.trim();
+  const prec = inp.dataset.lastEsameConc || '';
+  if (nome === prec) { aggiornaTastoAbbinamento(tr); return; }
+  inp.dataset.lastEsameConc = nome;
+
+  const lcInp = tr.querySelector('[data-col="listino_concorrenza"]');
+  const scInp = tr.querySelector('[data-col="sconto_concorrenza"]');
+  const esameInp0 = tr.querySelector('[data-col="esame"]');
+
+  // Cambiato l'esame del concorrente, quello che era stato riempito da solo per
+  // l'esame precedente non vale piu': va tolto, altrimenti la riga accosta due
+  // esami che non c'entrano nulla e i prezzi sembrano giusti. Quello che ha
+  // scritto l'operatore resta: non e' roba nostra da cancellare.
+  [lcInp, scInp].forEach(i => { if (i && i.dataset.auto === '1') { i.value = ''; i.dataset.auto = '0'; } });
+  if (esameInp0 && esameInp0.dataset.auto === '1') {
+    esameInp0.value = '';
+    esameInp0.dataset.auto = '0';
+    await aggiornaPrezziAutomatici(tr);
+  }
+
+  if (!nome) { aggiornaRigaDOM(tr); aggiornaTastoAbbinamento(tr); return; }
+
+  const e = trovaEsameConcorrente(nome);
+  if (!e) { aggiornaRigaDOM(tr); aggiornaTastoAbbinamento(tr); return; }
+  if (lcInp && e.prezzo != null && campoFillabile(lcInp)) { lcInp.value = e.prezzo; lcInp.dataset.auto = '1'; }
+  if (scInp && e.sconto != null && campoFillabile(scInp)) { scInp.value = e.sconto; scInp.dataset.auto = '1'; }
+
+  const esameInp = tr.querySelector('[data-col="esame"]');
+  if (esameInp && e.esame_mylav_nome && campoFillabile(esameInp)) {
+    esameInp.value = e.esame_mylav_nome;
+    esameInp.dataset.auto = '1';
+    await aggiornaPrezziAutomatici(tr);
+  }
+  aggiornaRigaDOM(tr);
+  aggiornaTastoAbbinamento(tr);
+  mostraConsiglioTotale();
+  mostraClassificaPiani();
+}
+
+// Il comando per legare i due esami compare solo quando serve: entrambi i nomi
+// scritti, l'esame del concorrente riconosciuto, e l'abbinamento non gia' fatto.
+function aggiornaTastoAbbinamento(tr) {
+  const btn = tr.querySelector('.roi-lega-btn');
+  if (!btn) return;
+  const conc = (tr.querySelector('[data-col="esame_concorrente"]') || {}).value || '';
+  const myl  = (tr.querySelector('[data-col="esame"]') || {}).value || '';
+  const e = trovaEsameConcorrente(conc);
+  const serve = !!(e && myl.trim() && (e.esame_mylav_nome || '').trim().toLowerCase() !== myl.trim().toLowerCase());
+  btn.style.display = serve ? 'inline-block' : 'none';
+}
+
+// Salva la coppia nel listino del concorrente, la stessa mappatura che si fa in
+// Gestione concorrenti: quel percorso resta, questo lo affianca.
+async function salvaAbbinamentoRiga(i) {
+  const tr = document.querySelector(`#roi-tbody tr[data-idx="${i}"]`);
+  if (!tr || !S.roi.concorrenteId) return;
+  const conc = (tr.querySelector('[data-col="esame_concorrente"]') || {}).value || '';
+  const myl  = (tr.querySelector('[data-col="esame"]') || {}).value || '';
+  const e = trovaEsameConcorrente(conc);
+  if (!e || !myl.trim()) return;
+  try {
+    await api(`/api/concorrenti/${S.roi.concorrenteId}/conferma-match`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ esameConcorrenteId: e.id, esameMylavNome: myl.trim() })
+    });
+    e.esame_mylav_nome = myl.trim();   // l'elenco in memoria riflette subito il salvataggio
+    e.confermato = 1;
+    aggiornaTastoAbbinamento(tr);
+    alert(t('roi.abbinamentoSalvato', { conc: e.nome_originale, myl: myl.trim() }));
+  } catch (err) {
+    alert(t('errore.generico', { msg: err.message }));
   }
 }
 
@@ -2789,10 +2926,9 @@ function buildRoiTableHtml() {
 
   const header1 = `
     <tr>
-      <th colspan="4"></th>
-      <th colspan="4" class="roi-grp roi-grp-conc">${t('confronto.tabella.concorrenza')}</th>
-      <th></th>
-      <th colspan="4" class="roi-grp roi-grp-myl">${t('confronto.tabella.mylav')}</th>
+      <th colspan="2"></th>
+      <th colspan="6" class="roi-grp roi-grp-conc">${t('confronto.tabella.concorrenza')}</th>
+      <th colspan="6" class="roi-grp roi-grp-myl">${t('confronto.tabella.mylav')}</th>
       <th></th><th></th>
     </tr>`;
 
@@ -2800,13 +2936,14 @@ function buildRoiTableHtml() {
     <tr>
       <th style="width:130px">${t('comune.struttura')}</th>
       <th style="width:12px"></th>
-      <th style="width:170px">${t('roi.tabella.esami')}</th>
-      <th style="width:60px">${t('roi.tabella.n')}</th>
+      <th style="width:170px;background:rgba(206,24,30,0.04)">${t('roi.tabella.esameConc')}</th>
+      <th style="width:60px;background:rgba(206,24,30,0.04)">${t('roi.tabella.n')}</th>
       <th style="width:95px;background:rgba(206,24,30,0.04)">${t('comune.listinoConc')}</th>
       <th style="width:65px;background:rgba(206,24,30,0.04)">${t('roi.tabella.scontoPct')}</th>
       <th style="width:95px;background:rgba(206,24,30,0.04)">${t('roi.tabella.totConc')}</th>
       <th style="width:95px;background:rgba(206,24,30,0.04)">${t('comune.scontatoConc')}</th>
-      <th style="width:12px"></th>
+      <th style="width:170px;background:rgba(15,118,188,0.06)">${t('roi.tabella.esameMyl')}</th>
+      <th style="width:60px;background:rgba(15,118,188,0.06)">${t('roi.tabella.n')}</th>
       <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.listinoMyl')}</th>
       <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.totMyl')}</th>
       <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.pianoMyl')}</th>
@@ -2824,7 +2961,8 @@ function buildRoiTableHtml() {
     <td style="background:rgba(206,24,30,0.04)"></td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_conc)}</td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_prezzo_conc)}</td>
-    <td></td>
+    <td style="background:rgba(15,118,188,0.06)"></td>
+    <td style="background:rgba(15,118,188,0.06)"></td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_listino_lav)}</td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_tot_lav)}</td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_prezzo_lav_sc)}</td>
@@ -2833,7 +2971,7 @@ function buildRoiTableHtml() {
     <td></td>
   </tr>`;
   const diffRow = `<tr class="roi-diff-row">
-    <td colspan="13" style="text-align:right;font-size:13px;font-weight:500">
+    <td colspan="14" style="text-align:right;font-size:13px;font-weight:500">
       <span id="roi-diff-note" style="display:${tots.differenziale < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">${t('roi.avvisoNonRisparmia')}</span>
       ${t('roi.differenzialeTotale')}
     </td>
@@ -2854,12 +2992,13 @@ function calcPrezConc(lc, sc, n) {
 
 function buildRoiRigaHtml(r, i) {
   const n  = r.n_esami || 1;
+  const nc = parseFloat(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav
   const lc = parseFloat(r.listino_concorrenza) || 0;
   const sc = parseFloat(r.sconto_concorrenza)  || 0;
   const ll = parseFloat(r.listino_lav) || 0;
   const pl = parseFloat(r.prezzo_scontato_lav) || 0;
 
-  const totConc  = lc * n;
+  const totConc  = lc * nc;
   const prezConc = calcPrezConc(totConc, sc, 1);
   const totLL    = ll * n;
   const totPL    = pl * n;
@@ -2878,13 +3017,17 @@ function buildRoiRigaHtml(r, i) {
   return `<tr data-idx="${i}" data-tipo="Platinum">
     ${strutturaCell}
     <td></td>
-    <td style="position:relative"><input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="${escHtml(t('roi.placeholderEsame'))}" autocomplete="off" style="width:160px"></td>
-    <td><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
+    <td style="position:relative;background:rgba(206,24,30,0.04)"><input class="roi-input" data-col="esame_concorrente" list="roi-esami-conc-list" value="${escHtml(r.esame_concorrente || '')}" placeholder="${escHtml(t('roi.placeholderEsameConc'))}" autocomplete="off" style="width:160px"></td>
+    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="n_concorrenza" value="${r.n_concorrenza || ''}" placeholder="${r.n_esami || 1}" style="width:50px"></td>
     <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza || ''}" placeholder="0.00"></td>
     <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="tot_conc">${fmtE(totConc)}</td>
     <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
-    <td></td>
+    <td style="position:relative;background:rgba(15,118,188,0.06)">
+      <input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="${escHtml(t('roi.placeholderEsame'))}" autocomplete="off" style="width:160px">
+      <button class="roi-lega-btn" data-idx="${i}" onclick="salvaAbbinamentoRiga(${i})" title="${escHtml(t('roi.legaTooltip'))}" style="display:none">🔗</button>
+    </td>
+    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
     <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav || ''}" placeholder="0.00"></td>
     <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_listino_lav">${fmtE(totLL)}</td>
     <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav || ''}" placeholder="0.00"></td>
@@ -2907,11 +3050,15 @@ function calcolaRoiTotali() {
   let t = { tot_listino_conc:0, tot_conc:0, tot_prezzo_conc:0, tot_listino_lav:0, tot_tot_lav:0, tot_prezzo_lav_sc:0, tot_tot_prezzo_lav:0, differenziale:0 };
   for (const r of righe) {
     const n  = r.n_esami || 1;
+    // Le due quantita' sono indipendenti: il concorrente puo' fatturare tre
+    // esami dove Mylav ne ha uno. Senza quantita' propria si usa quella Mylav,
+    // che e' come si comportavano tutte le righe prima delle due colonne.
+    const nc = parseFloat(r.n_concorrenza) || n;
     const lc = parseFloat(r.listino_concorrenza) || 0;
     const sc = parseFloat(r.sconto_concorrenza)  || 0;
     const ll = parseFloat(r.listino_lav) || 0;
     const pl = parseFloat(r.prezzo_scontato_lav) || 0;
-    const tc  = lc * n;
+    const tc  = lc * nc;
     const pc  = calcPrezConc(tc, sc, 1);
     const tll = ll * n;
     const tpl = pl * n;
@@ -2956,7 +3103,17 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
   // cascata riparte pulita e riflette il nuovo esame.
   const prevEsame = esameInp.dataset.lastEsame || '';
   if (esame !== prevEsame) {
-    ['listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav'].forEach(col => {
+    // Il lato concorrenza si azzera solo quando e' l'esame Mylav a guidarlo,
+    // cioe' quando la colonna del concorrente e' vuota e il prezzo arriva
+    // dall'abbinamento automatico. Se l'operatore ha scelto l'esame del
+    // concorrente, quel lato ha una sua identita': azzerarlo qui gli
+    // cancellerebbe sotto gli occhi il prezzo appena comparso.
+    const concInp = tr.querySelector('[data-col="esame_concorrente"]');
+    const concGuidato = !concInp || !(concInp.value || '').trim();
+    const daAzzerare = concGuidato
+      ? ['listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav']
+      : ['listino_lav', 'prezzo_scontato_lav'];
+    daAzzerare.forEach(col => {
       const inp = tr.querySelector(`[data-col="${col}"]`);
       if (inp) { inp.value = ''; inp.dataset.auto = '0'; inp.classList.remove('roi-prezzo-nuovo'); inp.title = ''; }
     });
@@ -3127,18 +3284,21 @@ function aggiornaRigaDOM(tr) {
   if (!r) return;
   r.esame               = getStr('esame');
   r.n_esami             = get('n_esami') || 1;
+  r.esame_concorrente   = getStr('esame_concorrente');
+  r.n_concorrenza       = get('n_concorrenza') || '';
   r.listino_concorrenza = get('listino_concorrenza');
   r.sconto_concorrenza  = get('sconto_concorrenza');
   r.listino_lav         = get('listino_lav');
   r.prezzo_scontato_lav = get('prezzo_scontato_lav');
 
   const n  = r.n_esami;
+  const nc = parseFloat(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav
   const lc = r.listino_concorrenza;
   const sc = r.sconto_concorrenza;
   const ll = r.listino_lav;
   const pl = r.prezzo_scontato_lav;
 
-  const tc  = lc * n;
+  const tc  = lc * nc;
   const pc  = calcPrezConc(tc, sc, 1);
   const tll = ll * n;
   const tpl = pl * n;
@@ -3216,6 +3376,11 @@ function initRoiEvents() {
 
     if (inp.dataset.col === 'esame') {
       await aggiornaPrezziAutomatici(tr);
+      aggiornaTastoAbbinamento(tr);
+    }
+
+    if (inp.dataset.col === 'esame_concorrente') {
+      await compilaDaEsameConcorrente(tr);
     }
 
     if (inp.dataset.col === 'prezzo_scontato_lav' && S.roi.pianoId && inp.dataset.auto !== '1' && inp.value.trim()) {
@@ -3353,6 +3518,17 @@ async function salvaCalcolo() {
 
   if (!struttura) return roiMsg(t('roi.scriviStruttura'), 'error');
   if (!righe.length) return roiMsg(t('roi.nessunEsameConNome'), 'error');
+
+  // Una riga con il solo esame del concorrente non viene salvata: senza l'esame
+  // Mylav non c'e' niente da confrontare. Prima si poteva solo sbagliare in un
+  // modo, ora che le colonne sono due va detto, altrimenti la riga sparisce
+  // senza che nessuno se ne accorga.
+  const soloConcorrente = S.roi.righe.filter(r =>
+    (r.esame_concorrente || '').trim() && !(r.esame || '').trim()).length;
+  if (soloConcorrente) {
+    const chiave = soloConcorrente === 1 ? 'roi.righeSenzaEsameMylav.uno' : 'roi.righeSenzaEsameMylav';
+    if (!confirm(t(chiave, { n: soloConcorrente }))) return;
+  }
 
   const nomeFile = `Calcolo_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
   try {
