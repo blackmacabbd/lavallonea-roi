@@ -11,6 +11,7 @@ const concorrenti = require('./lib/concorrenti');
 const pdfestrazione = require('./lib/pdfestrazione');
 const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
+const clipLib = require('./lib/clip');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -138,6 +139,9 @@ addColIfMissing('concorrenti', 'user_id', 'INTEGER');
 
 // ── Bozze di import PDF e audit ─────────────────────
 importbozze.ensureSchema(db);
+
+// ── Catalogo clip ────────────────────────────────────
+clipLib.ensureSchema(db);
 
 // ── Rimozione del catalogo analizzatori ─────────────
 // I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
@@ -1486,6 +1490,71 @@ app.delete('/api/concorrenti/:id', requireAuth, (req, res) => {
   try {
     const ok = concorrenti.eliminaConcorrente(db, req.params.id, req.user.id);
     if (!ok) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Catalogo clip ────────────────────────────────────
+// Un catalogo per account: nome, prezzo di confezione, pezzi, sconto e fonte
+// (import PDF, import concorrenti o inserimento manuale). Il costo per clip
+// (prezzo / pezzi) e' calcolato da chi consuma il catalogo, non qui.
+app.get('/api/clip', requireAuth, (req, res) => {
+  try { res.json(clipLib.listaClip(db, req.user.id)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/clip', requireAuth, express.json(), (req, res) => {
+  try {
+    const { nome, prezzoConfezione, pezzi, sconto, fonte } = req.body || {};
+    const nomeTrim = String(nome == null ? '' : nome).trim();
+    // L'inserimento manuale non deve sovrascrivere in silenzio una clip
+    // esistente con lo stesso nome: quello e' il comportamento dell'import
+    // (upsertClip), qui l'operatore va avvisato invece di perdere il prezzo
+    // gia' salvato.
+    const esiste = nomeTrim
+      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ?`).get(req.user.id, nomeTrim)
+      : null;
+    if (esiste) {
+      return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome', codice: 'CLIP_DUPLICATA' });
+    }
+    // Pezzi non indicato -> si prova a leggerlo dal nome, come fa il riconoscimento import.
+    const pezziOk = (pezzi == null || pezzi === '') ? clipLib.leggiPezzi(nomeTrim) : Number(pezzi);
+    const { id } = clipLib.upsertClip(db, {
+      userId: req.user.id, nome: nomeTrim, prezzoConfezione, pezzi: pezziOk,
+      sconto, fonte: fonte || 'manuale'
+    });
+    res.status(201).json({ id });
+  } catch (err) {
+    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
+  }
+});
+
+app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
+  try {
+    const riga = db.prepare(`SELECT * FROM clip WHERE id = ? AND user_id = ?`).get(Number(req.params.id), req.user.id);
+    if (!riga) return res.status(404).json({ error: 'Clip non trovata', codice: 'CLIP_NON_TROVATA' });
+    // Aggiornamento parziale: un campo assente nel corpo lascia il valore
+    // salvato, un campo presente (anche null) lo sostituisce.
+    const body = req.body || {};
+    const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
+    const { id } = clipLib.upsertClip(db, {
+      userId: req.user.id,
+      nome: riga.nome,
+      prezzoConfezione: campo('prezzoConfezione', riga.prezzo_confezione),
+      pezzi: campo('pezzi', riga.pezzi),
+      sconto: campo('sconto', riga.sconto),
+      fonte: campo('fonte', riga.fonte)
+    });
+    res.json({ id });
+  } catch (err) {
+    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
+  }
+});
+
+app.delete('/api/clip/:id', requireAuth, (req, res) => {
+  try {
+    const ok = clipLib.eliminaClip(db, req.params.id, req.user.id);
+    if (!ok) return res.status(404).json({ error: 'Clip non trovata', codice: 'CLIP_NON_TROVATA' });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
