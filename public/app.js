@@ -180,7 +180,7 @@ function buildSidebar() {
           <div class="struttura-group">
             <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
               <span class="sname">${escHtml(label)}</span>
-              <span class="struttura-del" title="${escHtml(t('sidebar.eliminaCalcolo'))}" onclick="event.stopPropagation(); eliminaFileSidebarUI(${f.id}, '${escHtml(label)}')">×</span>
+              <span class="struttura-del" title="${escHtml(t('sidebar.eliminaCalcolo'))}" onclick="event.stopPropagation(); eliminaFileSidebarUI(${f.id}, ${jsAttr(label)})">×</span>
             </div>
           </div>
         `;
