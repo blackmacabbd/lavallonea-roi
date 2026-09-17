@@ -143,6 +143,32 @@ importbozze.ensureSchema(db);
 // ── Catalogo clip ────────────────────────────────────
 clipLib.ensureSchema(db);
 
+// ── Calcolatore clip: fare in casa (clip) o mandare a Mylav? ────────────
+// I valori si salvano come erano al momento del salvataggio, non come
+// riferimenti al catalogo o al piano: un listino che cambia domani non deve
+// riscrivere una trattativa di ieri. CREATE TABLE IF NOT EXISTS, mai
+// distruttiva: il database contiene i dati di un account cliente reale.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS calcoli_clip (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    struttura_nome TEXT,
+    nome_file TEXT,
+    piano_id INTEGER,
+    data DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS righe_calcolo_clip (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    calcolo_id INTEGER NOT NULL REFERENCES calcoli_clip(id),
+    clip_nome TEXT, n_clip INTEGER,
+    prezzo_confezione REAL, pezzi INTEGER, sconto_clip REAL,
+    costo_clip REAL, totale_clip REAL,
+    profilo_mylav TEXT, n_mylav INTEGER,
+    listino_lav REAL, prezzo_scontato_lav REAL, totale_mylav REAL,
+    risparmio REAL
+  );
+`);
+
 // ── Rimozione del catalogo analizzatori ─────────────
 // I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
 // e' la decisione che il veterinario prende. La logica e' stata sostituita dal
@@ -1804,6 +1830,68 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
       }
       db.exec('COMMIT');
       res.json({ success: true, file_id: fileId, struttura_id: strRow.id, struttura: strutturaNome, fogli: [foglio] });
+    } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
+  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+});
+
+// Calcolatore clip: fare in casa (clip precaricata) o mandare a Mylav?
+// Schema a parte da dati_foglio/file_caricati (usati dal calcolatore esami):
+// qui un calcolo e' solo struttura + piano + righe, senza il concetto di
+// "foglio" o file caricato. Il calcolo di ogni riga si rifa' qui (il client
+// manda solo i valori grezzi) cosi' i numeri salvati non dipendono da cosa
+// il browser ha inviato per i campi 'calcolato'.
+app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
+  try {
+    const { struttura, righe, nomeFile, piano_id } = req.body || {};
+    if (!struttura || !righe?.length) return res.status(400).json({ error: 'Dati mancanti' });
+
+    db.exec('BEGIN');
+    try {
+      const cRow = db.prepare(
+        'INSERT INTO calcoli_clip (user_id, struttura_nome, nome_file, piano_id) VALUES (?, ?, ?, ?)'
+      ).run(req.user.id, struttura, nomeFile || null, piano_id || null);
+      const calcoloId = Number(cRow.lastInsertRowid);
+
+      const ins = db.prepare(`
+        INSERT INTO righe_calcolo_clip
+          (calcolo_id, clip_nome, n_clip, prezzo_confezione, pezzi, sconto_clip,
+           costo_clip, totale_clip, profilo_mylav, n_mylav, listino_lav,
+           prezzo_scontato_lav, totale_mylav, risparmio)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const r of righe) {
+        // Stessa formula del calcolatore (public/app.js, calcolaRigaClip): il
+        // prezzo di listino e' della confezione, il costo di una clip si
+        // ottiene dividendo per i pezzi. Senza pezzi non si inventa un
+        // numero: resta null, non zero e non il prezzo di confezione intero.
+        const pezzi     = parseFloat(r.pezzi) || 0;
+        const prezzoConf = parseFloat(r.prezzo_confezione) || 0;
+        const sconto    = parseFloat(r.sconto_clip) || 0;
+        const costoClip = pezzi > 0
+          ? parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2))
+          : null;
+        const nClip     = parseFloat(r.n_clip) || 1;
+        const totaleClip = costoClip == null ? null : costoClip * nClip;
+
+        const nMyl        = parseFloat(r.n_mylav) || 1;
+        const listinoLav  = parseFloat(r.listino_lav) || 0;
+        const prezzoPiano = parseFloat(r.prezzo_scontato_lav) || 0;
+        const totaleMylav = (prezzoPiano > 0 ? prezzoPiano : listinoLav) * nMyl;
+
+        // Segno invertito rispetto al calcolatore esami: qui positivo vuol
+        // dire che la clip costa piu' di Mylav, cioe' conviene Mylav (stesso
+        // senso per chi legge: positivo = conviene Mylav).
+        const risparmio = totaleClip == null ? null : totaleClip - totaleMylav;
+
+        ins.run(
+          calcoloId, r.clip_nome || null, nClip, prezzoConf || null, pezzi || null, sconto || null,
+          costoClip, totaleClip, r.profilo_mylav || null, nMyl, listinoLav || null,
+          prezzoPiano || null, totaleMylav, risparmio
+        );
+      }
+      db.exec('COMMIT');
+      res.json({ success: true, calcolo_id: calcoloId });
     } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });

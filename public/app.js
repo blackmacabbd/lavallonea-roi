@@ -20,6 +20,11 @@ const S = {
     esamiConc: [],          // listino del concorrente selezionato, per i suggerimenti
     righe: [roiRigaVuota()]
   },
+  clip: {
+    pianoId: null,
+    catalogo: [],           // clip dell'account (GET /api/clip), per i suggerimenti
+    righe: [clipRigaVuota()]
+  },
   auth: {
     token: localStorage.getItem('authToken') || null,
     email: localStorage.getItem('authEmail') || null,
@@ -36,6 +41,16 @@ function roiRigaVuota() {
     esame_concorrente: '', n_concorrenza: '',
     esame: '', n_esami: 1,
     listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: ''
+  };
+}
+
+// Riga vuota del calcolatore clip: 'concorrenza' e' il lato clip precaricata
+// (il costo che il veterinario sostiene facendo l'esame in casa), 'mylav' e' il
+// profilo Mylav a cui la si confronta.
+function clipRigaVuota() {
+  return {
+    clip_nome: '', n_clip: 1, prezzo_confezione: '', pezzi: '', sconto_clip: '',
+    profilo_mylav: '', n_mylav: 1, listino_lav: '', prezzo_scontato_lav: ''
   };
 }
 
@@ -138,6 +153,9 @@ function buildSidebar() {
     </div>
     <div class="nav-item ${isActive('dashboard')}" onclick="navigate('dashboard')">
       <span class="nav-icon">📊</span> ${t('menu.dashboard')}
+    </div>
+    <div class="nav-item ${isActive('calcolatore-clip')}" onclick="navigate('calcolatore-clip')">
+      <span class="nav-icon">🧪</span> ${t('menu.calcolatoreClip')}
     </div>
     <div class="nav-divider">${t('sidebar.divStrutture')}</div>
   `;
@@ -361,6 +379,7 @@ function navigate(view, params = {}) {
     case 'risparmio-totale': disegno = renderRisparmioTotale();                  break;
     case 'piani':      disegno = renderPiani();                                  break;
     case 'concorrenti': disegno = renderConcorrentiAdmin();                      break;
+    case 'calcolatore-clip': disegno = renderCalcolatoreClip();                  break;
   }
   buildSidebar();
   return Promise.resolve(disegno);
@@ -2903,6 +2922,424 @@ async function esportaExcelRoi() {
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
   } catch(e) { roiMsg(t('roi.erroreExport', { msg: e.message }), 'error'); }
+}
+
+// ══════════════════════════════════════════════════
+// CALCOLATORE CLIP — fare in casa (clip precaricata) o mandare a Mylav?
+// ══════════════════════════════════════════════════
+// Non confronta il prezzo di acquisto degli analizzatori (quella era la
+// logica dei "macchinari", rimossa): mette uno accanto all'altro il costo di
+// una clip gia' pronta sull'analizzatore da banco e il costo del profilo
+// Mylav corrispondente. Usa lo stesso motore comune (calcolatore.js) del
+// calcolatore esami, con colonne, id e stato propri.
+
+// Il listino del fornitore da' il prezzo della confezione: il costo di una
+// singola analisi si ottiene dividendo per i pezzi. Senza pezzi non si inventa
+// un numero, si lascia vuoto: un costo sbagliato di un fattore dodici in una
+// trattativa e' peggio di un costo mancante.
+function calcolaRigaClip(r) {
+  const pezzi = parseFloat(r.pezzi) || 0;
+  const prezzoConf = parseFloat(r.prezzo_confezione) || 0;
+  const sconto = parseFloat(r.sconto_clip) || 0;
+  const costoClip = pezzi > 0
+    ? parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2))
+    : null;
+  const nClip = parseFloat(r.n_clip) || 1;
+  const totaleClip = costoClip == null ? null : costoClip * nClip;
+
+  const nMyl = parseFloat(r.n_mylav) || 1;
+  const listinoLav = parseFloat(r.listino_lav) || 0;
+  const prezzoPiano = parseFloat(r.prezzo_scontato_lav) || 0;
+  // Senza piano il veterinario paga il listino: usarlo evita un falso
+  // risparmio positivo quando il piano non e' stato scelto.
+  const totaleMylav = (prezzoPiano > 0 ? prezzoPiano : listinoLav) * nMyl;
+
+  // Il segno qui e' l'INVERSO del calcolatore esami: la' il positivo era il
+  // risparmio scegliendo Mylav rispetto al concorrente (prezzoConc - mylavCost).
+  // Qui il confronto e' clip contro Mylav, quindi e' totaleClip - totaleMylav:
+  // positivo vuol dire che la clip costa PIU' di Mylav, cioe' conviene Mylav.
+  // Per chi legge il senso resta lo stesso, positivo e blu = conviene Mylav,
+  // solo l'operazione che ci arriva e' scambiata.
+  const risparmio = totaleClip == null ? null : totaleClip - totaleMylav;
+
+  // Le chiavi restituite sono snake_case per combaciare con `col.col` delle
+  // colonne 'calcolato' (il motore comune legge valori[col.col]): stessa
+  // formula del brief, nomi di ritorno adattati al resto della tabella.
+  return { costo_clip: costoClip, totale_clip: totaleClip, totale_mylav: totaleMylav, risparmio };
+}
+
+// Le 14 colonne della tabella, nell'ordine in cui compaiono: struttura, le 6
+// della clip (concorrenza, nel senso del motore comune: il costo che il
+// veterinario sostiene da solo), le 6 di Mylav, il risparmio e l'eliminazione
+// riga. Le tre colonne del conto — prezzo confezione, pezzi, costo clip — sono
+// marcate 'tenue: true': contano meno del risultato, l'occhio deve cadere su
+// costo clip e sul totale, non sul percorso che ci arriva.
+const COLONNE_CLIP = [
+  { col: 'struttura',         intestazione: 'comune.struttura',        tipo: 'testo',     larghezza: 130, gruppo: 'nessuno', elenco: 'roi-strutture-list' },
+  { col: 'clip_nome',         intestazione: 'clip.tabella.clip',       tipo: 'testo',     larghezza: 200, larghezzaCampo: 190, gruppo: 'concorrenza', elenco: 'clip-list',
+    segnaposto: () => t('clip.placeholderClip') },
+  { col: 'n_clip',            intestazione: 'roi.tabella.n',           tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'concorrenza', fallbackSuZero: 1, segnaposto: '1' },
+  { col: 'prezzo_confezione', intestazione: 'clip.tabella.prezzoConf', tipo: 'numero',    larghezza: 95,  gruppo: 'concorrenza', segnaposto: '0.00', tenue: true },
+  { col: 'pezzi',             intestazione: 'clip.tabella.pezzi',      tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'concorrenza', tenue: true },
+  { col: 'sconto_clip',       intestazione: 'roi.tabella.scontoPct',   tipo: 'numero',    larghezza: 65,  larghezzaCampo: 55, gruppo: 'concorrenza', segnaposto: '%',
+    valore: r => { const sc = parseFloat(r.sconto_clip) || 0; return sc > 0 ? String(sc) : ''; } },
+  { col: 'costo_clip',        intestazione: 'clip.tabella.costoClip',  tipo: 'calcolato', larghezza: 95,  gruppo: 'concorrenza', totale: 'tot_costo_clip', tenue: true },
+  { col: 'totale_clip',       intestazione: 'clip.tabella.totaleClip', tipo: 'calcolato', larghezza: 95,  gruppo: 'concorrenza', totale: 'tot_totale_clip' },
+  { col: 'profilo_mylav',     intestazione: 'clip.tabella.profilo',    tipo: 'testo',     larghezza: 180, larghezzaCampo: 170, gruppo: 'mylav', elenco: 'mylav-esami-list',
+    segnaposto: () => t('clip.placeholderProfilo') },
+  { col: 'n_mylav',           intestazione: 'roi.tabella.n',           tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'mylav', fallbackSuZero: 1, segnaposto: '1' },
+  { col: 'listino_lav',       intestazione: 'roi.tabella.listinoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_listino_lav', segnaposto: '0.00' },
+  { col: 'prezzo_scontato_lav', intestazione: 'roi.tabella.pianoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_prezzo_scontato_lav', segnaposto: '0.00' },
+  { col: 'totale_mylav',      intestazione: 'clip.tabella.totaleMylav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav', totale: 'tot_totale_mylav' },
+  { col: 'risparmio',         intestazione: 'comune.risparmio',        tipo: 'calcolato', larghezza: 95,  gruppo: 'nessuno', separaInTestata: true,
+    totale: 'differenziale', coloreCondizionale: true },
+  { col: '__delete',          tipo: 'vuota', larghezza: 28, gruppo: 'nessuno', separaInTestata: true,
+    contenutoVuoto: (r, i) => `<button class="roi-del-btn" onclick="removeRigaClip(${i})" title="${escHtml(t('concorrenti.rimuovi'))}">×</button>` }
+];
+
+// Cerca nel catalogo clip il nome digitato. Prima la corrispondenza esatta;
+// poi quella tollerante (errori di battitura), ma solo se e' l'unica — stessa
+// regola di trovaEsameConcorrente: riempire con la clip sbagliata e' peggio
+// che non riempire.
+function trovaClip(nome) {
+  const catalogo = S.clip.catalogo || [];
+  const n = String(nome || '').trim();
+  if (!n || !catalogo.length) return null;
+  const esatto = catalogo.find(c => (c.nome || '').trim().toLowerCase() === n.toLowerCase());
+  if (esatto) return esatto;
+  if (!window.Ricerca) return null;
+  const vicini = catalogo.filter(c => Ricerca.corrisponde(c.nome, n));
+  return vicini.length === 1 ? vicini[0] : null;
+}
+
+// Cascata dal nome della clip: prezzo di confezione, pezzi e sconto abituale
+// dal catalogo. Un valore scritto dall'operatore non viene mai sovrascritto
+// (campoFillabile); cambiata la clip, quello che era stato riempito da solo
+// per la clip precedente si azzera — quello scritto a mano resta.
+async function compilaDaClip(tr) {
+  const inp = tr.querySelector('[data-col="clip_nome"]');
+  if (!inp) return;
+  const nome = inp.value.trim();
+  const prec = inp.dataset.lastClipNome || '';
+  if (nome === prec) return;
+  inp.dataset.lastClipNome = nome;
+
+  const pcInp = tr.querySelector('[data-col="prezzo_confezione"]');
+  const pzInp = tr.querySelector('[data-col="pezzi"]');
+  const scInp = tr.querySelector('[data-col="sconto_clip"]');
+  [pcInp, pzInp, scInp].forEach(i => { if (i && i.dataset.auto === '1') { i.value = ''; i.dataset.auto = '0'; } });
+
+  if (nome) {
+    const c = trovaClip(nome);
+    if (c) {
+      if (pcInp && c.prezzoConfezione != null && campoFillabile(pcInp)) { pcInp.value = c.prezzoConfezione; pcInp.dataset.auto = '1'; }
+      if (pzInp && c.pezzi != null && campoFillabile(pzInp)) { pzInp.value = c.pezzi; pzInp.dataset.auto = '1'; }
+      if (scInp && c.sconto != null && campoFillabile(scInp)) { scInp.value = c.sconto; scInp.dataset.auto = '1'; }
+    }
+  }
+  aggiornaRigaDOMClip(tr);
+}
+
+// Cascata dal profilo Mylav: stessa logica del calcolatore esami (prezzo base,
+// poi prezzo del piano selezionato). Cambiato il profilo, i prezzi Mylav
+// riempiti da soli per il profilo precedente si azzerano; quelli scritti a
+// mano restano. Lato clip indipendente: non viene mai toccato da qui.
+async function aggiornaPrezziAutomaticiClip(tr, force = false) {
+  const profInp = tr.querySelector('[data-col="profilo_mylav"]');
+  const llInp   = tr.querySelector('[data-col="listino_lav"]');
+  const plInp   = tr.querySelector('[data-col="prezzo_scontato_lav"]');
+  if (!profInp || !llInp || !plInp) return;
+  const profilo = profInp.value.trim();
+
+  const prevProfilo = profInp.dataset.lastProfilo || '';
+  if (profilo !== prevProfilo) {
+    ['listino_lav', 'prezzo_scontato_lav'].forEach(col => {
+      const inp = tr.querySelector(`[data-col="${col}"]`);
+      if (inp && inp.dataset.auto === '1') { inp.value = ''; inp.dataset.auto = '0'; inp.title = ''; inp.classList.remove('roi-prezzo-nuovo'); }
+    });
+    profInp.dataset.lastProfilo = profilo;
+    aggiornaRigaDOMClip(tr);
+  }
+
+  if (!profilo) { aggiornaRigaDOMClip(tr); return; }
+
+  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(profilo)}`, { headers: authHeaders() })
+    .then(r => r.json()).catch(() => ({}));
+  if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
+    llInp.value = baseResp.prezzo_base;
+    llInp.dataset.auto = '1';
+  }
+
+  if (S.clip.pianoId) {
+    const requestedPianoId = S.clip.pianoId;
+    const pResp = await fetch(`/api/piani/${requestedPianoId}/prezzo?esame=${encodeURIComponent(profilo)}`, { headers: authHeaders() })
+      .then(r => r.json()).catch(() => ({}));
+    if (S.clip.pianoId !== requestedPianoId) return; // un'altra selezione di piano ha superato questa richiesta in corso
+    plInp.classList.remove('roi-prezzo-nuovo');
+    if (pResp.fonte === 'piano' || pResp.fonte === 'custom' || pResp.fonte === 'base_fallback') {
+      const titolo = pResp.fonte === 'piano' ? t('roi.tooltip.prezzoAutomatico')
+        : pResp.fonte === 'custom' ? t('roi.tooltip.prezzoCustomSalvato')
+        : t('roi.tooltip.prezzoBaseFallback');
+      if (force || campoFillabile(plInp)) {
+        plInp.value = pResp.prezzo;
+        plInp.dataset.auto = '1';
+        plInp.title = titolo;
+      } else {
+        plInp.title = t('roi.tooltip.nonApplicato', { titolo });
+      }
+    } else {
+      plInp.dataset.auto = '0';
+      plInp.title = '';
+      if (!plInp.value) plInp.classList.add('roi-prezzo-nuovo');
+    }
+  } else {
+    plInp.dataset.auto = '0';
+    plInp.title = '';
+    plInp.classList.remove('roi-prezzo-nuovo');
+  }
+
+  aggiornaRigaDOMClip(tr);
+}
+
+async function suCampoUscitoClip(tr, col) {
+  if (col === 'clip_nome') await compilaDaClip(tr);
+  else if (col === 'profilo_mylav') await aggiornaPrezziAutomaticiClip(tr);
+}
+
+// Selezionato un suggerimento dalla tendina profilo Mylav: la cascata piano,
+// poi il pre-riempimento (solo se vuoti) dai prezzi storici del profilo.
+async function suSelezioneAutocompleteClip(tr, nome) {
+  await aggiornaPrezziAutomaticiClip(tr);
+  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
+  if (prezzi.listino_lav) {
+    const llInp = tr.querySelector('[data-col="listino_lav"]');
+    if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
+  }
+  if (prezzi.prezzo_scontato_lav) {
+    const plInp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
+    if (plInp && !plInp.value) plInp.value = prezzi.prezzo_scontato_lav;
+  }
+}
+
+function calcolaClipTotali(righe) {
+  righe = righe || S.clip.righe;
+  const t2 = {
+    tot_prezzo_confezione: 0, tot_costo_clip: 0, tot_totale_clip: 0,
+    tot_listino_lav: 0, tot_prezzo_scontato_lav: 0, tot_totale_mylav: 0,
+    differenziale: 0
+  };
+  for (const r of righe) {
+    const v = calcolaRigaClip(r);
+    t2.tot_prezzo_confezione += parseFloat(r.prezzo_confezione) || 0;
+    t2.tot_costo_clip        += v.costo_clip || 0;
+    t2.tot_totale_clip       += v.totale_clip || 0;
+    t2.tot_listino_lav       += parseFloat(r.listino_lav) || 0;
+    t2.tot_prezzo_scontato_lav += parseFloat(r.prezzo_scontato_lav) || 0;
+    t2.tot_totale_mylav      += v.totale_mylav || 0;
+    t2.differenziale         += v.risparmio || 0;
+  }
+  return t2;
+}
+
+const motoreClip = window.Calcolatore.crea({
+  chiave: 'clip',
+  idTbody: 'clip-tbody',
+  idTableWrap: 'clip-table-wrap',
+  idMsg: 'clip-msg',
+  idAc: 'clip-ac',
+  stato: () => S.clip,
+  rigaVuota: clipRigaVuota,
+  colonne: COLONNE_CLIP,
+  calcolaRiga: r => calcolaRigaClip(r),
+  totali: righe => calcolaClipTotali(righe),
+  suCampoUscito: suCampoUscitoClip,
+  rigaValida: r => !!(r.profilo_mylav && r.profilo_mylav.trim()),
+  colonnaAutocomplete: 'profilo_mylav',
+  suggerimenti: q => fetch(`/api/esami/autocomplete?q=${encodeURIComponent(q)}`, { headers: authHeaders() }).then(r => r.json()),
+  suSelezioneAutocomplete: suSelezioneAutocompleteClip,
+  dopoInizializzaEventi: () => {
+    // Ristretto al proprio contenitore: con due calcolatori possibili nella
+    // stessa pagina una ricerca su tutto il documento prenderebbe anche
+    // l'altro calcolatore.
+    const wrap = el('clip-table-wrap');
+    (wrap || document).querySelectorAll('[data-col="profilo_mylav"]').forEach(inp => {
+      inp.dataset.lastProfilo = (inp.value || '').trim();
+    });
+    (wrap || document).querySelectorAll('[data-col="clip_nome"]').forEach(inp => {
+      inp.dataset.lastClipNome = (inp.value || '').trim();
+    });
+    // Il motore comune etichetta il gruppo 'concorrenza' con "Concorrenza"
+    // (giusto per il calcolatore esami, dove quel lato e' davvero un
+    // concorrente): qui e' il costo della clip precaricata, non un
+    // concorrente, quindi l'intestazione di gruppo si corregge dopo il
+    // disegno invece di toccare il motore comune (usato anche altrove).
+    const grpClip = wrap && wrap.querySelector('.roi-grp-conc');
+    if (grpClip) grpClip.textContent = t('clip.tabella.gruppoClip');
+  },
+  tipoRiga: 'Clip',
+  etichettaTotaleRiga: 'roi.tabella.totale',
+  etichettaDifferenziale: 'roi.differenzialeTotale',
+  avvisoNegativo: 'clip.avvisoClipConviene'
+});
+
+function aggiornaRigaDOMClip(tr) { motoreClip.aggiornaRiga(tr); }
+function addRigaClip() { motoreClip.aggiungiRiga(); }
+function removeRigaClip(idx) { motoreClip.rimuoviRiga(idx); }
+function getClipRigheValide() { return motoreClip.righeValide(); }
+function clipMsg(msg, tipo) { motoreClip.messaggio(msg, tipo); }
+
+function pianoSelezionatoNomeClip() {
+  const p = S.piani.find(p => p.id === S.clip.pianoId);
+  return p ? p.nome : null;
+}
+
+function toggleClipPianoPanel() {
+  const panel = el('clip-piano-panel');
+  if (!panel) return;
+  const show = panel.style.display === 'none';
+  panel.style.display = show ? 'block' : 'none';
+  if (show) renderClipPianoPanel('');
+}
+
+function renderClipPianoPanel(filtro) {
+  const panel = el('clip-piano-panel');
+  if (!panel) return;
+  const f = filtro.trim().toLowerCase();
+  const filtrati = S.piani.filter(p => !f || p.nome.toLowerCase().includes(f));
+  const perCategoria = {};
+  filtrati.forEach(p => { (perCategoria[p.categoria] = perCategoria[p.categoria] || []).push(p); });
+
+  let html = `<input class="roi-input" id="clip-piano-search" placeholder="${escHtml(t('roi.cercaPianoPlaceholder'))}"
+    value="${escHtml(filtro)}" oninput="renderClipPianoPanel(this.value)"
+    style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
+  html += `<div class="roi-piano-item" onclick="selezionaPianoClip(null)" style="font-style:italic">${t('roi.nessunPianoOpzione')}</div>`;
+  for (const [categoria, items] of Object.entries(perCategoria)) {
+    html += `<div class="roi-piano-categoria">${escHtml(categoria)}</div>`;
+    items.forEach(p => {
+      html += `<div class="roi-piano-item" onclick="selezionaPianoClip(${p.id})">${escHtml(p.nome)}</div>`;
+    });
+  }
+  panel.innerHTML = html;
+  const inp = el('clip-piano-search');
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+}
+
+function selezionaPianoClip(id) {
+  S.clip.pianoId = id;
+  const panel = el('clip-piano-panel');
+  if (panel) panel.style.display = 'none';
+  const btn = el('clip-piano-btn');
+  if (btn) {
+    btn.textContent = t('roi.pianoBtn', { nome: pianoSelezionatoNomeClip() || t('roi.nessuno') });
+    btn.title = pianoSelezionatoNomeClip() || '';
+  }
+  const tbody = el('clip-tbody');
+  if (tbody) {
+    tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaPrezziAutomaticiClip(tr, true));
+  }
+}
+
+function buildClipSectionHtml() {
+  const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
+  const mylavOpts = (S.esamiMylavNomi || []).map(n => `<option value="${escHtml(n)}">`).join('');
+  const clipOpts = (S.clip.catalogo || []).map(c => `<option value="${escHtml(c.nome)}">`).join('');
+
+  return `
+    <datalist id="roi-strutture-list">${struttureOpts}</datalist>
+    <datalist id="mylav-esami-list">${mylavOpts}</datalist>
+    <datalist id="clip-list">${clipOpts}</datalist>
+    <div class="roi-toolbar">
+      <div></div>
+      <div class="roi-toolbar-controls">
+        <div style="position:relative">
+          <button class="btn-outline roi-piano-btn roi-pill-myl" id="clip-piano-btn"
+                  onclick="toggleClipPianoPanel()" title="${escHtml(pianoSelezionatoNomeClip() || '')}">
+            ${t('roi.pianoBtn', { nome: escHtml(pianoSelezionatoNomeClip() || t('roi.nessuno')) })}
+          </button>
+          <div id="clip-piano-panel" class="roi-piano-panel" style="display:none"></div>
+        </div>
+      </div>
+    </div>
+    <div id="clip-table-wrap" style="overflow-x:auto">${motoreClip.disegnaTabella()}</div>
+    <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+      <button class="btn-outline" onclick="addRigaClip()" style="font-size:12px">${t('clip.aggiungiRiga')}</button>
+    </div>
+    <div id="clip-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
+    <div id="clip-ac" class="roi-autocomplete" style="display:none"></div>
+  `;
+}
+
+function buildClipActionsHtml() {
+  return `
+    <div class="roi-actions-bar">
+      <button class="btn-outline" onclick="salvaCalcoloClip()" style="color:var(--blue);border-color:var(--blue)">${t('roi.salvaComeFile')}</button>
+    </div>
+    <button class="roi-clear-all-btn" onclick="rimuoviTuttoClip()">${t('confronto.rimuoviTutto')}</button>
+  `;
+}
+
+// Azzera il calcolatore clip: righe e piano selezionato.
+function rimuoviTuttoClip() {
+  if (!confirm(t('clip.confermaRimuoviTutto'))) return;
+  S.clip.pianoId = null;
+  S.clip.righe = [clipRigaVuota()];
+  navigate('calcolatore-clip');
+}
+
+// Vista dedicata (non incorporata nella dashboard, a differenza del
+// calcolatore esami): il titolo dice cosa si sta decidendo, non come
+// funziona lo strumento.
+async function renderCalcolatoreClip() {
+  try { S.clip.catalogo = await api('/api/clip'); }
+  catch (_) { S.clip.catalogo = []; }
+  // Nomi del catalogo Mylav per l'autocomplete del profilo, in cache come nel
+  // dettaglio concorrente.
+  if (!S.esamiMylavNomi) S.esamiMylavNomi = await api('/api/esami-riferimento/nomi').catch(() => []);
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">${t('clip.pagina.titolo')}</div></div>
+    </div>
+    <div class="page-body">
+      <div class="section-card" id="clip-hero"></div>
+    </div>
+  `);
+
+  el('clip-hero').innerHTML = buildClipSectionHtml() + buildClipActionsHtml();
+  motoreClip.inizializzaEventi();
+}
+
+async function salvaCalcoloClip() {
+  if (S.auth.guest || !S.auth.token) { clipMsg(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') }), 'error'); return; }
+  const righe = getClipRigheValide();
+  // La struttura non ha un campo dedicato in testata come nel calcolatore
+  // esami: si prende dalla prima riga che la riporta compilata.
+  const struttura = ((S.clip.righe.find(r => (r.struttura || '').trim())) || {}).struttura || '';
+
+  if (!struttura.trim()) return clipMsg(t('clip.scriviStruttura'), 'error');
+  if (!righe.length) return clipMsg(t('clip.nessunaRigaValida'), 'error');
+
+  // Una riga con la sola clip non viene salvata: senza il profilo Mylav non
+  // c'e' niente da confrontare. Come nel calcolatore esami, va detto invece di
+  // far sparire la riga senza che nessuno se ne accorga.
+  const soloClip = S.clip.righe.filter(r =>
+    (r.clip_nome || '').trim() && !(r.profilo_mylav || '').trim()).length;
+  if (soloClip) {
+    const chiave = soloClip === 1 ? 'clip.righeSenzaProfiloMylav.uno' : 'clip.righeSenzaProfiloMylav';
+    if (!confirm(t(chiave, { n: soloClip }))) return;
+  }
+
+  const nomeFile = `Calcolo_clip_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
+  try {
+    await api('/api/calcolo-clip/salva', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ struttura: struttura.trim(), righe, nomeFile, piano_id: S.clip.pianoId })
+    });
+    clipMsg(t('clip.salvatoOk'), 'ok');
+  } catch (e) {
+    clipMsg(t('errore.generico', { msg: e.message }), 'error');
+  }
 }
 
 // ── Init ───────────────────────────────────────────

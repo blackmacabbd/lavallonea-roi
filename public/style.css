@@ -1016,7 +1016,9 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 }
 
 /* ── Tabella confronto ROI: due pannelli (rosso vs blu) ── */
-#roi-table-wrap {
+/* #clip-table-wrap e' la stessa tabella del calcolatore clip (fetta 5, id
+   diverso perche' i due calcolatori possono trovarsi nella stessa pagina). */
+#roi-table-wrap, #clip-table-wrap {
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 1px 2px rgba(0,0,0,0.04), 0 12px 30px rgba(0,0,0,0.05);
@@ -1052,6 +1054,18 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 .roi-compare .roi-input.roi-num { font-variant-numeric: tabular-nums; }
 .roi-compare .roi-totals-row td { background: var(--bg-subtle); border-top: 2px solid var(--line); font-weight: 600; }
 .roi-compare [data-col="risparmio"] { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* Calcolatore clip: prezzo di confezione, pezzi e costo per clip sono il
+   passaggio verso il numero che conta, non la decisione — restano piu'
+   tenui delle altre colonne. "Costo/clip" resta comunque leggibile (l'occhio
+   deve cadere li' e sul totale), quindi meno tenue degli altri due. */
+#clip-table-wrap input[data-col="prezzo_confezione"],
+#clip-table-wrap input[data-col="pezzi"] {
+  color: #b3b8c2;
+}
+#clip-table-wrap td.roi-calc[data-col="costo_clip"] {
+  color: #8a93a1;
+}
 
 .roi-del-btn {
   width: 22px;
