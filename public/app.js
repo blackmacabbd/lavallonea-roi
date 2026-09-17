@@ -475,7 +475,7 @@ async function renderDashboard() {
     actions.style.cssText = 'margin:0 24px 24px';
     actions.innerHTML = buildRoiActionsHtml();
     el('main-content').querySelector('.page-body').appendChild(actions);
-    initRoiEvents();
+    motoreEsami.inizializzaEventi();
     return;
   }
 
@@ -495,7 +495,7 @@ async function renderDashboard() {
 
   // Calcolatore ROI — eroe in cima alla dashboard
   el('roi-hero').innerHTML = buildRoiSectionHtml();
-  initRoiEvents();
+  motoreEsami.inizializzaEventi();
   // I suggerimenti della colonna concorrenza arrivano dal listino del
   // concorrente gia' selezionato: senza questo comparirebbero solo dopo averlo
   // riselezionato a mano.
@@ -2068,6 +2068,122 @@ async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
 // ROI CALCOLATORE
 // ══════════════════════════════════════════════════
 
+// Descrittore del calcolatore esami per il motore comune (calcolatore.js).
+// Le 16 colonne della tabella, nell'ordine in cui compaiono: struttura e una
+// colonna di servizio vuota, le 6 della concorrenza, le 6 di Mylav, il
+// risparmio e il bottone di eliminazione riga.
+const colonneRoiEsami = [
+  { col: 'struttura', tipo: 'vuota', larghezza: 130, gruppo: 'nessuno',
+    intestazione: 'comune.struttura',
+    contenutoVuoto: (r, i) => i === 0
+      ? `<input class="roi-input roi-struttura-inp" list="roi-strutture-list" value="${escHtml(S.roi.struttura)}" placeholder="${escHtml(t('roi.placeholderStruttura'))}" autocomplete="off" oninput="S.roi.struttura=this.value" style="width:120px">`
+      : '' },
+  { col: '__spacer', tipo: 'vuota', larghezza: 12, gruppo: 'nessuno' },
+  { col: 'esame_concorrente', tipo: 'testo', larghezza: 170, larghezzaCampo: 160, gruppo: 'concorrenza',
+    intestazione: 'roi.tabella.esameConc', elenco: 'roi-esami-conc-list', posizioneRelativa: true,
+    segnaposto: () => t('roi.placeholderEsameConc') },
+  { col: 'n_concorrenza', tipo: 'numero', larghezza: 60, larghezzaCampo: 50, gruppo: 'concorrenza',
+    intestazione: 'roi.tabella.n', fallbackSuZero: '',
+    segnaposto: r => r.n_esami || 1 },
+  { col: 'listino_concorrenza', tipo: 'numero', larghezza: 95, gruppo: 'concorrenza',
+    intestazione: 'comune.listinoConc', totale: 'tot_listino_conc', segnaposto: '0.00' },
+  { col: 'sconto_concorrenza', tipo: 'numero', larghezza: 65, larghezzaCampo: 55, gruppo: 'concorrenza',
+    intestazione: 'roi.tabella.scontoPct', segnaposto: '%',
+    valore: r => { const sc = parseFloat(r.sconto_concorrenza) || 0; return sc > 0 ? String(sc) : ''; } },
+  { col: 'tot_conc', tipo: 'calcolato', larghezza: 95, gruppo: 'concorrenza',
+    intestazione: 'roi.tabella.totConc', totale: 'tot_conc' },
+  { col: 'prezzo_conc', tipo: 'calcolato', larghezza: 95, gruppo: 'concorrenza',
+    intestazione: 'comune.scontatoConc', totale: 'tot_prezzo_conc' },
+  { col: 'esame', tipo: 'testo', larghezza: 170, larghezzaCampo: 160, gruppo: 'mylav',
+    intestazione: 'roi.tabella.esameMyl', posizioneRelativa: true,
+    segnaposto: () => t('roi.placeholderEsame'),
+    extra: (r, i) => `<button class="roi-lega-btn" data-idx="${i}" onclick="salvaAbbinamentoRiga(${i})" title="${escHtml(t('roi.legaTooltip'))}" style="display:none">🔗</button>` },
+  { col: 'n_esami', tipo: 'numero', larghezza: 60, larghezzaCampo: 50, gruppo: 'mylav',
+    intestazione: 'roi.tabella.n', fallbackSuZero: 1, segnaposto: '1' },
+  { col: 'listino_lav', tipo: 'numero', larghezza: 95, gruppo: 'mylav',
+    intestazione: 'roi.tabella.listinoMyl', totale: 'tot_listino_lav', segnaposto: '0.00' },
+  { col: 'tot_listino_lav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav',
+    intestazione: 'roi.tabella.totMyl', totale: 'tot_tot_lav' },
+  { col: 'prezzo_scontato_lav', tipo: 'numero', larghezza: 95, gruppo: 'mylav',
+    intestazione: 'roi.tabella.pianoMyl', totale: 'tot_prezzo_lav_sc', segnaposto: '0.00' },
+  { col: 'tot_prezzo_lav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav',
+    intestazione: 'roi.tabella.totScMyl', totale: 'tot_tot_prezzo_lav' },
+  { col: 'risparmio', tipo: 'calcolato', larghezza: 95, gruppo: 'nessuno',
+    intestazione: 'comune.risparmio', totale: 'differenziale', coloreCondizionale: true },
+  { col: '__delete', tipo: 'vuota', larghezza: 28, gruppo: 'nessuno',
+    contenutoVuoto: (r, i) => `<button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="${escHtml(t('concorrenti.rimuovi'))}">×</button>` }
+];
+
+// La cascata di riempimento quando un campo perde il focus: e' la stessa
+// funzione per tutti i campi, e' il campo (col) a decidere cosa fare.
+async function suCampoUscitoRoiEsami(tr, col) {
+  if (col === 'esame') {
+    await aggiornaPrezziAutomatici(tr);
+    aggiornaTastoAbbinamento(tr);
+  } else if (col === 'esame_concorrente') {
+    await compilaDaEsameConcorrente(tr);
+  } else if (col === 'prezzo_scontato_lav') {
+    const inp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
+    if (inp && S.roi.pianoId && inp.dataset.auto !== '1' && inp.value.trim()) {
+      const esameInp = tr.querySelector('[data-col="esame"]');
+      const esame = esameInp ? esameInp.value.trim() : '';
+      if (esame) {
+        await fetch('/api/prezzi-custom', {
+          method: 'POST',
+          headers: authHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: parseFloat(inp.value) || 0 })
+        });
+        inp.dataset.auto = '1';
+        inp.classList.remove('roi-prezzo-nuovo');
+        inp.title = t('roi.tooltip.prezzoCustomSalvatoOra');
+      }
+    }
+  }
+}
+
+// Selezionato un suggerimento dalla tendina esami: la cascata prezzi Mylav,
+// poi il pre-riempimento (solo se vuoti) dai prezzi storici dell'esame.
+async function suSelezioneAutocompleteRoiEsami(tr, nome) {
+  await aggiornaPrezziAutomatici(tr);
+  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
+  if (prezzi.listino_lav) {
+    const llInp = tr.querySelector('[data-col="listino_lav"]');
+    if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
+  }
+  if (prezzi.prezzo_scontato_lav) {
+    const plInp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
+    if (plInp && !plInp.value) plInp.value = prezzi.prezzo_scontato_lav;
+  }
+}
+
+const motoreEsami = window.Calcolatore.crea({
+  chiave: 'esami',
+  idTbody: 'roi-tbody',
+  idTableWrap: 'roi-table-wrap',
+  idMsg: 'roi-msg',
+  idAc: 'roi-ac',
+  stato: () => S.roi,
+  rigaVuota: roiRigaVuota,
+  colonne: colonneRoiEsami,
+  calcolaRiga: r => calcolaRigaRoi(r),
+  totali: righe => calcolaRoiTotali(righe),
+  suCampoUscito: suCampoUscitoRoiEsami,
+  rigaValida: r => !!(r.esame && r.esame.trim()),
+  colonnaAutocomplete: 'esame',
+  suggerimenti: q => fetch(`/api/esami/autocomplete?q=${encodeURIComponent(q)}`, { headers: authHeaders() }).then(r => r.json()),
+  suSelezioneAutocomplete: suSelezioneAutocompleteRoiEsami,
+  dopoTotali: () => updateDashRisparmio(),
+  dopoInizializzaEventi: () => {
+    document.querySelectorAll('#roi-tbody [data-col="esame"]').forEach(inp => {
+      inp.dataset.lastEsame = (inp.value || '').trim();
+    });
+  },
+  tipoRiga: 'Platinum',
+  etichettaTotaleRiga: 'roi.tabella.totale',
+  etichettaDifferenziale: 'roi.differenzialeTotale',
+  avvisoNegativo: 'roi.avvisoNonRisparmia'
+});
+
 function buildRoiSectionHtml() {
   const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
 
@@ -2096,7 +2212,7 @@ function buildRoiSectionHtml() {
         </div>
       </div>
     </div>
-    <div id="roi-table-wrap" style="overflow-x:auto">${buildRoiTableHtml()}</div>
+    <div id="roi-table-wrap" style="overflow-x:auto">${motoreEsami.disegnaTabella()}</div>
     <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
       <button class="btn-outline" onclick="addRigaRoi()" style="font-size:12px">${t('roi.aggiungiEsame')}</button>
     </div>
@@ -2449,76 +2565,16 @@ async function confermaMatchBanner(idx, esameConcorrenteId) {
   await aggiornaMatchConcorrente(tr);
 }
 
-function buildRoiTableHtml() {
-  const righe = S.roi.righe;
-
-  const header1 = `
-    <tr>
-      <th colspan="2"></th>
-      <th colspan="6" class="roi-grp roi-grp-conc">${t('confronto.tabella.concorrenza')}</th>
-      <th colspan="6" class="roi-grp roi-grp-myl">${t('confronto.tabella.mylav')}</th>
-      <th></th><th></th>
-    </tr>`;
-
-  const header2 = `
-    <tr>
-      <th style="width:130px">${t('comune.struttura')}</th>
-      <th style="width:12px"></th>
-      <th style="width:170px;background:rgba(206,24,30,0.04)">${t('roi.tabella.esameConc')}</th>
-      <th style="width:60px;background:rgba(206,24,30,0.04)">${t('roi.tabella.n')}</th>
-      <th style="width:95px;background:rgba(206,24,30,0.04)">${t('comune.listinoConc')}</th>
-      <th style="width:65px;background:rgba(206,24,30,0.04)">${t('roi.tabella.scontoPct')}</th>
-      <th style="width:95px;background:rgba(206,24,30,0.04)">${t('roi.tabella.totConc')}</th>
-      <th style="width:95px;background:rgba(206,24,30,0.04)">${t('comune.scontatoConc')}</th>
-      <th style="width:170px;background:rgba(15,118,188,0.06)">${t('roi.tabella.esameMyl')}</th>
-      <th style="width:60px;background:rgba(15,118,188,0.06)">${t('roi.tabella.n')}</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.listinoMyl')}</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.totMyl')}</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.pianoMyl')}</th>
-      <th style="width:95px;background:rgba(15,118,188,0.06)">${t('roi.tabella.totScMyl')}</th>
-      <th style="width:95px">${t('comune.risparmio')}</th>
-      <th style="width:28px"></th>
-    </tr>`;
-
-  const bodyRows = righe.map((r, i) => buildRoiRigaHtml(r, i)).join('');
-
-  const tots = calcolaRoiTotali();
-  const totRow = `<tr class="roi-totals-row">
-    <td colspan="4"><strong>${t('roi.tabella.totale')}</strong></td>
-    <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_listino_conc)}</td>
-    <td style="background:rgba(206,24,30,0.04)"></td>
-    <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_conc)}</td>
-    <td class="roi-calc" style="background:rgba(206,24,30,0.04)">${fmtE(tots.tot_prezzo_conc)}</td>
-    <td style="background:rgba(15,118,188,0.06)"></td>
-    <td style="background:rgba(15,118,188,0.06)"></td>
-    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_listino_lav)}</td>
-    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_tot_lav)}</td>
-    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_prezzo_lav_sc)}</td>
-    <td class="roi-calc" style="background:rgba(15,118,188,0.06)">${fmtE(tots.tot_tot_prezzo_lav)}</td>
-    <td class="roi-calc" style="${tots.differenziale >= 0 ? 'color:#0f76bc' : 'color:#ce181e'};font-weight:600">${fmtE(tots.differenziale)}</td>
-    <td></td>
-  </tr>`;
-  const diffRow = `<tr class="roi-diff-row">
-    <td colspan="14" style="text-align:right;font-size:13px;font-weight:500">
-      <span id="roi-diff-note" style="display:${tots.differenziale < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">${t('roi.avvisoNonRisparmia')}</span>
-      ${t('roi.differenzialeTotale')}
-    </td>
-    <td colspan="2" style="font-size:15px;font-weight:700;color:${tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'}">${fmtE(tots.differenziale)}</td>
-  </tr>`;
-
-  return `<table class="roi-editable-table roi-compare">
-    <thead>${header1}${header2}</thead>
-    <tbody id="roi-tbody">${bodyRows}</tbody>
-    <tfoot>${totRow}${diffRow}</tfoot>
-  </table>`;
-}
-
 function calcPrezConc(lc, sc, n) {
   const mult = sc > 0 ? (1 - sc / 100) : 1;
   return parseFloat((lc * mult).toFixed(2));
 }
 
-function buildRoiRigaHtml(r, i) {
+// Ridotta al solo calcolo: la costruzione dell'HTML (intestazioni, righe,
+// piede) e' ora generica e vive nel motore comune (calcolatore.js), guidata
+// dall'elenco delle colonne. Questa funzione resta il "calcolaRiga" del
+// descrittore e la usano sia il disegno iniziale sia l'aggiornamento per riga.
+function calcolaRigaRoi(r) {
   const n  = r.n_esami || 1;
   const nc = parseFloat(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav
   const lc = parseFloat(r.listino_concorrenza) || 0;
@@ -2535,34 +2591,7 @@ function buildRoiRigaHtml(r, i) {
   const mylavCost = totPL > 0 ? totPL : totLL;
   const risp     = prezConc - mylavCost;
 
-  const rispColor = risp >= 0 ? '#0f76bc' : '#ce181e';
-  const scPlaceholder = sc > 0 ? String(sc) : '';
-
-  const strutturaCell = i === 0
-    ? `<td><input class="roi-input roi-struttura-inp" list="roi-strutture-list" value="${escHtml(S.roi.struttura)}" placeholder="${escHtml(t('roi.placeholderStruttura'))}" autocomplete="off" oninput="S.roi.struttura=this.value" style="width:120px"></td>`
-    : `<td></td>`;
-
-  return `<tr data-idx="${i}" data-tipo="Platinum">
-    ${strutturaCell}
-    <td></td>
-    <td style="position:relative;background:rgba(206,24,30,0.04)"><input class="roi-input" data-col="esame_concorrente" list="roi-esami-conc-list" value="${escHtml(r.esame_concorrente || '')}" placeholder="${escHtml(t('roi.placeholderEsameConc'))}" autocomplete="off" style="width:160px"></td>
-    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="n_concorrenza" value="${r.n_concorrenza || ''}" placeholder="${r.n_esami || 1}" style="width:50px"></td>
-    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="listino_concorrenza" value="${r.listino_concorrenza || ''}" placeholder="0.00"></td>
-    <td style="background:rgba(206,24,30,0.04)"><input class="roi-input roi-num" data-col="sconto_concorrenza" value="${scPlaceholder}" placeholder="%" style="width:55px"></td>
-    <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="tot_conc">${fmtE(totConc)}</td>
-    <td class="roi-calc" style="background:rgba(206,24,30,0.04)" data-col="prezzo_conc">${fmtE(prezConc)}</td>
-    <td style="position:relative;background:rgba(15,118,188,0.06)">
-      <input class="roi-input" data-col="esame" value="${escHtml(r.esame)}" placeholder="${escHtml(t('roi.placeholderEsame'))}" autocomplete="off" style="width:160px">
-      <button class="roi-lega-btn" data-idx="${i}" onclick="salvaAbbinamentoRiga(${i})" title="${escHtml(t('roi.legaTooltip'))}" style="display:none">🔗</button>
-    </td>
-    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="n_esami" value="${r.n_esami}" placeholder="1" style="width:50px"></td>
-    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="listino_lav" value="${r.listino_lav || ''}" placeholder="0.00"></td>
-    <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_listino_lav">${fmtE(totLL)}</td>
-    <td style="background:rgba(15,118,188,0.06)"><input class="roi-input roi-num" data-col="prezzo_scontato_lav" value="${r.prezzo_scontato_lav || ''}" placeholder="0.00"></td>
-    <td class="roi-calc" style="background:rgba(15,118,188,0.06)" data-col="tot_prezzo_lav">${fmtE(totPL)}</td>
-    <td class="roi-calc" data-col="risparmio" style="color:${rispColor};font-weight:500">${fmtE(risp)}</td>
-    <td><button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="${escHtml(t('concorrenti.rimuovi'))}">×</button></td>
-  </tr>`;
+  return { tot_conc: totConc, prezzo_conc: prezConc, tot_listino_lav: totLL, tot_prezzo_lav: totPL, risparmio: risp };
 }
 
 function fmtE(n) {
@@ -2573,8 +2602,8 @@ function fmtE(n) {
 
 function escHtml(s) { return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
 
-function calcolaRoiTotali() {
-  const righe = S.roi.righe;
+function calcolaRoiTotali(righe) {
+  righe = righe || S.roi.righe;
   let t = { tot_listino_conc:0, tot_conc:0, tot_prezzo_conc:0, tot_listino_lav:0, tot_tot_lav:0, tot_prezzo_lav_sc:0, tot_tot_prezzo_lav:0, differenziale:0 };
   for (const r of righe) {
     const n  = r.n_esami || 1;
@@ -2600,13 +2629,6 @@ function calcolaRoiTotali() {
     t.differenziale      += pc - (tpl > 0 ? tpl : tll); // senza piano usa il listino Mylav
   }
   return t;
-}
-
-function reRenderRoiTable() {
-  const wrap = el('roi-table-wrap');
-  if (!wrap) return;
-  wrap.innerHTML = buildRoiTableHtml();
-  initRoiEvents();
 }
 
 // Un campo prezzo e' sovrascrivibile dall'autofill se e' vuoto, 0, o gia' automatico.
@@ -2795,249 +2817,27 @@ async function mostraConsiglioPiano(esame) {
   banner.style.display = 'block';
 }
 
-function aggiornaRigaDOM(tr) {
-  const idx = parseInt(tr.dataset.idx);
+// ── Wrapper verso il motore comune (calcolatore.js) ──────────────────────
+// La logica generica (sincronizzare lo stato dal DOM, disegnare, aggiungere/
+// rimuovere righe, la tendina dei suggerimenti, Tab/Escape/Invio) vive ora in
+// motoreEsami. Questi wrapper mantengono invariati i nomi globali gia' usati
+// altrove in questo file (anche dentro stringhe onclick="..."), cosi' non e'
+// stato necessario toccare tutti i punti che li chiamano.
+function aggiornaRigaDOM(tr) { motoreEsami.aggiornaRiga(tr); }
 
-  const get = col => {
-    const inp = tr.querySelector(`[data-col="${col}"]`);
-    return inp ? (parseFloat(inp.value) || 0) : 0;
-  };
-  const getStr = col => {
-    const inp = tr.querySelector(`[data-col="${col}"]`);
-    return inp ? inp.value : '';
-  };
+function syncRoiStateFromDOM() { motoreEsami.sincronizza(); }
 
-  // Sync state
-  const r = S.roi.righe[idx];
-  if (!r) return;
-  r.esame               = getStr('esame');
-  r.n_esami             = get('n_esami') || 1;
-  r.esame_concorrente   = getStr('esame_concorrente');
-  r.n_concorrenza       = get('n_concorrenza') || '';
-  r.listino_concorrenza = get('listino_concorrenza');
-  r.sconto_concorrenza  = get('sconto_concorrenza');
-  r.listino_lav         = get('listino_lav');
-  r.prezzo_scontato_lav = get('prezzo_scontato_lav');
-
-  const n  = r.n_esami;
-  const nc = parseFloat(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav
-  const lc = r.listino_concorrenza;
-  const sc = r.sconto_concorrenza;
-  const ll = r.listino_lav;
-  const pl = r.prezzo_scontato_lav;
-
-  const tc  = lc * nc;
-  const pc  = calcPrezConc(tc, sc, 1);
-  const tll = ll * n;
-  const tpl = pl * n;
-  const risp = pc - (tpl > 0 ? tpl : tll); // senza piano usa il listino Mylav
-  setText(tr, 'tot_conc',         fmtE(tc));
-  setText(tr, 'prezzo_conc',      fmtE(pc));
-  setText(tr, 'tot_listino_lav',  fmtE(tll));
-  setText(tr, 'tot_prezzo_lav',   fmtE(tpl));
-
-  const rispEl = tr.querySelector('[data-col="risparmio"]');
-  if (rispEl) {
-    rispEl.textContent = fmtE(risp);
-    rispEl.style.color = risp >= 0 ? '#0f76bc' : '#ce181e';
-  }
-
-  aggiornaTotaliDOM();
-}
-
-function setText(tr, col, val) {
-  const td = tr.querySelector(`[data-col="${col}"]`);
-  if (td) td.textContent = val;
-}
-
-function aggiornaTotaliDOM() {
-  const tfoot = el('roi-table-wrap')?.querySelector('tfoot');
-  if (!tfoot) return;
-  const tots = calcolaRoiTotali();
-  const totRow = tfoot.querySelector('.roi-totals-row');
-  const diffRow = tfoot.querySelector('.roi-diff-row');
-  if (!totRow || !diffRow) return;
-
-  const tds = totRow.querySelectorAll('.roi-calc');
-  const vals = [tots.tot_listino_conc, tots.tot_conc, tots.tot_prezzo_conc, tots.tot_listino_lav, tots.tot_tot_lav, tots.tot_prezzo_lav_sc, tots.tot_tot_prezzo_lav, tots.differenziale];
-  tds.forEach((td, i) => {
-    td.textContent = fmtE(vals[i]);
-    if (i === vals.length - 1) td.style.color = tots.differenziale >= 0 ? '#0f76bc' : '#ce181e';
-  });
-
-  const diffVal = diffRow.querySelectorAll('td');
-  const lastTd = diffVal[diffVal.length - 1];
-  if (lastTd) { lastTd.textContent = fmtE(tots.differenziale); lastTd.style.color = tots.differenziale >= 0 ? '#0f76bc' : '#ce181e'; }
-  const note = el('roi-diff-note');
-  if (note) note.style.display = tots.differenziale < 0 ? 'inline' : 'none';
-  updateDashRisparmio();
-}
-
-let _acTimeout = null;
-
-function initRoiEvents() {
-  const wrap = el('roi-table-wrap');
-  if (!wrap) return;
-
-  // Snapshot del nome esame renderizzato: serve a capire quando l'identità cambia.
-  wrap.querySelectorAll('[data-col="esame"]').forEach(inp => {
-    inp.dataset.lastEsame = (inp.value || '').trim();
-  });
-
-  wrap.addEventListener('input', e => {
-    const inp = e.target;
-    if (!inp.matches('.roi-input')) return;
-    const tr = inp.closest('tr');
-    if (tr && tr.dataset.tipo) aggiornaRigaDOM(tr);
-
-    if (inp.dataset.col === 'esame') {
-      clearTimeout(_acTimeout);
-      _acTimeout = setTimeout(() => roiAutocomplete(inp), 200);
-    }
-  });
-
-  wrap.addEventListener('blur', async e => {
-    const inp = e.target;
-    if (!inp.matches || !inp.matches('.roi-input')) return;
-    const tr = inp.closest('tr');
-    if (!tr) return;
-
-    if (inp.dataset.col === 'esame') {
-      await aggiornaPrezziAutomatici(tr);
-      aggiornaTastoAbbinamento(tr);
-    }
-
-    if (inp.dataset.col === 'esame_concorrente') {
-      await compilaDaEsameConcorrente(tr);
-    }
-
-    if (inp.dataset.col === 'prezzo_scontato_lav' && S.roi.pianoId && inp.dataset.auto !== '1' && inp.value.trim()) {
-      const esameInp = tr.querySelector('[data-col="esame"]');
-      const esame = esameInp ? esameInp.value.trim() : '';
-      if (esame) {
-        await fetch('/api/prezzi-custom', {
-          method: 'POST',
-          headers: authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: parseFloat(inp.value) || 0 })
-        });
-        inp.dataset.auto = '1';
-        inp.classList.remove('roi-prezzo-nuovo');
-        inp.title = t('roi.tooltip.prezzoCustomSalvatoOra');
-      }
-    }
-  }, true);
-
-  wrap.addEventListener('keydown', e => {
-    if (e.key === 'Tab') {
-      const inp = e.target;
-      if (!inp.matches('.roi-input')) return;
-      const tr = inp.closest('tr');
-      if (!tr) return;
-      const tbody = el('roi-tbody');
-      if (tbody && tr === tbody.lastElementChild) {
-        const inputs = tr.querySelectorAll('.roi-input');
-        if (inp === inputs[inputs.length - 1]) {
-          e.preventDefault();
-          addRigaRoi();
-        }
-      }
-    }
-    if (e.key === 'Escape') hideAc();
-    if (e.key === 'Enter') {
-      const inp = e.target;
-      if (!inp.matches('.roi-input')) return;
-      e.preventDefault();
-      hideAc();
-      inp.blur(); // Invio non genera blur di suo: lo forziamo per far partire la cascata prezzo
-    }
-  });
-
-  document.addEventListener('click', e => {
-    if (!e.target.matches('.roi-ac-item') && !e.target.matches('[data-col="esame"]')) hideAc();
-  }, { once: false });
-}
-
-async function roiAutocomplete(inp) {
-  const q = inp.value.trim();
-  if (q.length < 1) return hideAc();
-  const items = await fetch(`/api/esami/autocomplete?q=${encodeURIComponent(q)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => []);
-  const ac = el('roi-ac');
-  if (!items.length || !ac) return hideAc();
-  const rect = inp.getBoundingClientRect();
-  ac.style.display  = 'block';
-  ac.style.position = 'fixed';
-  ac.style.left     = rect.left + 'px';
-  ac.style.top      = (rect.bottom + 4) + 'px';
-  ac.style.zIndex   = '9999';
-  ac.innerHTML = items.map(s => `<div class="roi-ac-item" onclick="selezionaEsame(this,'${escHtml(s)}')">${s}</div>`).join('');
-  ac._targetInput = inp;
-}
-
-async function selezionaEsame(itemEl, nome) {
-  const ac = el('roi-ac');
-  const inp = ac?._targetInput;
-  if (!inp) return hideAc();
-  inp.value = nome;
-  hideAc();
-  const tr = inp.closest('tr');
-  if (!tr) return;
-  aggiornaRigaDOM(tr);
-  await aggiornaPrezziAutomatici(tr);
-
-  // Pre-popola solo i prezzi Mylav storici. Il listino concorrenza NON si prende
-  // mai dallo storico: l'esame ha un prezzo concorrenza solo se esiste una
-  // mappatura col concorrente selezionato (gestita da aggiornaMatchConcorrente).
-  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
-  if (prezzi.listino_lav) {
-    const llInp = tr.querySelector('[data-col="listino_lav"]');
-    if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
-  }
-  if (prezzi.prezzo_scontato_lav) {
-    const plInp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
-    if (plInp && !plInp.value) plInp.value = prezzi.prezzo_scontato_lav;
-  }
-  aggiornaRigaDOM(tr);
-}
-
-function hideAc() {
-  const ac = el('roi-ac');
-  if (ac) { ac.style.display = 'none'; ac.innerHTML = ''; }
-}
-
-function syncRoiStateFromDOM() {
-  const tbody = el('roi-tbody');
-  if (!tbody) return;
-  tbody.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaRigaDOM(tr));
-}
-
-function addRigaRoi() {
-  syncRoiStateFromDOM();
-  S.roi.righe.push(roiRigaVuota());
-  reRenderRoiTable();
-  // Focus sulla cella ESAMI dell'ultima riga
-  const tbody = el('roi-tbody');
-  if (tbody) {
-    const lastRow = tbody.lastElementChild;
-    lastRow?.querySelector('[data-col="esame"]')?.focus();
-  }
-}
+function addRigaRoi() { motoreEsami.aggiungiRiga(); }
 
 function removeRigaRoi(idx) {
-  syncRoiStateFromDOM();
-  if (S.roi.righe.length > 1) {
-    S.roi.righe.splice(idx, 1);
-  } else {
-    S.roi.righe = [roiRigaVuota()];
-  }
-  reRenderRoiTable();
+  motoreEsami.rimuoviRiga(idx);
   mostraConsiglioTotale();
   mostraClassificaPiani();
 }
 
-function getRoiRigheValide() {
-  syncRoiStateFromDOM();
-  return S.roi.righe.filter(r => r.esame && r.esame.trim());
-}
+function getRoiRigheValide() { return motoreEsami.righeValide(); }
+
+function roiMsg(msg, tipo) { motoreEsami.messaggio(msg, tipo); }
 
 async function salvaCalcolo() {
   if (S.auth.guest || !S.auth.token) { roiMsg(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') }), 'error'); return; }
@@ -3100,14 +2900,6 @@ async function esportaExcelRoi() {
     document.body.appendChild(a); a.click();
     document.body.removeChild(a); URL.revokeObjectURL(url);
   } catch(e) { roiMsg(t('roi.erroreExport', { msg: e.message }), 'error'); }
-}
-
-function roiMsg(msg, tipo) {
-  const d = el('roi-msg');
-  if (!d) return;
-  d.textContent = msg;
-  d.style.color = tipo === 'error' ? '#ce181e' : '#0f76bc';
-  setTimeout(() => { if (d) d.textContent = ''; }, 4000);
 }
 
 // ── Init ───────────────────────────────────────────
