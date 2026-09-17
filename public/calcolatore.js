@@ -85,7 +85,15 @@ window.Calcolatore = (function () {
       while (i < colonne.length) {
         const g = colonne[i].gruppo || 'nessuno';
         let n = 1;
-        while (i + n < colonne.length && (colonne[i + n].gruppo || 'nessuno') === g) n++;
+        // Le colonne consecutive dello stesso gruppo si fondono in una cella
+        // sola, tranne quelle marcate 'separaInTestata', che nella tabella
+        // originale avevano una cella propria. Fonderle toglieva una linea di
+        // bordo, e un'estrazione non deve cambiare nemmeno quello.
+        if (!colonne[i].separaInTestata) {
+          while (i + n < colonne.length
+                 && (colonne[i + n].gruppo || 'nessuno') === g
+                 && !colonne[i + n].separaInTestata) n++;
+        }
         html += (g === 'nessuno')
           ? `<th colspan="${n}"></th>`
           : `<th colspan="${n}" class="${CLASSE_GRUPPO[g]}">${t(ETICHETTA_GRUPPO[g])}</th>`;
@@ -177,7 +185,7 @@ window.Calcolatore = (function () {
       const colspanNota = Math.max(colonne.length - 2, 1);
       const diffRow = `<tr class="roi-diff-row">
         <td colspan="${colspanNota}" style="text-align:right;font-size:13px;font-weight:500">
-          <span id="roi-diff-note" style="display:${valDiff < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">${avvisoNegativo ? t(avvisoNegativo) : ''}</span>
+          <span id="${idTbody}-diff-note" style="display:${valDiff < 0 ? 'inline' : 'none'};color:#ce181e;font-weight:600;font-size:11.5px;margin-right:14px">${avvisoNegativo ? t(avvisoNegativo) : ''}</span>
           ${t(etichettaDifferenziale)}
         </td>
         <td colspan="2" style="font-size:15px;font-weight:700;color:${valDiff >= 0 ? '#0f76bc' : '#ce181e'}">${fmtE(valDiff)}</td>

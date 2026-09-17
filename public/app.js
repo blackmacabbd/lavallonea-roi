@@ -2108,9 +2108,9 @@ const colonneRoiEsami = [
     intestazione: 'roi.tabella.pianoMyl', totale: 'tot_prezzo_lav_sc', segnaposto: '0.00' },
   { col: 'tot_prezzo_lav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav',
     intestazione: 'roi.tabella.totScMyl', totale: 'tot_tot_prezzo_lav' },
-  { col: 'risparmio', tipo: 'calcolato', larghezza: 95, gruppo: 'nessuno',
+  { col: 'risparmio', tipo: 'calcolato', larghezza: 95, gruppo: 'nessuno', separaInTestata: true,
     intestazione: 'comune.risparmio', totale: 'differenziale', coloreCondizionale: true },
-  { col: '__delete', tipo: 'vuota', larghezza: 28, gruppo: 'nessuno',
+  { col: '__delete', tipo: 'vuota', larghezza: 28, gruppo: 'nessuno', separaInTestata: true,
     contenutoVuoto: (r, i) => `<button class="roi-del-btn" onclick="removeRigaRoi(${i})" title="${escHtml(t('concorrenti.rimuovi'))}">×</button>` }
 ];
 
@@ -2174,7 +2174,10 @@ const motoreEsami = window.Calcolatore.crea({
   suSelezioneAutocomplete: suSelezioneAutocompleteRoiEsami,
   dopoTotali: () => updateDashRisparmio(),
   dopoInizializzaEventi: () => {
-    document.querySelectorAll('#roi-tbody [data-col="esame"]').forEach(inp => {
+    // Ristretto al proprio contenitore: con due calcolatori nella stessa pagina
+    // una ricerca su tutto il documento prenderebbe anche le righe dell'altro.
+    const wrap = el('roi-table-wrap');
+    (wrap || document).querySelectorAll('[data-col="esame"]').forEach(inp => {
       inp.dataset.lastEsame = (inp.value || '').trim();
     });
   },
