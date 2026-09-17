@@ -1559,6 +1559,21 @@ app.delete('/api/clip/:id', requireAuth, (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Il riconoscimento (sembraClip/leggiPezzi) vive in lib/clip.js, un modulo
+// Node che non si carica nel browser: la revisione dell'import lo chiede qui,
+// una sola volta per l'intero elenco e non riga per riga (su un listino da
+// centinaia di righe la differenza si sente).
+app.post('/api/clip/riconosci', requireAuth, express.json({ limit: '2mb' }), (req, res) => {
+  try {
+    const nomi = Array.isArray(req.body && req.body.nomi) ? req.body.nomi : [];
+    const risultati = nomi.map(nome => ({
+      clip: clipLib.sembraClip(nome),
+      pezzi: clipLib.leggiPezzi(nome)
+    }));
+    res.json({ risultati });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Import PDF condiviso (Gestione Piani e Gestione Concorrenti) ───
 // Due passi distinti: l'analisi NON scrive nel catalogo, produce una bozza;
 // solo la conferma esplicita dell'operatore promuove i dati. Il PDF caricato
@@ -1714,13 +1729,26 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       }, req.user.id);
     }
 
+    // Una clip e' una voce del listino del concorrente e li' resta: entra nel
+    // catalogo clip in aggiunta, non al posto. Spostare le righe senza dirlo e'
+    // l'errore che ha reso sbagliata la logica dei macchinari.
+    let clipImportate = 0;
+    for (const r of valide) {
+      if (!r.clip) continue;
+      clipLib.upsertClip(db, {
+        userId: req.user.id, nome: r.nome, prezzoConfezione: r.prezzo,
+        pezzi: clipLib.leggiPezzi(r.nome), sconto: null, fonte: 'concorrente'
+      });
+      clipImportate++;
+    }
+
     const confermata = importbozze.confermaBozza(db, bozza.id, req.user.id, valide);
     if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata', codice: 'BOZZA_GIA_CONFERMATA' });
 
     annota('confermato',
-      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}`,
+      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}${clipImportate ? `, ${clipImportate} clip nel catalogo` : ''}`,
       { nRighe: valide.length });
-    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, ...risultato });
+    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, clipImportate, ...risultato });
   } catch (err) {
     // Un errore che dice "non trovato" e' una risorsa inesistente per questo
     // account: 404. Gli altri sono dati non validi: 400.

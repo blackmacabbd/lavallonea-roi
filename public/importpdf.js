@@ -288,6 +288,8 @@
       classificate: S.analisi.classificate, totale: S.analisi.totaliTabellari
     }), 72);
     costruisciModello();
+    await riconosciClip();
+    if (!S) return;
 
     await localePronto;
     if (!S) return;
@@ -358,8 +360,33 @@
       confidenza: r.confidenza,
       motivo: r.motivo,
       origine: 'estratta',
-      modificata: false
+      modificata: false,
+      clip: false
     }));
+  }
+
+  // Il riconoscimento (sembraClip/leggiPezzi) gira in lib/clip.js, un modulo
+  // Node: qui si chiede al server, una sola volta per tutto l'elenco, non una
+  // volta a riga. Solo per l'entita' 'concorrente': negli import dei piani la
+  // colonna clip non compare, quindi non ha senso interrogare il server.
+  // Se la chiamata fallisce la revisione resta comunque usabile: le caselle
+  // partono tutte sguarnite e restano spuntabili a mano.
+  async function riconosciClip() {
+    if (!S || S.entita !== 'concorrente' || !S.righe.length) return;
+    try {
+      const resp = await fetch('/api/clip/riconosci', {
+        method: 'POST',
+        headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+        body: JSON.stringify({ nomi: S.righe.map(r => r.nome) })
+      });
+      const dati = await resp.json().catch(() => null);
+      if (!S || !resp.ok || !dati || !Array.isArray(dati.risultati)) return;
+      S.righe.forEach((r, i) => { r.clip = !!(dati.risultati[i] && dati.risultati[i].clip); });
+      // Numero fisso, calcolato una volta sola: dice quanto ha trovato il
+      // riconoscimento automatico, non quante caselle sono spuntate in
+      // questo momento (l'operatore puo' cambiarle a mano dopo).
+      S.clipRiconosciuteAuto = S.righe.filter(r => r.clip).length;
+    } catch (_) { /* vedi commento sopra: nessun blocco della revisione */ }
   }
 
   // Righe che nel PDF hanno un importo ma non sono state accettate: sono il
@@ -408,7 +435,8 @@
             <div class="imp-campo">
               <label for="imp-nome-conc">${esc(t('importPdf.labelNomeConcorrente'))}</label>
               <input class="roi-input" id="imp-nome-conc" value="${esc(S.nomeDefault)}" placeholder="${esc(t('concorrenti.placeholderNomeEsempio'))}">
-            </div>` : ''}
+            </div>
+            <div class="imp-campo imp-clip-barra" id="imp-clip-barra"></div>` : ''}
           <div class="imp-tab" id="imp-tab"></div>
         </div>
       </div>
@@ -443,6 +471,30 @@
     });
 
     renderBanner();
+    renderClipBarra();
+    renderTabella();
+  }
+
+  // Riepilogo sopra la tabella, solo per l'entita' 'concorrente': quante righe
+  // ha spuntato da solo il riconoscimento automatico, piu' due comandi rapidi.
+  // Il numero e' fisso (calcolato una volta in riconosciClip): non insegue le
+  // caselle che l'operatore spunta o toglie a mano dopo.
+  function renderClipBarra() {
+    const cont = document.getElementById('imp-clip-barra');
+    if (!cont) return;
+    const n = S.clipRiconosciuteAuto || 0;
+    cont.innerHTML = `
+      <span class="imp-clip-conteggio">${esc(t(n === 1 ? 'importPdf.clip.riconosciuteRiga.uno' : 'importPdf.clip.riconosciuteRiga.molti', { n }))}</span>
+      <button type="button" class="imp-mini" id="imp-clip-segna-tutte">${esc(t('importPdf.clip.segnaTutte'))}</button>
+      <button type="button" class="imp-mini" id="imp-clip-togli-tutte">${esc(t('importPdf.clip.togliTutte'))}</button>`;
+    const bs = document.getElementById('imp-clip-segna-tutte');
+    const bt = document.getElementById('imp-clip-togli-tutte');
+    if (bs) bs.addEventListener('click', () => impostaClipTutte(true));
+    if (bt) bt.addEventListener('click', () => impostaClipTutte(false));
+  }
+
+  function impostaClipTutte(valore) {
+    S.righe.forEach(r => { r.clip = valore; });
     renderTabella();
   }
 
@@ -504,20 +556,28 @@
     const scartate = scartateTabellari();
     const colonnaNome = t('piani.tabella.esame');
 
+    const clipColonna = S.entita === 'concorrente';
+    const nColonne = clipColonna ? 6 : 5;
+
     cont.innerHTML = `
       <table class="imp-tabella imp-tabella-edit">
         <thead><tr>
           <th style="width:30px">#</th><th>${esc(colonnaNome)}</th>
-          <th style="width:96px">${esc(t('comune.prezzo'))}</th><th style="width:104px">${esc(t('concorrenti.tabella.stato'))}</th><th style="width:34px"></th>
+          <th style="width:96px">${esc(t('comune.prezzo'))}</th><th style="width:104px">${esc(t('concorrenti.tabella.stato'))}</th>
+          ${clipColonna ? `<th style="width:46px" title="${esc(t('importPdf.clip.colonnaTitolo'))}">${esc(t('importPdf.clip.colonna'))}</th>` : ''}
+          <th style="width:34px"></th>
         </tr></thead>
         <tbody>
           ${S.righe.length ? S.righe.map((r, i) => rigaHtml(r, i)).join('')
-            : `<tr><td colspan="5" class="imp-vuoto">${esc(t('importPdf.nessunaRigaTabella'))}</td></tr>`}
+            : `<tr><td colspan="${nColonne}" class="imp-vuoto">${esc(t('importPdf.nessunaRigaTabella'))}</td></tr>`}
         </tbody>
       </table>` + (S.mostraScartate ? bloccoScartateHtml(scartate) : '');
 
     cont.querySelectorAll('[data-campo]').forEach(inp => {
       inp.addEventListener('input', () => modificaCampo(Number(inp.dataset.id), inp.dataset.campo, inp.value));
+    });
+    cont.querySelectorAll('[data-clip]').forEach(inp => {
+      inp.addEventListener('change', () => modificaClip(Number(inp.dataset.clip), inp.checked));
     });
     cont.querySelectorAll('[data-elimina]').forEach(b => {
       b.addEventListener('click', e => { e.stopPropagation(); eliminaRiga(Number(b.dataset.elimina)); });
@@ -566,10 +626,23 @@
         <td><input class="imp-inp imp-inp-num" data-id="${r.id}" data-campo="prezzo"
                    inputmode="decimal" value="${esc(prezzoDaMostrare(r.prezzo))}"></td>
         <td><span class="imp-tag imp-tag-${stato.cls}" ${stato.tip ? `title="${esc(stato.tip)}"` : ''}>${esc(stato.txt)}</span></td>
+        ${S.entita === 'concorrente' ? `
+        <td class="imp-clip-cella">
+          <input type="checkbox" data-clip="${r.id}" ${r.clip ? 'checked' : ''}>
+        </td>` : ''}
         <td class="imp-azioni-riga">
           <button type="button" class="imp-x-riga" data-elimina="${r.id}" title="${esc(t('importPdf.togliQuestaRiga'))}">✕</button>
         </td>
       </tr>`;
+  }
+
+  // La spunta clip e' l'unico dato in tabella che non passa per modificaCampo:
+  // non riguarda un campo di testo e non deve marcare la riga come
+  // "modificata" (quella dicitura descrive nome/prezzo, non questa scelta).
+  function modificaClip(id, checked) {
+    const r = trova(id);
+    if (!r) return;
+    r.clip = checked;
   }
 
   function bloccoScartateHtml(scartate) {
@@ -627,7 +700,7 @@
     S.righe.push({
       id, indice: null, nome: '', prezzo: '',
       confidenza: 'alta', motivo: null,
-      origine: 'manuale', modificata: false
+      origine: 'manuale', modificata: false, clip: false
     });
     renderTabella();
     // Per id, non per posizione: la riga appena creata e' comunque l'ultima
@@ -650,7 +723,7 @@
       // finale (ed eventuale simbolo di percentuale), che l'operatore correggera.
       nome: orig.nome || orig.testo.replace(/\s*€?\s*[\d.,]+\s*%?\s*$/, '').trim(),
       prezzo: orig.prezzo != null ? orig.prezzo : '',
-      confidenza: 'incerta', motivo: orig.motivo, origine: 'recuperata', modificata: false
+      confidenza: 'incerta', motivo: orig.motivo, origine: 'recuperata', modificata: false, clip: false
     });
     renderTabella();
     aggiornaRiquadri();
@@ -666,7 +739,8 @@
     return S.righe
       .map(r => ({
         nome: String(r.nome || '').trim(),
-        prezzo: numero(r.prezzo)
+        prezzo: numero(r.prezzo),
+        clip: !!r.clip
       }))
       .filter(r => r.nome && Number.isFinite(r.prezzo) && r.prezzo >= 0);
   }
@@ -729,7 +803,8 @@
       chiudi();
       const dettagli = [
         esito.ignorate ? t(esito.ignorate === 1 ? 'importPdf.ignorate.uno' : 'importPdf.ignorate.molti', { n: esito.ignorate }) : null,
-        esito.duplicate ? t(esito.duplicate === 1 ? 'importPdf.duplicateAccorpate.uno' : 'importPdf.duplicateAccorpate.molti', { n: esito.duplicate }) : null
+        esito.duplicate ? t(esito.duplicate === 1 ? 'importPdf.duplicateAccorpate.uno' : 'importPdf.duplicateAccorpate.molti', { n: esito.duplicate }) : null,
+        esito.clipImportate ? t(esito.clipImportate === 1 ? 'importPdf.clip.importateRiga.uno' : 'importPdf.clip.importateRiga.molti', { n: esito.clipImportate }) : null
       ].filter(Boolean);
       alert(t(esito.importate === 1 ? 'importPdf.importCompletato.uno' : 'importPdf.importCompletato.molti', {
         n: esito.importate,
