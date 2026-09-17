@@ -26,6 +26,7 @@
       'menu.concorrenti': 'Gestione concorrenti',
       'menu.confrontoStrutture': 'Confronto strutture',
       'menu.cronologia': 'Cronologia file',
+      'menu.cronologiaClip': 'Cronologia clip',
 
       // Titoli e sottotitoli di pagina
       'pagina.dashboard.titolo': 'Dashboard',
@@ -40,6 +41,8 @@
       'pagina.confrontoStrutture.sottotitolo.uno': '{n} strutture nel database',
       'pagina.cronologia.titolo': 'Cronologia file',
       'pagina.cronologia.sottotitolo': 'Tutti i file caricati',
+      'pagina.cronologiaClip.titolo': 'Cronologia clip',
+      'pagina.cronologiaClip.sottotitolo': 'Tutti i calcoli clip salvati',
 
       // Stati comuni
       'stato.caricamento': 'Caricamento...',
@@ -417,6 +420,7 @@
       'clip.righeSenzaProfiloMylav': '{n} righe hanno solo la clip e non verranno salvate: senza il profilo Mylav non c’è confronto. Salvare lo stesso?',
       'clip.righeSenzaProfiloMylav.uno': 'Una riga ha solo la clip e non verrà salvata: senza il profilo Mylav non c’è confronto. Salvare lo stesso?',
       'clip.avvisoClipConviene': '⚠ Con questi valori la clip costa meno di Mylav',
+      'clip.pianoNonPiuDisponibile': 'Il piano usato in questo calcolo non è più disponibile: riaperto senza piano selezionato.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Struttura:',
@@ -426,6 +430,12 @@
       'cronologia.tabella.fogli': 'Fogli',
       'cronologia.nessunFile': 'Nessun file caricato',
       'cronologia.confermaElimina': 'Eliminare questo file dalla cronologia? Verranno rimossi tutti i dati associati.',
+
+      // ── Cronologia clip, voce propria (fetta 6) ──
+      'cronologiaClip.tabella.righe': 'Righe',
+      'cronologiaClip.nessunCalcolo': 'Nessun calcolo clip salvato',
+      'cronologiaClip.confermaElimina': 'Eliminare questo calcolo clip ({struttura})? Verranno eliminate anche le sue {n} righe.',
+      'cronologiaClip.confermaElimina.uno': 'Eliminare questo calcolo clip ({struttura})? Verranno eliminate anche le sue {n} righe.',
 
       // ── Confronto strutture, corpo (fetta 6) ──
       'confrontoStrutture.serveAlmeno2': 'Servono almeno 2 strutture',
@@ -524,6 +534,7 @@
       'menu.concorrenti': 'Manage competitors',
       'menu.confrontoStrutture': 'Practice comparison',
       'menu.cronologia': 'File history',
+      'menu.cronologiaClip': 'Clip history',
 
       'pagina.dashboard.titolo': 'Dashboard',
       'pagina.piani.titolo': 'Discount plan management',
@@ -537,6 +548,8 @@
       'pagina.confrontoStrutture.sottotitolo.uno': '{n} practice in the database',
       'pagina.cronologia.titolo': 'File history',
       'pagina.cronologia.sottotitolo': 'All uploaded files',
+      'pagina.cronologiaClip.titolo': 'Clip history',
+      'pagina.cronologiaClip.sottotitolo': 'All saved clip calculations',
 
       'stato.caricamento': 'Loading...',
       'stato.nessunDato': 'No data yet',
@@ -894,6 +907,7 @@
       'clip.righeSenzaProfiloMylav': '{n} rows have only the clip and will not be saved: without the Mylav profile there is nothing to compare. Save anyway?',
       'clip.righeSenzaProfiloMylav.uno': 'One row has only the clip and will not be saved: without the Mylav profile there is nothing to compare. Save anyway?',
       'clip.avvisoClipConviene': '⚠ Here the clip costs less than Mylav',
+      'clip.pianoNonPiuDisponibile': 'The plan used in this calculation is no longer available: reopened without a plan selected.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Practice:',
@@ -903,6 +917,12 @@
       'cronologia.tabella.fogli': 'Sheets',
       'cronologia.nessunFile': 'No file uploaded',
       'cronologia.confermaElimina': 'Delete this file from history? All associated data will be removed.',
+
+      // ── Cronologia clip, voce propria (fetta 6) ──
+      'cronologiaClip.tabella.righe': 'Rows',
+      'cronologiaClip.nessunCalcolo': 'No clip calculation saved',
+      'cronologiaClip.confermaElimina': 'Delete this clip calculation ({struttura})? Its {n} rows will be removed as well.',
+      'cronologiaClip.confermaElimina.uno': 'Delete this clip calculation ({struttura})? Its {n} row will be removed as well.',
 
       // ── Confronto strutture, corpo (fetta 6) ──
       'confrontoStrutture.serveAlmeno2': 'At least 2 practices are needed',
@@ -1001,6 +1021,7 @@
       'menu.concorrenti': 'Gestion des concurrents',
       'menu.confrontoStrutture': 'Comparaison des cliniques',
       'menu.cronologia': 'Historique des fichiers',
+      'menu.cronologiaClip': 'Historique des clips',
 
       'pagina.dashboard.titolo': 'Tableau de bord',
       'pagina.piani.titolo': 'Gestion des plans de remises',
@@ -1014,6 +1035,8 @@
       'pagina.confrontoStrutture.sottotitolo.uno': '{n} clinique dans la base de données',
       'pagina.cronologia.titolo': 'Historique des fichiers',
       'pagina.cronologia.sottotitolo': 'Tous les fichiers importés',
+      'pagina.cronologiaClip.titolo': 'Historique des clips',
+      'pagina.cronologiaClip.sottotitolo': 'Tous les calculs clip enregistrés',
 
       'stato.caricamento': 'Chargement...',
       'stato.nessunDato': 'Aucune donnée pour le moment',
@@ -1371,6 +1394,7 @@
       'clip.righeSenzaProfiloMylav': "{n} lignes n'ont que la clip et ne seront pas enregistrées : sans le profil Mylav, il n'y a pas de comparaison. Enregistrer quand même ?",
       'clip.righeSenzaProfiloMylav.uno': "Une ligne n'a que la clip et ne sera pas enregistrée : sans le profil Mylav, il n'y a pas de comparaison. Enregistrer quand même ?",
       'clip.avvisoClipConviene': '⚠ Ici, la clip coûte moins cher que Mylav',
+      'clip.pianoNonPiuDisponibile': "Le plan utilisé dans ce calcul n'est plus disponible : rouvert sans plan sélectionné.",
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Clinique :',
@@ -1380,6 +1404,12 @@
       'cronologia.tabella.fogli': 'Feuilles',
       'cronologia.nessunFile': 'Aucun fichier importé',
       'cronologia.confermaElimina': "Supprimer ce fichier de l'historique ? Toutes les données associées seront supprimées.",
+
+      // ── Cronologia clip, voce propria (fetta 6) ──
+      'cronologiaClip.tabella.righe': 'Lignes',
+      'cronologiaClip.nessunCalcolo': 'Aucun calcul clip enregistré',
+      'cronologiaClip.confermaElimina': 'Supprimer ce calcul clip ({struttura}) ? Ses {n} lignes seront également supprimées.',
+      'cronologiaClip.confermaElimina.uno': 'Supprimer ce calcul clip ({struttura}) ? Sa {n} ligne sera également supprimée.',
 
       // ── Confronto strutture, corpo (fetta 6) ──
       'confrontoStrutture.serveAlmeno2': 'Il faut au moins 2 cliniques',
@@ -1478,6 +1508,7 @@
       'menu.concorrenti': 'Gestión de competidores',
       'menu.confrontoStrutture': 'Comparación de clínicas',
       'menu.cronologia': 'Historial de archivos',
+      'menu.cronologiaClip': 'Historial de clips',
 
       'pagina.dashboard.titolo': 'Panel',
       'pagina.piani.titolo': 'Gestión de planes de descuentos',
@@ -1491,6 +1522,8 @@
       'pagina.confrontoStrutture.sottotitolo.uno': '{n} clínica en la base de datos',
       'pagina.cronologia.titolo': 'Historial de archivos',
       'pagina.cronologia.sottotitolo': 'Todos los archivos subidos',
+      'pagina.cronologiaClip.titolo': 'Historial de clips',
+      'pagina.cronologiaClip.sottotitolo': 'Todos los cálculos de clips guardados',
 
       'stato.caricamento': 'Cargando...',
       'stato.nessunDato': 'Aún no hay datos',
@@ -1848,6 +1881,7 @@
       'clip.righeSenzaProfiloMylav': '{n} filas solo tienen el clip y no se guardarán: sin el perfil Mylav no hay comparación. ¿Guardar de todas formas?',
       'clip.righeSenzaProfiloMylav.uno': 'Una fila solo tiene el clip y no se guardará: sin el perfil Mylav no hay comparación. ¿Guardar de todas formas?',
       'clip.avvisoClipConviene': '⚠ Aquí el clip cuesta menos que Mylav',
+      'clip.pianoNonPiuDisponibile': 'El plan usado en este cálculo ya no está disponible: reabierto sin plan seleccionado.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Clínica:',
@@ -1857,6 +1891,12 @@
       'cronologia.tabella.fogli': 'Hojas',
       'cronologia.nessunFile': 'Ningún archivo subido',
       'cronologia.confermaElimina': '¿Eliminar este archivo del historial? Se eliminarán todos los datos asociados.',
+
+      // ── Cronologia clip, voce propria (fetta 6) ──
+      'cronologiaClip.tabella.righe': 'Filas',
+      'cronologiaClip.nessunCalcolo': 'Ningún cálculo de clips guardado',
+      'cronologiaClip.confermaElimina': '¿Eliminar este cálculo de clips ({struttura})? También se eliminarán sus {n} filas.',
+      'cronologiaClip.confermaElimina.uno': '¿Eliminar este cálculo de clips ({struttura})? También se eliminará su {n} fila.',
 
       // ── Confronto strutture, corpo (fetta 6) ──
       'confrontoStrutture.serveAlmeno2': 'Se necesitan al menos 2 clínicas',

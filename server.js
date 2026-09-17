@@ -1905,6 +1905,72 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
 
+// Cronologia dei calcoli clip: voce di menu propria, separata da quella dei
+// file (cronologia/file_caricati). Le due non si mescolano mai: questa legge
+// solo calcoli_clip / righe_calcolo_clip.
+app.get('/api/calcolo-clip', requireAuth, (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT
+        c.id, c.struttura_nome, c.nome_file, c.piano_id, c.data,
+        COUNT(r.id)     as n_righe,
+        SUM(r.risparmio) as differenziale
+      FROM calcoli_clip c
+      LEFT JOIN righe_calcolo_clip r ON r.calcolo_id = c.id
+      WHERE c.user_id = ?
+      GROUP BY c.id
+      ORDER BY c.data DESC, c.id DESC
+    `).all(req.user.id);
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/calcolo-clip/:id', requireAuth, (req, res) => {
+  try {
+    const calcolo = db.prepare(
+      'SELECT * FROM calcoli_clip WHERE id = ? AND user_id = ?'
+    ).get(req.params.id, req.user.id);
+    if (!calcolo) return res.status(404).json({ error: 'Calcolo non trovato' });
+
+    const righe = db.prepare(
+      'SELECT * FROM righe_calcolo_clip WHERE calcolo_id = ? ORDER BY id'
+    ).all(calcolo.id);
+
+    // I valori salvati sono una fotografia, non un riferimento al piano: si
+    // rimanda solo se il piano esiste ancora, nell'ambito di questo account (la
+    // stessa copia privata usata dal resto dell'app). Se e' stato disattivato o
+    // rimosso il calcolo si apre comunque, senza piano: il chiamante lo dice
+    // all'operatore invece di far fallire la riapertura.
+    let piano = null;
+    if (calcolo.piano_id != null) {
+      const sc = piani.scopeCatalogo(req.user.id);
+      piano = db.prepare(`SELECT id, nome FROM piani_sconto WHERE id = ? AND ${sc.sql}`)
+        .get(calcolo.piano_id, ...sc.params) || null;
+    }
+
+    res.json({ calcolo, righe, piano });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.delete('/api/calcolo-clip/:id', requireAuth, (req, res) => {
+  try {
+    const owned = db.prepare(
+      'SELECT 1 FROM calcoli_clip WHERE id = ? AND user_id = ?'
+    ).get(req.params.id, req.user.id);
+    if (!owned) return res.status(404).json({ error: 'Calcolo non trovato' });
+
+    // Righe prima, calcolo dopo, nella stessa transazione: una cancellazione a
+    // meta' aveva gia' lasciato righe orfane in questo progetto.
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM righe_calcolo_clip WHERE calcolo_id = ?').run(req.params.id);
+      db.prepare('DELETE FROM calcoli_clip WHERE id = ?').run(req.params.id);
+      db.exec('COMMIT');
+    } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/export-excel', requireAuth, express.json(), (req, res) => {
   try {
     const { foglio, struttura, righe } = req.body || {};

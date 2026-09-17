@@ -232,6 +232,7 @@ function buildSidebar() {
       <div class="struttura-children ${altroOpen}">
         <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">${t('menu.risparmioTotale')}</div>
         <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">${t('menu.cronologia')}</div>
+        <div class="struttura-child ${isActive('cronologia-clip')}" onclick="navigate('cronologia-clip')">${t('menu.cronologiaClip')}</div>
         <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">${t('menu.debugExcel')}</div>
       </div>
     </div>
@@ -374,6 +375,7 @@ function navigate(view, params = {}) {
     case 'foglio':     disegno = renderFoglio(params.fileId, params.foglio);     break;
     case 'totali':     disegno = renderTotali(params.strutturaId, params.nome);  break;
     case 'cronologia': disegno = renderCronologia();                             break;
+    case 'cronologia-clip': disegno = renderCronologiaClip();                    break;
     case 'confronto':  disegno = renderConfronto();                              break;
     case 'debug':      disegno = renderDebug();                                  break;
     case 'risparmio-totale': disegno = renderRisparmioTotale();                  break;
@@ -1355,6 +1357,104 @@ async function deleteCrono(id) {
 
 function navigateFromCrono(fileId, strutturaId, foglio) {
   navigate('foglio', { fileId, foglio, strutturaId });
+}
+
+// ── Cronologia clip ─────────────────────────────────
+// Voce di menu propria, separata da "Cronologia file": legge solo
+// calcoli_clip/righe_calcolo_clip, mai file_caricati/dati_foglio.
+async function renderCronologiaClip() {
+  let rows;
+  try { rows = await api('/api/calcolo-clip'); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
+    return;
+  }
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">${t('pagina.cronologiaClip.titolo')}</div>
+        <div class="page-subtitle">${t('pagina.cronologiaClip.sottotitolo')}</div>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>${t('cronologia.tabella.data')}</th><th>${t('comune.struttura')}</th>
+              <th>${t('cronologiaClip.tabella.righe')}</th><th>${t('comune.risparmio')}</th><th></th>
+            </tr></thead>
+            <tbody id="crono-clip-tbody">
+              ${buildCronoClipRows(rows)}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  `);
+}
+
+function buildCronoClipRows(rows) {
+  if (!rows.length) return `<tr><td colspan="5" class="td-muted text-center" style="padding:24px">
+    ${t('cronologiaClip.nessunCalcolo')}</td></tr>`;
+
+  return rows.map(r => `
+    <tr class="clickable" onclick="apriCalcoloClipDaCronologia(${r.id})">
+      <td class="td-muted">${fmtDate(r.data)}</td>
+      <td>${escHtml(r.struttura_nome || '')}</td>
+      <td>${r.n_righe || 0}</td>
+      <td class="td-green">${euro(r.differenziale)}</td>
+      <td onclick="event.stopPropagation()">
+        <button class="roi-del-btn" onclick="deleteCronoClip(${r.id}, ${r.n_righe || 0}, '${escHtml(r.struttura_nome || '')}')" title="${escHtml(t('comune.elimina'))}">×</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function deleteCronoClip(id, nRighe, struttura) {
+  const chiave = nRighe === 1 ? 'cronologiaClip.confermaElimina.uno' : 'cronologiaClip.confermaElimina';
+  if (!confirm(t(chiave, { n: nRighe, struttura }))) return;
+  try {
+    await api(`/api/calcolo-clip/${id}`, { method: 'DELETE' });
+    renderCronologiaClip();
+  } catch (e) {
+    alert(t('errore.generico', { msg: e.message }));
+  }
+}
+
+// Riapre un calcolo salvato dentro il calcolatore clip: righe e piano come
+// erano al momento del salvataggio (fotografia, non riferimento al catalogo o
+// al piano correnti). Se il piano non esiste piu' (disattivato o rimosso) si
+// apre comunque, senza piano, e lo si dice invece di far fallire l'apertura.
+async function apriCalcoloClipDaCronologia(id) {
+  let resp;
+  try { resp = await api(`/api/calcolo-clip/${id}`); }
+  catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
+
+  const { calcolo, righe, piano } = resp;
+  S.clip.pianoId = piano ? piano.id : null;
+  S.clip.righe = righe.map((r, i) => ({
+    // La struttura e' una colonna di ogni riga nel calcolatore, ma nel salvataggio
+    // e' un solo campo di testata: si rimette solo sulla prima riga, come la fa
+    // leggere salvaCalcoloClip al momento del salvataggio.
+    struttura: i === 0 ? (calcolo.struttura_nome || '') : '',
+    clip_nome: r.clip_nome || '',
+    n_clip: r.n_clip || 1,
+    prezzo_confezione: r.prezzo_confezione ?? '',
+    pezzi: r.pezzi ?? '',
+    sconto_clip: r.sconto_clip ?? '',
+    profilo_mylav: r.profilo_mylav || '',
+    n_mylav: r.n_mylav || 1,
+    listino_lav: r.listino_lav ?? '',
+    prezzo_scontato_lav: r.prezzo_scontato_lav ?? ''
+  }));
+  if (!S.clip.righe.length) S.clip.righe = [clipRigaVuota()];
+
+  await navigate('calcolatore-clip');
+
+  if (calcolo.piano_id != null && !piano) {
+    clipMsg(t('clip.pianoNonPiuDisponibile'), 'info');
+  }
 }
 
 // ── Confronto strutture ────────────────────────────
