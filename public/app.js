@@ -650,7 +650,7 @@ async function renderFoglio(fileId, foglio) {
         <div class="page-subtitle">${file.nome_file} &middot; ${fmtDate(file.data_carico)}</div>
       </div>
       <div class="page-actions export-bar">
-        <button class="btn-outline" onclick="downloadPdf(${fileId},'${foglio}','dottore')">
+        <button class="btn-outline" onclick="downloadPdf(${fileId}, ${jsAttr(foglio)}, 'dottore')">
           ${window.t('foglio.resocontoStruttura')}
         </button>
       </div>
@@ -1321,7 +1321,7 @@ function buildCronoRows(rows) {
   });
 
   return rows.map(r => `
-    <tr class="clickable" onclick="navigateFromCrono(${r.id}, ${r.struttura_id}, '${(r.fogli||'').split(',')[0]}')">
+    <tr class="clickable" onclick="navigateFromCrono(${r.id}, ${r.struttura_id}, ${jsAttr((r.fogli||'').split(',')[0])})">
       <td class="td-muted">${fmtDate(r.data_carico)}</td>
       <td>${r.nome_file}${r._ordine ? ` <span class="crono-ordine">(${r._ordine})</span>` : ''}</td>
       <td>${r.struttura_nome}</td>
@@ -1406,7 +1406,7 @@ function buildCronoClipRows(rows) {
       <td>${r.n_righe || 0}</td>
       <td class="td-green">${euro(r.differenziale)}</td>
       <td onclick="event.stopPropagation()">
-        <button class="roi-del-btn" onclick="deleteCronoClip(${r.id}, ${r.n_righe || 0}, '${escHtml(r.struttura_nome || '')}')" title="${escHtml(t('comune.elimina'))}">×</button>
+        <button class="roi-del-btn" onclick="deleteCronoClip(${r.id}, ${r.n_righe || 0}, ${jsAttr(r.struttura_nome)})" title="${escHtml(t('comune.elimina'))}">×</button>
       </td>
     </tr>`).join('');
 }
@@ -2296,7 +2296,8 @@ const motoreEsami = window.Calcolatore.crea({
     // Ristretto al proprio contenitore: con due calcolatori nella stessa pagina
     // una ricerca su tutto il documento prenderebbe anche le righe dell'altro.
     const wrap = el('roi-table-wrap');
-    (wrap || document).querySelectorAll('[data-col="esame"]').forEach(inp => {
+    if (!wrap) return;
+    wrap.querySelectorAll('[data-col="esame"]').forEach(inp => {
       inp.dataset.lastEsame = (inp.value || '').trim();
     });
   },
@@ -2723,6 +2724,20 @@ function fmtE(n) {
 }
 
 function escHtml(s) { return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+// Un valore dell'operatore dentro un onclick attraversa DUE parser: prima
+// l'HTML decodifica l'attributo, poi il JS legge il codice che ne esce. Per
+// questo escHtml da sola non basta, e nemmeno sfuggire l'apice: il browser
+// decodifica &#39; prima che il JS lo veda, e l'apice torna a chiudere la
+// stringa. Serve una stringa JS valida (JSON.stringify), e solo dopo l'escape
+// dei caratteri che chiuderebbero l'attributo.
+// Le virgolette che JSON.stringify aggiunge fanno parte del valore: nel
+// risultato NON si mettono apici attorno.
+function jsAttr(v) {
+  return JSON.stringify(String(v == null ? '' : v))
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
 function calcolaRoiTotali(righe) {
   righe = righe || S.roi.righe;
@@ -3262,10 +3277,11 @@ const motoreClip = window.Calcolatore.crea({
     // stessa pagina una ricerca su tutto il documento prenderebbe anche
     // l'altro calcolatore.
     const wrap = el('clip-table-wrap');
-    (wrap || document).querySelectorAll('[data-col="profilo_mylav"]').forEach(inp => {
+    if (!wrap) return;
+    wrap.querySelectorAll('[data-col="profilo_mylav"]').forEach(inp => {
       inp.dataset.lastProfilo = (inp.value || '').trim();
     });
-    (wrap || document).querySelectorAll('[data-col="clip_nome"]').forEach(inp => {
+    wrap.querySelectorAll('[data-col="clip_nome"]').forEach(inp => {
       inp.dataset.lastClipNome = (inp.value || '').trim();
     });
   },

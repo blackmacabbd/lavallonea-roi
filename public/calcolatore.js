@@ -347,6 +347,12 @@ window.Calcolatore = (function () {
       wrap.addEventListener('input', e => {
         const inp = e.target;
         if (!inp.matches('.roi-input')) return;
+        // Toccato a mano, il campo smette di essere "riempito da solo". Senza
+        // questo, un valore che l'operatore aveva corretto restava marcato come
+        // automatico e la cascata successiva glielo cancellava: la regola dice
+        // che cio' che scrive lui non si sovrascrive mai, e senza questa riga
+        // la regola era vera solo per i campi mai riempiti prima.
+        if (inp.dataset.auto === '1') inp.dataset.auto = '0';
         const tr = inp.closest('tr');
         if (tr && tr.dataset.tipo) aggiornaRiga(tr);
 
