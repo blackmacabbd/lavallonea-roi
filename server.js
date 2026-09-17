@@ -173,17 +173,28 @@ db.exec(`
 // I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
 // e' la decisione che il veterinario prende. La logica e' stata sostituita dal
 // calcolatore clip: le due tabelle non servono piu'.
-// Il DROP gira solo a tabella vuota: se qualcuno avesse dei dati, e' meglio
-// fallire l'avvio e accorgersene che cancellarglieli.
-for (const t of ['macchine', 'listini_macchine']) {
-  const esiste = db.prepare(
-    `SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(t);
-  if (!esiste) continue;
-  const righe = db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c;
-  if (righe > 0) {
-    throw new Error(`La tabella ${t} contiene ${righe} righe: rimuovile prima di aggiornare.`);
+// Il DROP gira solo se ENTRAMBE le tabelle sono vuote. Se c'e' anche una sola
+// riga si lasciano dove sono: nessuno le legge piu', quindi tenerle non fa
+// danno, mentre cancellarle butterebbe via dati che l'operatore aveva
+// importato. Restano insieme perche' macchine punta a listini_macchine con una
+// chiave esterna: togliere una delle due lascerebbe l'altra a puntare nel vuoto.
+//
+// Prima qui c'era un throw, che fermava l'avvio per farsi notare. Era un rimedio
+// peggiore del male: in produzione le tabelle avevano righe e l'applicazione non
+// e' piu' ripartita. Un avviso nei log dice la stessa cosa senza togliere lo
+// strumento a chi lo sta usando.
+{
+  const presenti = ['macchine', 'listini_macchine'].filter(t =>
+    db.prepare(`SELECT 1 FROM sqlite_master WHERE type='table' AND name=?`).get(t));
+  const righe = presenti.map(t => ({ t, n: db.prepare(`SELECT COUNT(*) AS c FROM ${t}`).get().c }));
+  const conDati = righe.filter(r => r.n > 0);
+  if (conDati.length) {
+    console.warn(`  ! Vecchie tabelle dei macchinari ancora piene (${conDati.map(r => `${r.t}: ${r.n}`).join(', ')}).`);
+    console.warn(`    Lasciate dove sono: non le legge piu' nessuno. Per rimuoverle a mano, quando vuoi:`);
+    console.warn(`    DROP TABLE macchine; DROP TABLE listini_macchine;`);
+  } else {
+    for (const t of presenti) db.exec(`DROP TABLE ${t}`);
   }
-  db.exec(`DROP TABLE ${t}`);
 }
 
 // ── Autenticazione ──────────────────────────────────
