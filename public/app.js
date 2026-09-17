@@ -3168,14 +3168,11 @@ const motoreClip = window.Calcolatore.crea({
     (wrap || document).querySelectorAll('[data-col="clip_nome"]').forEach(inp => {
       inp.dataset.lastClipNome = (inp.value || '').trim();
     });
-    // Il motore comune etichetta il gruppo 'concorrenza' con "Concorrenza"
-    // (giusto per il calcolatore esami, dove quel lato e' davvero un
-    // concorrente): qui e' il costo della clip precaricata, non un
-    // concorrente, quindi l'intestazione di gruppo si corregge dopo il
-    // disegno invece di toccare il motore comune (usato anche altrove).
-    const grpClip = wrap && wrap.querySelector('.roi-grp-conc');
-    if (grpClip) grpClip.textContent = t('clip.tabella.gruppoClip');
   },
+  // Il lato rosso qui non e' un concorrente ma il costo della clip precaricata:
+  // l'etichetta la dichiara il descrittore, invece di correggere il DOM dopo il
+  // disegno.
+  etichetteGruppo: { concorrenza: 'clip.tabella.gruppoClip' },
   tipoRiga: 'Clip',
   etichettaTotaleRiga: 'roi.tabella.totale',
   etichettaDifferenziale: 'roi.differenzialeTotale',

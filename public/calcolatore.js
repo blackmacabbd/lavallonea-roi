@@ -57,8 +57,17 @@ window.Calcolatore = (function () {
       stato, rigaVuota, colonne, calcolaRiga, totali: calcolaTotali,
       suCampoUscito, rigaValida, colonnaAutocomplete, suggerimenti,
       suSelezioneAutocomplete, dopoTotali, dopoInizializzaEventi, tipoRiga,
-      etichettaTotaleRiga, etichettaDifferenziale, avvisoNegativo
+      etichettaTotaleRiga, etichettaDifferenziale, avvisoNegativo,
+      etichetteGruppo
     } = descrittore;
+
+    // Le etichette dei gruppi hanno un valore predefinito buono per il
+    // calcolatore esami, dove il lato rosso e' davvero un concorrente. Un altro
+    // calcolatore puo' dire la sua: nel calcolatore clip quel lato e' il costo
+    // di una clip precaricata, non un concorrente. Senza questo, la correzione
+    // andrebbe fatta ritoccando il DOM dopo il disegno, che e' una toppa
+    // destinata a rompersi.
+    const etichette = Object.assign({}, ETICHETTA_GRUPPO, etichetteGruppo || {});
 
     function sfondoDi(col) {
       return col.gruppo && col.gruppo !== 'nessuno' ? `background:${SFONDO_GRUPPO[col.gruppo]}` : '';
@@ -96,7 +105,7 @@ window.Calcolatore = (function () {
         }
         html += (g === 'nessuno')
           ? `<th colspan="${n}"></th>`
-          : `<th colspan="${n}" class="${CLASSE_GRUPPO[g]}">${t(ETICHETTA_GRUPPO[g])}</th>`;
+          : `<th colspan="${n}" class="${CLASSE_GRUPPO[g]}">${t(etichette[g])}</th>`;
         i += n;
       }
       return html + '</tr>';

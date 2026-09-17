@@ -1563,12 +1563,16 @@ app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
     // salvato, un campo presente (anche null) lo sostituisce.
     const body = req.body || {};
     const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
+    // Un campo numerico svuotato arriva come stringa vuota: significa "non lo
+    // so", non "vale zero". Zero pezzi renderebbe incalcolabile il costo per
+    // clip, e zero euro lo renderebbe gratis.
+    const numero = v => (v === '' || v == null ? null : v);
     const { id } = clipLib.upsertClip(db, {
       userId: req.user.id,
       nome: riga.nome,
-      prezzoConfezione: campo('prezzoConfezione', riga.prezzo_confezione),
-      pezzi: campo('pezzi', riga.pezzi),
-      sconto: campo('sconto', riga.sconto),
+      prezzoConfezione: numero(campo('prezzoConfezione', riga.prezzo_confezione)),
+      pezzi: numero(campo('pezzi', riga.pezzi)),
+      sconto: numero(campo('sconto', riga.sconto)),
       fonte: campo('fonte', riga.fonte)
     });
     res.json({ id });
@@ -1758,8 +1762,13 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     // Una clip e' una voce del listino del concorrente e li' resta: entra nel
     // catalogo clip in aggiunta, non al posto. Spostare le righe senza dirlo e'
     // l'errore che ha reso sbagliata la logica dei macchinari.
+    //
+    // La spunta esiste solo negli import di un listino concorrente, e la
+    // guardia lo ripete qui: la finestra e' un vincolo del client, e una
+    // chiamata diretta con entita' 'piano' e righe spuntate riempirebbe il
+    // catalogo di voci dichiarate come venute da un concorrente.
     let clipImportate = 0;
-    for (const r of valide) {
+    for (const r of (bozza.entita === 'concorrente' ? valide : [])) {
       if (!r.clip) continue;
       clipLib.upsertClip(db, {
         userId: req.user.id, nome: r.nome, prezzoConfezione: r.prezzo,

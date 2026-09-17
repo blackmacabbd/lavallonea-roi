@@ -197,7 +197,7 @@
       'importPdf.importCompletato.uno': 'Import completato: {n} righe salvate{dettagli}.',
       'importPdf.importCompletato.molti': 'Import completato: {n} righe salvate{dettagli}.',
       'importPdf.clip.colonna': 'Clip',
-      'importPdf.clip.colonnaTitolo': 'Riga di una clip precaricata: entrera\' anche nel catalogo clip',
+      'importPdf.clip.colonnaTitolo': 'Riga di una clip precaricata: entrerà anche nel catalogo clip',
       'importPdf.clip.riconosciuteRiga.uno': '{n} clip riconosciuta automaticamente',
       'importPdf.clip.riconosciuteRiga.molti': '{n} clip riconosciute automaticamente',
       'importPdf.clip.segnaTutte': 'Segna tutte',
