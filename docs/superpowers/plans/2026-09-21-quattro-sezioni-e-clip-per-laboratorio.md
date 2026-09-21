@@ -702,6 +702,216 @@ git commit -m "feat: colonna laboratorio nel calcolatore, con le clip di quel li
 
 ---
 
+### Task 6-bis: Il nome di un laboratorio e' unico per account, non per tutti
+
+**Files:**
+- Modify: `lib/concorrenti.js`, `lib/concorrenti.test.js`, `server.js`
+
+**Interfaces:**
+- Nessuna firma cambia. Cambia solo il vincolo di unicita' della tabella
+  `concorrenti`: da `nome TEXT UNIQUE` a `UNIQUE(nome, user_id)`.
+
+**Il difetto, e perche' e' emerso adesso.** La tabella in archivio e' nata con
+`nome TEXT UNIQUE NOT NULL`: il nome e' unico **per tutti**, non per account.
+E' lo stesso difetto gia' corretto sulle strutture. Non si vedeva perche' c'era
+un account solo. `trovaOCreaConcorrente`, introdotto dalla fetta 4, cerca per
+nome **e** account: se un altro account ha gia' «IDEXX», non lo trova, prova a
+inserirlo, e il database rifiuta. L'import del secondo account fallisce con un
+errore di vincolo che in interfaccia non dice niente di utile.
+
+**Perche' i test non l'hanno preso, ed e' la parte che conta.** `ensureSchema`
+in `lib/concorrenti.js` crea la tabella **gia' senza** `UNIQUE` sul solo nome.
+I test partono da un database in memoria, quindi costruiscono la tabella giusta
+e non incontrano mai il vincolo. Il difetto vive solo nel database vero, nato
+anni fa, dove `CREATE TABLE IF NOT EXISTS` non cambia niente. **Un test che usa
+solo `ensureSchema` non puo' dimostrare questa correzione**: il test deve
+costruire a mano la tabella vecchia e poi far girare la migrazione.
+
+- [ ] **Step 1: Scrivere il test che parte dalla tabella vecchia**
+
+In `lib/concorrenti.test.js`:
+
+```javascript
+test('la migrazione toglie UNIQUE dal solo nome e lo mette su (nome, user_id)', () => {
+  const db = new DatabaseSync(':memory:');
+  // La tabella com'e' nel database vero: nata prima che esistesse user_id.
+  db.exec(`
+    CREATE TABLE concorrenti (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome         TEXT UNIQUE NOT NULL,
+      data_import  DATETIME DEFAULT CURRENT_TIMESTAMP
+    , user_id INTEGER);
+    CREATE TABLE esami_concorrente (
+      id                INTEGER PRIMARY KEY AUTOINCREMENT,
+      concorrente_id    INTEGER NOT NULL REFERENCES concorrenti(id),
+      nome_originale    TEXT NOT NULL,
+      prezzo            REAL NOT NULL,
+      sconto            REAL,
+      esame_mylav_nome  TEXT,
+      confermato        INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(concorrente_id, nome_originale)
+    );
+  `);
+  const r = db.prepare('INSERT INTO concorrenti (nome, user_id) VALUES (?, ?)').run('IDEXX', 1);
+  db.prepare('INSERT INTO esami_concorrente (concorrente_id, nome_originale, prezzo) VALUES (?, ?, ?)')
+    .run(Number(r.lastInsertRowid), 'EMOCROMO', 12.5);
+
+  // Prima della migrazione il secondo account non ci sta.
+  assert.throws(() => db.prepare('INSERT INTO concorrenti (nome, user_id) VALUES (?, ?)').run('IDEXX', 2));
+
+  ensureSchema(db);
+
+  // Dopo la migrazione ci sta, e la riga di prima e' ancora li' col suo listino.
+  const b = db.prepare('INSERT INTO concorrenti (nome, user_id) VALUES (?, ?)').run('IDEXX', 2);
+  assert.ok(Number(b.lastInsertRowid) > 0);
+  const righe = db.prepare('SELECT id, nome, user_id FROM concorrenti ORDER BY user_id').all();
+  assert.equal(righe.length, 2);
+  assert.equal(righe[0].id, Number(r.lastInsertRowid), 'l\'id del laboratorio esistente non cambia');
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM esami_concorrente WHERE concorrente_id = ?')
+    .get(Number(r.lastInsertRowid)).c, 1, 'il listino segue il suo laboratorio');
+  db.close();
+});
+
+test('lo stesso nome due volte nello stesso account resta impossibile', () => {
+  const db = new DatabaseSync(':memory:');
+  ensureSchema(db);
+  db.prepare('INSERT INTO concorrenti (nome, user_id) VALUES (?, ?)').run('IDEXX', 1);
+  assert.throws(() => db.prepare('INSERT INTO concorrenti (nome, user_id) VALUES (?, ?)').run('IDEXX', 1));
+  db.close();
+});
+
+test('ensureSchema girato due volte non ricostruisce e non perde niente', () => {
+  const db = new DatabaseSync(':memory:');
+  ensureSchema(db);
+  const r = db.prepare('INSERT INTO concorrenti (nome, user_id) VALUES (?, ?)').run('IDEXX', 1);
+  ensureSchema(db);
+  const righe = db.prepare('SELECT id FROM concorrenti').all();
+  assert.equal(righe.length, 1);
+  assert.equal(righe[0].id, Number(r.lastInsertRowid), 'gli id restano quelli');
+  db.close();
+});
+```
+
+- [ ] **Step 2: Eseguire i test per vederli fallire**
+
+Run: `node --test lib/concorrenti.test.js`
+Expected: il primo fallisce dopo `ensureSchema`, perche' l'inserimento del
+secondo account viene ancora rifiutato.
+
+- [ ] **Step 3: La migrazione**
+
+In `ensureSchema`, dopo la creazione delle tabelle. La forma e' quella gia'
+usata e verificata in `lib/clip.js` per la stessa operazione:
+
+```javascript
+  // La tabella nata prima di user_id ha UNIQUE sul solo nome: due account non
+  // potevano avere un laboratorio con lo stesso nome, e il secondo import
+  // falliva con un errore di vincolo incomprensibile. Si ricostruisce solo se
+  // serve davvero.
+  const sql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='concorrenti'`).get();
+  const daRicostruire = sql && /nome\s+TEXT\s+UNIQUE/i.test(sql.sql);
+  if (daRicostruire) {
+    // In node:sqlite le chiavi esterne sono ATTIVE di default, a differenza
+    // della riga di comando sqlite3: esami_concorrente punta a concorrenti, e
+    // senza sospenderle la ricostruzione fallisce. PRAGMA foreign_keys non e'
+    // transazionale e dentro una transazione non fa niente: va spento PRIMA
+    // del BEGIN e riacceso in un finally, altrimenti un errore lascerebbe il
+    // database senza controllo delle chiavi esterne per tutto il resto della
+    // sessione.
+    const fkEraAttivo = db.prepare(`PRAGMA foreign_keys`).get().foreign_keys === 1;
+    if (fkEraAttivo) db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    try {
+      db.exec(`
+        CREATE TABLE concorrenti_nuova (
+          id           INTEGER PRIMARY KEY AUTOINCREMENT,
+          nome         TEXT NOT NULL,
+          user_id      INTEGER,
+          data_import  DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO concorrenti_nuova (id, nome, user_id, data_import)
+          SELECT id, nome, user_id, data_import FROM concorrenti;
+        DROP TABLE concorrenti;
+        ALTER TABLE concorrenti_nuova RENAME TO concorrenti;
+      `);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      if (fkEraAttivo) db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+```
+
+Gli `id` si portano dietro espliciti: `esami_concorrente.concorrente_id` e
+`clip.concorrente_id` puntano a quelli, e rigenerarli scollegherebbe i listini
+dai loro laboratori senza che nessuno se ne accorga.
+
+L'unicita' nuova non sta nella `CREATE TABLE` ma in un indice parziale, per la
+stessa ragione gia' incontrata sulle clip: **in SQLite due NULL sono considerati
+diversi dentro un UNIQUE**, quindi `UNIQUE(nome, user_id)` non impedirebbe due
+righe «IDEXX» con `user_id` nullo — e le righe modello del catalogo hanno
+proprio `user_id` nullo.
+
+```javascript
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS concorrente_per_account
+      ON concorrenti(nome, user_id) WHERE user_id IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS concorrente_senza_account
+      ON concorrenti(nome) WHERE user_id IS NULL;
+  `);
+```
+
+Gli indici si creano **dopo** l'eventuale ricostruzione: il `DROP TABLE` porta
+via gli indici della tabella vecchia, quindi crearli prima sarebbe lavoro
+buttato.
+
+- [ ] **Step 4: Eseguire i test**
+
+Run: `node --test lib/concorrenti.test.js`
+Expected: PASS. Poi `npm test`: verde, 225 test piu' i tre nuovi.
+
+- [ ] **Step 5: Verificare sul database vero**
+
+Prima di far girare il server, **copia di sicurezza**:
+
+```bash
+cp db/database.sqlite db/database.sqlite.bak-pre-unique-concorrenti
+```
+
+Poi avviare il server (`server.js` e `lib/` non ricaricano a caldo) e
+controllare che la tabella sia stata ricostruita e che non si sia perso niente:
+
+```bash
+node -e "
+const {DatabaseSync}=require('node:sqlite');
+const db=new DatabaseSync('db/database.sqlite',{readOnly:true});
+console.log(db.prepare(\"SELECT sql FROM sqlite_master WHERE name='concorrenti'\").get().sql);
+for (const r of db.prepare(\"SELECT name,sql FROM sqlite_master WHERE type='index' AND tbl_name='concorrenti'\").all()) console.log(r.name, '|', r.sql);
+console.log('concorrenti:', db.prepare('SELECT COUNT(*) c FROM concorrenti').get().c);
+console.log('esami:', db.prepare('SELECT COUNT(*) c FROM esami_concorrente').get().c);
+console.log('esami orfani:', db.prepare('SELECT COUNT(*) c FROM esami_concorrente WHERE concorrente_id NOT IN (SELECT id FROM concorrenti)').get().c);
+console.log('clip orfane:', db.prepare('SELECT COUNT(*) c FROM clip WHERE concorrente_id IS NOT NULL AND concorrente_id NOT IN (SELECT id FROM concorrenti)').get().c);
+db.close();"
+```
+
+Attese: niente `nome TEXT UNIQUE` nella definizione, i due indici parziali
+presenti, **zero orfani** in entrambe le tabelle, e i conteggi identici a prima.
+
+Poi la prova che il difetto e' andato: due account usa e getta, ciascuno importa
+un listino del laboratorio «ZZ Doppio». Il secondo deve riuscire. Rimuovere i
+due account al termine e rimostrare i conteggi.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add lib/concorrenti.js lib/concorrenti.test.js server.js
+git commit -m "fix: due account possono avere un laboratorio con lo stesso nome"
+```
+
+---
+
 ### Task 7: Le quattro sezioni come due coppie, traduzioni e verifica
 
 **Files:**
