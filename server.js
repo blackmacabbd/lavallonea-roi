@@ -1786,8 +1786,16 @@ app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
     if (esiste) {
       return res.status(409).json({ error: 'Esiste gia\' un analizzatore con questo nome', codice: 'ANALIZZATORE_DUPLICATO' });
     }
+    // ANALIZ_SENZA_FILE non e' un nome di file: e' il valore convenzionale con
+    // cui si chiede il gruppo delle righe senza provenienza. Una riga che lo
+    // portasse davvero comparirebbe come gruppo a se', ma aprendolo si
+    // vedrebbero le righe senza provenienza, e quella riga resterebbe
+    // irraggiungibile dall'interfaccia. Dall'import non puo' arrivare (i nomi
+    // finiscono in .pdf), ma da una chiamata diretta si': qui si normalizza a
+    // null, che e' cio' che quel valore significa comunque.
+    const fileOrigineOk = fileOrigine === ANALIZ_SENZA_FILE ? null : fileOrigine;
     const { id } = analizzatoriLib.upsertAnalizzatore(db, {
-      userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note, pezzi, sconto, fileOrigine
+      userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note, pezzi, sconto, fileOrigine: fileOrigineOk
     });
     res.status(201).json({ id });
   } catch (err) {
