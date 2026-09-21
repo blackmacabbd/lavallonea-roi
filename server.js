@@ -172,6 +172,12 @@ db.exec(`
     risparmio REAL
   );
 `);
+// Il laboratorio e' una colonna per riga, non un campo di testata come
+// struttura (vedi salvaCalcoloClip/apriCalcoloClipDaCronologia in app.js):
+// due righe possono confrontare due laboratori diversi nello stesso calcolo,
+// quindi ognuna deve poter portare il proprio. Additiva via addColIfMissing,
+// mai distruttiva: le righe salvate prima restano con laboratorio NULL.
+addColIfMissing('righe_calcolo_clip', 'laboratorio', 'TEXT');
 
 // ── Rimozione del catalogo analizzatori ─────────────
 // I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
@@ -2107,10 +2113,10 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
 
       const ins = db.prepare(`
         INSERT INTO righe_calcolo_clip
-          (calcolo_id, clip_nome, n_clip, prezzo_confezione, pezzi, sconto_clip,
+          (calcolo_id, laboratorio, clip_nome, n_clip, prezzo_confezione, pezzi, sconto_clip,
            costo_clip, totale_clip, profilo_mylav, n_mylav, listino_lav,
            prezzo_scontato_lav, totale_mylav, risparmio)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const r of righe) {
@@ -2138,7 +2144,7 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
         const risparmio = totaleClip == null ? null : totaleClip - totaleMylav;
 
         ins.run(
-          calcoloId, r.clip_nome || null, nClip, prezzoConf || null, pezzi || null, sconto || null,
+          calcoloId, r.laboratorio || null, r.clip_nome || null, nClip, prezzoConf || null, pezzi || null, sconto || null,
           costoClip, totaleClip, r.profilo_mylav || null, nMyl, listinoLav || null,
           prezzoPiano || null, totaleMylav, risparmio
         );

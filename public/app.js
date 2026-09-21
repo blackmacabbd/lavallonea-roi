@@ -49,6 +49,7 @@ function roiRigaVuota() {
 // profilo Mylav a cui la si confronta.
 function clipRigaVuota() {
   return {
+    laboratorio: '',
     clip_nome: '', n_clip: 1, prezzo_confezione: '', pezzi: '', sconto_clip: '',
     profilo_mylav: '', n_mylav: 1, listino_lav: '', prezzo_scontato_lav: ''
   };
@@ -1476,6 +1477,11 @@ async function apriCalcoloClipDaCronologia(id) {
     // e' un solo campo di testata: si rimette solo sulla prima riga, come la fa
     // leggere salvaCalcoloClip al momento del salvataggio.
     struttura: i === 0 ? (calcolo.struttura_nome || '') : '',
+    // Il laboratorio, invece, e' genuinamente per riga anche nel salvataggio
+    // (righe_calcolo_clip.laboratorio): due righe possono confrontare due
+    // laboratori diversi nello stesso calcolo, quindi si rimette su OGNI riga
+    // il suo, non solo sulla prima.
+    laboratorio: r.laboratorio || '',
     clip_nome: r.clip_nome || '',
     n_clip: r.n_clip || 1,
     prezzo_confezione: r.prezzo_confezione ?? '',
@@ -3702,8 +3708,19 @@ function calcolaRigaClip(r) {
 // costo clip e sul totale, non sul percorso che ci arriva.
 const COLONNE_CLIP = [
   { col: 'struttura',         intestazione: 'comune.struttura',        tipo: 'testo',     larghezza: 130, gruppo: 'nessuno', elenco: 'roi-strutture-list' },
+  // Sta nel gruppo della concorrenza (tinta rossa) e non in 'nessuno': e' il
+  // lato di chi vende la clip, e cosi' introduce il blocco invece di restare
+  // in un limbo neutro. L'elenco 'clip-lab-list' e' fisso (i laboratori che
+  // hanno almeno una clip in catalogo, vedi laboratoriConClip()), a
+  // differenza di 'clip-list' che invece cambia riga per riga: vedi
+  // aggiornaListaClipRiga.
+  { col: 'laboratorio',       intestazione: 'clip.tabella.laboratorio', tipo: 'testo',    larghezza: 150, gruppo: 'concorrenza', elenco: 'clip-lab-list',
+    segnaposto: () => t('clip.placeholderLaboratorio') },
   { col: 'clip_nome',         intestazione: 'clip.tabella.clip',       tipo: 'testo',     larghezza: 200, larghezzaCampo: 190, gruppo: 'concorrenza', elenco: 'clip-list',
-    segnaposto: () => t('clip.placeholderClip') },
+    // Senza un laboratorio risolto il campo lo chiede invece di proporre
+    // tutto il catalogo (vedi aggiornaSegnapostoClipRiga per l'aggiornamento
+    // dal vivo mentre si scrive il laboratorio).
+    segnaposto: r => trovaLaboratorio(r.laboratorio) ? t('clip.placeholderClip') : t('clip.placeholderClipSenzaLaboratorio') },
   { col: 'n_clip',            intestazione: 'roi.tabella.n',           tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'concorrenza', fallbackSuZero: 1, segnaposto: '1' },
   { col: 'prezzo_confezione', intestazione: 'clip.tabella.prezzoConf', tipo: 'numero',    larghezza: 95,  gruppo: 'concorrenza', segnaposto: '0.00', tenue: true },
   { col: 'pezzi',             intestazione: 'clip.tabella.pezzi',      tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'concorrenza', tenue: true },
@@ -3723,19 +3740,66 @@ const COLONNE_CLIP = [
     contenutoVuoto: (r, i) => `<button class="roi-del-btn" onclick="removeRigaClip(${i})" title="${escHtml(t('concorrenti.rimuovi'))}">×</button>` }
 ];
 
-// Cerca nel catalogo clip il nome digitato. Prima la corrispondenza esatta;
-// poi quella tollerante (errori di battitura), ma solo se e' l'unica — stessa
-// regola di trovaEsameConcorrente: riempire con la clip sbagliata e' peggio
-// che non riempire.
-function trovaClip(nome) {
-  const catalogo = S.clip.catalogo || [];
+// Cerca in UN catalogo (gia' filtrato dal chiamante) il nome digitato. Prima
+// la corrispondenza esatta; poi quella tollerante (errori di battitura), ma
+// solo se e' l'unica — stessa regola di trovaEsameConcorrente: riempire con la
+// clip sbagliata e' peggio che non riempire.
+// Il catalogo non ha piu' un default implicito su S.clip.catalogo: con dieci
+// listini in un unico account, "tutte le clip" non e' mai la risposta giusta,
+// solo "le clip del laboratorio di questa riga" lo e' (vedi
+// catalogoPerLaboratorio). Un chiamante che non passa un catalogo ottiene
+// sempre null, mai un suggerimento pescato dal laboratorio sbagliato.
+function trovaClip(nome, catalogo) {
+  const cat = catalogo || [];
   const n = String(nome || '').trim();
-  if (!n || !catalogo.length) return null;
-  const esatto = catalogo.find(c => (c.nome || '').trim().toLowerCase() === n.toLowerCase());
+  if (!n || !cat.length) return null;
+  const esatto = cat.find(c => (c.nome || '').trim().toLowerCase() === n.toLowerCase());
   if (esatto) return esatto;
   if (!window.Ricerca) return null;
-  const vicini = catalogo.filter(c => Ricerca.corrisponde(c.nome, n));
+  const vicini = cat.filter(c => Ricerca.corrisponde(c.nome, n));
   return vicini.length === 1 ? vicini[0] : null;
+}
+
+// I laboratori che hanno almeno una clip in catalogo, dedotti dal catalogo
+// stesso (non da S.concorrenti): un laboratorio senza clip non serve a questo
+// calcolatore e non deve comparire ne' nei suggerimenti ne' come risultato di
+// trovaLaboratorio.
+function laboratoriConClip() {
+  const mappa = new Map();
+  (S.clip.catalogo || []).forEach(c => {
+    if (c.concorrenteId != null && c.concorrenteNome) mappa.set(c.concorrenteId, c.concorrenteNome);
+  });
+  return [...mappa.entries()].map(([id, nome]) => ({ id, nome }));
+}
+
+// Risolve il testo scritto nella colonna laboratorio a un laboratorio vero.
+// Stessa regola di trovaClip: esatto prima, poi tollerante ma solo se e'
+// l'unico — un laboratorio sbagliato e' peggio di nessun laboratorio, perche'
+// farebbe proporre le clip di un fornitore diverso da quello scritto.
+function trovaLaboratorio(nome) {
+  const labs = laboratoriConClip();
+  const n = String(nome || '').trim();
+  if (!n || !labs.length) return null;
+  const esatto = labs.find(l => l.nome.trim().toLowerCase() === n.toLowerCase());
+  if (esatto) return esatto;
+  if (!window.Ricerca) return null;
+  const vicini = labs.filter(l => Ricerca.corrisponde(l.nome, n));
+  return vicini.length === 1 ? vicini[0] : null;
+}
+
+// Il catalogo DI UNA RIGA: solo le clip del laboratorio scritto in quella
+// riga. Deliberatamente non e' uno stato salvato da nessuna parte (ne' sul
+// motore ne' sulla riga): si ricalcola ogni volta dal testo del laboratorio
+// passato dal chiamante. Due righe con due laboratori diversi non possono mai
+// "vedersi" a vicenda le clip nemmeno per un istante, perche' non esiste una
+// variabile condivisa che potrebbe restare quella sbagliata — e' il mix in
+// forma peggiore, perche' sembra corretto, ed e' esattamente cio' che una
+// variabile unica del calcolatore avrebbe prodotto con due righe compilate in
+// rapida successione.
+function catalogoPerLaboratorio(nomeLaboratorio) {
+  const lab = trovaLaboratorio(nomeLaboratorio);
+  if (!lab) return [];
+  return (S.clip.catalogo || []).filter(c => c.concorrenteId === lab.id);
 }
 
 // Cascata dal nome della clip: prezzo di confezione, pezzi e sconto abituale
@@ -3756,7 +3820,8 @@ async function compilaDaClip(tr) {
   [pcInp, pzInp, scInp].forEach(i => { if (i && i.dataset.auto === '1') { i.value = ''; i.dataset.auto = '0'; } });
 
   if (nome) {
-    const c = trovaClip(nome);
+    const labInp = tr.querySelector('[data-col="laboratorio"]');
+    const c = trovaClip(nome, catalogoPerLaboratorio(labInp ? labInp.value : ''));
     if (c) {
       if (pcInp && c.prezzoConfezione != null && campoFillabile(pcInp)) { pcInp.value = c.prezzoConfezione; pcInp.dataset.auto = '1'; }
       if (pzInp && c.pezzi != null && campoFillabile(pzInp)) { pzInp.value = c.pezzi; pzInp.dataset.auto = '1'; }
@@ -3764,6 +3829,54 @@ async function compilaDaClip(tr) {
     }
   }
   aggiornaRigaDOMClip(tr);
+}
+
+// Aggiorna la tendina nativa della clip (#clip-list, un solo nodo condiviso
+// da tutte le righe) al catalogo DELLA RIGA passata, e il placeholder del
+// campo clip in base a se un laboratorio e' risolto. E' un aggiornamento
+// visivo: la risposta vera (compilaDaClip/trovaClip) legge il laboratorio
+// dalla riga stessa a ogni chiamata, quindi resta corretta anche se la
+// tendina fosse rimasta quella di un'altra riga per un istante.
+function aggiornaSuggerimentiClipRiga(tr) {
+  const labInp = tr.querySelector('[data-col="laboratorio"]');
+  const nomeInp = tr.querySelector('[data-col="clip_nome"]');
+  if (!nomeInp) return;
+  const laboratorio = labInp ? labInp.value : '';
+  const haLab = !!trovaLaboratorio(laboratorio);
+  nomeInp.placeholder = haLab ? t('clip.placeholderClip') : t('clip.placeholderClipSenzaLaboratorio');
+  nomeInp.classList.toggle('roi-clip-in-attesa-lab', !haLab);
+  const dl = el('clip-list');
+  if (dl) dl.innerHTML = catalogoPerLaboratorio(laboratorio).map(c => `<option value="${escHtml(c.nome)}">`).join('');
+}
+
+// Cambiato il laboratorio: quello che era stato riempito da solo nella clip
+// per il laboratorio precedente si azzera (regola comune alle altre
+// cascate), e con lui anche il nome della clip se non esiste nel listino
+// nuovo — l'unica eccezione alla regola "l'operatore non si tocca mai",
+// perche' lasciarlo mostrerebbe la clip di un laboratorio sotto il nome di un
+// altro.
+async function suLaboratorioCambiatoClip(tr) {
+  const labInp = tr.querySelector('[data-col="laboratorio"]');
+  if (!labInp) return;
+  const laboratorio = labInp.value.trim();
+  const prec = labInp.dataset.lastLaboratorio || '';
+  if (laboratorio === prec) return;
+  labInp.dataset.lastLaboratorio = laboratorio;
+
+  const nomeInp = tr.querySelector('[data-col="clip_nome"]');
+  if (nomeInp) {
+    const nomeAttuale = nomeInp.value.trim();
+    if (nomeAttuale && !trovaClip(nomeAttuale, catalogoPerLaboratorio(laboratorio))) {
+      nomeInp.value = '';
+    }
+    // Forza compilaDaClip a rifare la cascata (azzera cio' che era automatico
+    // e ripesca dal nuovo listino) anche se il testo del nome non e'
+    // cambiato: e' un altro laboratorio, quindi un altro catalogo, e lo
+    // stesso nome puo' avere prezzo/pezzi/sconto diversi.
+    nomeInp.dataset.lastClipNome = '\u0000';
+  }
+  aggiornaSuggerimentiClipRiga(tr);
+  await compilaDaClip(tr);
 }
 
 // Cascata dal profilo Mylav: stessa logica del calcolatore esami (prezzo base,
@@ -3828,7 +3941,8 @@ async function aggiornaPrezziAutomaticiClip(tr, force = false) {
 }
 
 async function suCampoUscitoClip(tr, col) {
-  if (col === 'clip_nome') await compilaDaClip(tr);
+  if (col === 'laboratorio') await suLaboratorioCambiatoClip(tr);
+  else if (col === 'clip_nome') await compilaDaClip(tr);
   else if (col === 'profilo_mylav') await aggiornaPrezziAutomaticiClip(tr);
 }
 
@@ -3894,6 +4008,30 @@ const motoreClip = window.Calcolatore.crea({
     });
     wrap.querySelectorAll('[data-col="clip_nome"]').forEach(inp => {
       inp.dataset.lastClipNome = (inp.value || '').trim();
+    });
+    wrap.querySelectorAll('[data-col="laboratorio"]').forEach(inp => {
+      inp.dataset.lastLaboratorio = (inp.value || '').trim();
+    });
+    // Il segnaposto della colonna clip lo calcola gia' giusto costruisciRiga
+    // (segnaposto e' una funzione di r), ma la classe roi-clip-in-attesa-lab
+    // e la tendina no: sono un tocco visivo in piu' che il motore comune non
+    // conosce, va applicato qui dopo il disegno.
+    wrap.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaSuggerimentiClipRiga(tr));
+    // La tendina nativa della clip (#clip-list) e' un solo nodo condiviso da
+    // tutte le righe: si aggiorna al catalogo DELLA RIGA quando quel campo
+    // riceve il focus, cosi' mostra sempre le clip del laboratorio scritto
+    // li' e mai quello di un'altra riga.
+    wrap.addEventListener('focusin', e => {
+      if (!e.target.matches('[data-col="clip_nome"]')) return;
+      const tr = e.target.closest('tr');
+      if (tr) aggiornaSuggerimentiClipRiga(tr);
+    });
+    // Mentre si scrive il laboratorio, tendina e placeholder seguono a ogni
+    // tasto: non serve aspettare il blur per vedere l'elenco corretto.
+    wrap.addEventListener('input', e => {
+      if (!e.target.matches('[data-col="laboratorio"]')) return;
+      const tr = e.target.closest('tr');
+      if (tr) aggiornaSuggerimentiClipRiga(tr);
     });
   },
   // Il lato rosso qui non e' un concorrente ma il costo della clip precaricata:
@@ -3966,12 +4104,18 @@ function selezionaPianoClip(id) {
 function buildClipSectionHtml() {
   const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
   const mylavOpts = (S.esamiMylavNomi || []).map(n => `<option value="${escHtml(n)}">`).join('');
-  const clipOpts = (S.clip.catalogo || []).map(c => `<option value="${escHtml(c.nome)}">`).join('');
+  // 'clip-list' non ha piu' un contenuto fisso da tutto il catalogo: e' un
+  // solo nodo condiviso che aggiornaSuggerimentiClipRiga riscrive al volo col
+  // catalogo della riga a fuoco, cosi' propone solo le clip del laboratorio
+  // di QUELLA riga. Vuoto qui, viene popolato subito dopo il disegno (vedi
+  // dopoInizializzaEventi) e a ogni focus/battitura successivi.
+  const labClipOpts = laboratoriConClip().map(l => `<option value="${escHtml(l.nome)}">`).join('');
 
   return `
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <datalist id="mylav-esami-list">${mylavOpts}</datalist>
-    <datalist id="clip-list">${clipOpts}</datalist>
+    <datalist id="clip-list"></datalist>
+    <datalist id="clip-lab-list">${labClipOpts}</datalist>
     <div class="roi-toolbar">
       <div></div>
       <div class="roi-toolbar-controls">
