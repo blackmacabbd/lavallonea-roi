@@ -143,9 +143,13 @@ importbozze.ensureSchema(db);
 
 // ── Catalogo clip ────────────────────────────────────
 clipLib.ensureSchema(db);
+addColIfMissing('clip', 'file_origine', 'TEXT');
 
 // ── Catalogo macchinari interni (analizzatori Mylav) ─
 analizzatoriLib.ensureSchema(db);
+addColIfMissing('analizzatori_mylav', 'file_origine', 'TEXT');
+addColIfMissing('analizzatori_mylav', 'pezzi', 'INTEGER');
+addColIfMissing('analizzatori_mylav', 'sconto', 'REAL');
 
 // ── Calcolatore clip: fare in casa (clip) o mandare a Mylav? ────────────
 // I valori si salvano come erano al momento del salvataggio, non come
@@ -1608,27 +1612,43 @@ app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
     if (!riga) return res.status(404).json({ error: 'Clip non trovata', codice: 'CLIP_NON_TROVATA' });
     // Aggiornamento parziale: un campo assente nel corpo lascia il valore
     // salvato, un campo presente (anche null) lo sostituisce.
+    //
+    // Scrive con un UPDATE diretto, non con upsertClip: da quando l'upsert usa
+    // COALESCE per non far azzerare pezzi/sconto/fonte da un reimport PDF
+    // (vedi lib/clip.js), passare da li' non potrebbe piu' svuotare un campo
+    // (COALESCE riprenderebbe il valore vecchio anche quando questa rotta
+    // vuole scrivere null). Questa e' l'unica rotta che sa distinguere "campo
+    // assente dalla richiesta" da "campo presente e vuoto", quindi resta
+    // l'unico posto da cui uno svuotamento e' ancora possibile.
     const body = req.body || {};
     const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
     // Un campo numerico svuotato arriva come stringa vuota: significa "non lo
     // so", non "vale zero". Zero pezzi renderebbe incalcolabile il costo per
     // clip, e zero euro lo renderebbe gratis.
     const numero = v => (v === '' || v == null ? null : v);
-    const { id } = clipLib.upsertClip(db, {
-      userId: req.user.id,
-      // Il laboratorio NON si cambia da qui (c'e' /api/clip/:id/laboratorio):
-      // va pero' passato a upsertClip, altrimenti l'assenza della chiave lo
-      // fa leggere come null e ogni modifica di prezzo sposterebbe la clip
-      // nel gruppo "senza laboratorio", creando un doppione invece di
-      // aggiornare la riga giusta.
-      concorrenteId: riga.concorrente_id,
-      nome: riga.nome,
-      prezzoConfezione: numero(campo('prezzoConfezione', riga.prezzo_confezione)),
-      pezzi: numero(campo('pezzi', riga.pezzi)),
-      sconto: numero(campo('sconto', riga.sconto)),
-      fonte: campo('fonte', riga.fonte)
-    });
-    res.json({ id });
+
+    const prezzoConfezione = numero(campo('prezzoConfezione', riga.prezzo_confezione));
+    const prezzoNum = prezzoConfezione == null ? NaN : Number(prezzoConfezione);
+    if (!Number.isFinite(prezzoNum) || prezzoNum < 0) {
+      const err = new Error('Nome o prezzo non validi');
+      err.codice = 'NOME_PREZZO_NON_VALIDI';
+      throw err;
+    }
+    const pezziVal = numero(campo('pezzi', riga.pezzi));
+    const scontoVal = numero(campo('sconto', riga.sconto));
+    const fonteVal = campo('fonte', riga.fonte);
+
+    db.prepare(`
+      UPDATE clip SET prezzo_confezione = ?, pezzi = ?, sconto = ?, fonte = ?
+      WHERE id = ? AND user_id = ?
+    `).run(
+      prezzoNum,
+      pezziVal == null ? null : Number(pezziVal),
+      scontoVal == null ? null : Number(scontoVal),
+      fonteVal == null ? null : String(fonteVal),
+      riga.id, req.user.id
+    );
+    res.json({ id: riga.id });
   } catch (err) {
     res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
   }
@@ -1757,20 +1777,32 @@ app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
     if (!riga) return res.status(404).json({ error: 'Analizzatore non trovato', codice: 'ANALIZZATORE_NON_TROVATO' });
     // Aggiornamento parziale: un campo assente nel corpo lascia il valore
     // salvato, un campo presente (anche null/'') lo sostituisce. Il nome NON
-    // si cambia da qui: upsertAnalizzatore fa l'upsert per (user_id, nome), e
-    // rinominare per questa via sposterebbe la riga su un'altra chiave invece
-    // di aggiornare quella giusta (stesso motivo per cui /api/clip/:id non
-    // tocca ne' il nome ne' il laboratorio).
+    // si cambia da qui (stesso motivo per cui /api/clip/:id non tocca ne' il
+    // nome ne' il laboratorio).
+    //
+    // Scrive con un UPDATE diretto, non con upsertAnalizzatore: da quando
+    // l'upsert usa COALESCE per non far azzerare canone/note da un reimport
+    // PDF (vedi lib/analizzatori.js), passare da li' non potrebbe piu'
+    // svuotare un campo (COALESCE riprenderebbe il valore vecchio anche
+    // quando questa rotta vuole scrivere null). Questa e' l'unica rotta che
+    // sa distinguere "campo assente dalla richiesta" da "campo presente e
+    // vuoto", quindi resta l'unico posto da cui uno svuotamento e' ancora
+    // possibile.
     const body = req.body || {};
     const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
-    const { id } = analizzatoriLib.upsertAnalizzatore(db, {
-      userId: req.user.id,
-      nome: riga.nome,
-      prezzo: campo('prezzo', riga.prezzo),
-      noleggio: campo('noleggio', riga.noleggio),
-      note: campo('note', riga.note)
-    });
-    res.json({ id });
+    // v === '' (campo svuotato in un form) conta come "non lo so", non zero.
+    const numero = v => (v === '' || v == null ? null : Number(v));
+
+    const prezzoVal = numero(campo('prezzo', riga.prezzo));
+    const noleggioVal = numero(campo('noleggio', riga.noleggio));
+    const noteRaw = campo('note', riga.note);
+    const noteVal = noteRaw == null || noteRaw === '' ? null : String(noteRaw);
+
+    db.prepare(`
+      UPDATE analizzatori_mylav SET prezzo = ?, noleggio = ?, note = ?
+      WHERE id = ? AND user_id = ?
+    `).run(prezzoVal, noleggioVal, noteVal, riga.id, req.user.id);
+    res.json({ id: riga.id });
   } catch (err) {
     res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
   }
@@ -1952,7 +1984,7 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
           clipLib.upsertClip(db, {
             userId: req.user.id, concorrenteId: lab.id, nome: r.nome,
             prezzoConfezione: r.prezzo, pezzi: clipLib.leggiPezzi(r.nome),
-            sconto: null, fonte: 'pdf'
+            sconto: null, fonte: 'pdf', fileOrigine: bozza.nomeFile
           });
         }
         db.exec('COMMIT');
@@ -1976,7 +2008,8 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       try {
         for (const r of valide) {
           analizzatoriLib.upsertAnalizzatore(db, {
-            userId: req.user.id, nome: r.nome, prezzo: r.prezzo
+            userId: req.user.id, nome: r.nome, prezzo: r.prezzo,
+            fileOrigine: bozza.nomeFile
           });
         }
         db.exec('COMMIT');
