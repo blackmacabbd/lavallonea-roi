@@ -1743,14 +1743,38 @@ app.post('/api/clip/riconosci', requireAuth, express.json({ limit: '2mb' }), (re
 // ── Catalogo macchinari interni (analizzatori che Mylav vende o noleggia) ──
 // E' un catalogo, non un calcolatore: non serve nessun laboratorio (il
 // venditore e' sempre Mylav), a differenza del catalogo clip.
-app.get('/api/analizzatori', requireAuth, (req, res) => {
-  try { res.json(analizzatoriLib.listaAnalizzatori(db, req.user.id)); }
+//
+// Sezione a due livelli, come Gestione macchinari esterni: GET .../gruppi da'
+// l'elenco dei PDF (una riga per file, piu' una per le righe senza
+// provenienza), GET .../?fileOrigine=... le righe di un gruppo solo.
+//
+// ANALIZ_SENZA_FILE e' il valore convenzionale per chiedere il gruppo senza
+// provenienza in una query string: file_origine per quel gruppo e' NULL nel
+// database, ma un URL non puo' portare NULL, e una stringa vuota (?fileOrigine=)
+// e' gia' presa per "parametro assente, dammi tutto" (stesso comportamento di
+// GET /api/clip?concorrenteId=). Deve restare identico alla costante ANALIZ_SENZA_FILE
+// di public/app.js, che lo scrive nella query string quando l'operatore apre
+// quel gruppo: e' solo un valore di trasporto, non entra mai nel database.
+const ANALIZ_SENZA_FILE = '__senza_file__';
+
+app.get('/api/analizzatori/gruppi', requireAuth, (req, res) => {
+  try { res.json(analizzatoriLib.gruppiAnalizzatori(db, req.user.id)); }
   catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/api/analizzatori', requireAuth, (req, res) => {
+  try {
+    if (req.query.fileOrigine == null || req.query.fileOrigine === '') {
+      return res.json(analizzatoriLib.listaAnalizzatori(db, req.user.id));
+    }
+    const fileOrigine = req.query.fileOrigine === ANALIZ_SENZA_FILE ? null : req.query.fileOrigine;
+    res.json(analizzatoriLib.listaAnalizzatori(db, req.user.id, fileOrigine));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
   try {
-    const { nome, prezzo, noleggio, note } = req.body || {};
+    const { nome, prezzo, noleggio, note, pezzi, sconto, fileOrigine } = req.body || {};
     const nomeTrim = String(nome == null ? '' : nome).trim();
 
     // Come per le clip: l'inserimento manuale non deve sovrascrivere in
@@ -1763,7 +1787,7 @@ app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
       return res.status(409).json({ error: 'Esiste gia\' un analizzatore con questo nome', codice: 'ANALIZZATORE_DUPLICATO' });
     }
     const { id } = analizzatoriLib.upsertAnalizzatore(db, {
-      userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note
+      userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note, pezzi, sconto, fileOrigine
     });
     res.status(201).json({ id });
   } catch (err) {
@@ -1795,13 +1819,15 @@ app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
 
     const prezzoVal = numero(campo('prezzo', riga.prezzo));
     const noleggioVal = numero(campo('noleggio', riga.noleggio));
+    const pezziVal = numero(campo('pezzi', riga.pezzi));
+    const scontoVal = numero(campo('sconto', riga.sconto));
     const noteRaw = campo('note', riga.note);
     const noteVal = noteRaw == null || noteRaw === '' ? null : String(noteRaw);
 
     db.prepare(`
-      UPDATE analizzatori_mylav SET prezzo = ?, noleggio = ?, note = ?
+      UPDATE analizzatori_mylav SET prezzo = ?, noleggio = ?, note = ?, pezzi = ?, sconto = ?
       WHERE id = ? AND user_id = ?
-    `).run(prezzoVal, noleggioVal, noteVal, riga.id, req.user.id);
+    `).run(prezzoVal, noleggioVal, noteVal, pezziVal, scontoVal, riga.id, req.user.id);
     res.json({ id: riga.id });
   } catch (err) {
     res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });

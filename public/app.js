@@ -388,6 +388,7 @@ function riapriSottoVista(sotto) {
   if (sotto.tipo === 'pianoEdit') return Promise.resolve(renderPianoEdit(sotto.arg));
   if (sotto.tipo === 'concorrente') return Promise.resolve(renderConcorrenteDettaglio(sotto.arg));
   if (sotto.tipo === 'macchDett') return Promise.resolve(renderMacchinariDettaglio(sotto.arg));
+  if (sotto.tipo === 'analizDett') return Promise.resolve(renderAnalizzatoriDettaglio(sotto.arg));
   return Promise.resolve();
 }
 
@@ -2651,20 +2652,31 @@ async function confermaRecuperoClip() {
 // ══════════════════════════════════════════════════
 // GESTIONE MACCHINARI INTERNI — il catalogo analizzatori Mylav
 // ══════════════════════════════════════════════════
-// E' un catalogo piatto, senza laboratori: il venditore e' sempre Mylav.
-// Non entra in nessun calcolatore (vedi server.js): vendere o noleggiare un
-// analizzatore e' una trattativa a se', separata dal piano di scontistica
-// sugli esami che il calcolatore macchinari confronta.
+// Stessa struttura a due livelli di Gestione macchinari esterni: l'elenco dei
+// PDF (una riga per file, quante righe porta e quando e' arrivato l'ultima
+// volta), e aprendone uno la tabella delle sue righe. Le righe sono clip a
+// tutti gli effetti (nome, prezzo di confezione, pezzi, sconto, costo per
+// clip calcolato), come dal lato esterno: canone di noleggio e note restano
+// accanto, facoltativi, perche' non arrivano mai dal PDF. Non entra in nessun
+// calcolatore (vedi server.js): vendere o noleggiare un analizzatore e' una
+// trattativa a se', separata dal piano di scontistica sugli esami.
+
+// ANALIZ_SENZA_FILE deve restare identico alla costante omonima in server.js:
+// e' il valore che la query string porta per chiedere il gruppo senza
+// provenienza (file_origine NULL nel database), perche' un URL non puo'
+// portare NULL e la stringa vuota e' gia' presa per "nessun filtro".
+const ANALIZ_SENZA_FILE = '__senza_file__';
 
 async function renderMacchinariInterni() {
-  let lista;
-  try { lista = await api('/api/analizzatori'); }
+  let gruppi;
+  try { gruppi = await api('/api/analizzatori/gruppi'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
       <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
     return;
   }
-  S.analiz = { lista, filtro: '' };
+  const totale = gruppi.reduce((s, g) => s + g.n, 0);
+  S.analiz = { gruppi, totale, filtro: '' };
 
   setMain(`
     <div class="page-header">
@@ -2677,19 +2689,10 @@ async function renderMacchinariInterni() {
     </div>
     <div class="page-body">
       <div class="td-muted" style="margin-bottom:12px;font-size:13px">${t('analizzatori.importPdfNota')}</div>
-      <input class="roi-input dett-search" id="analiz-search" placeholder="${escHtml(t('analizzatori.cercaPlaceholder'))}"
-             oninput="filtraAnalizzatori(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
+      <input class="roi-input dett-search" id="analiz-search" placeholder="${escHtml(t('analizzatori.cercaFilePlaceholder'))}"
+             oninput="filtraAnalizzatoriFile(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
       <div class="table-card" id="analiz-lista-wrap"></div>
-      <div class="section-card" style="margin-top:16px">
-        <div class="section-card-title">${t('analizzatori.aggiungiTitolo')}</div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
-          <label>${t('analizzatori.tabella.nome')}<br><input class="roi-input" id="analiz-nuovo-nome" placeholder="${escHtml(t('analizzatori.placeholderNome'))}" style="width:220px"></label>
-          <label>${t('analizzatori.tabella.prezzo')}<br><input class="roi-input" id="analiz-nuovo-prezzo" type="number" step="0.01" style="width:110px"></label>
-          <label>${t('analizzatori.tabella.noleggio')}<br><input class="roi-input" id="analiz-nuovo-noleggio" type="number" step="0.01" style="width:110px"></label>
-          <label>${t('analizzatori.tabella.note')}<br><input class="roi-input" id="analiz-nuovo-note" style="width:220px"></label>
-          <button class="btn-primary" onclick="salvaAnalizzatoreManuale()">${t('comune.salva')}</button>
-        </div>
-      </div>
+      <div id="analiz-dettaglio-wrap"></div>
     </div>
   `);
   renderAnalizzatoriListaBody();
@@ -2701,46 +2704,57 @@ function renderAnalizzatoriListaBody() {
   if (!wrap || !st) return;
 
   const sub = el('analiz-sottotitolo');
-  if (sub) sub.textContent = t('pagina.macchinariInterni.sottotitolo' + (st.lista.length === 1 ? '.uno' : ''), { n: st.lista.length });
+  if (sub) sub.textContent = t('pagina.macchinariInterni.sottotitolo' + (st.totale === 1 ? '.uno' : ''), { n: st.totale });
 
   const q = st.filtro.trim();
-  const righe = st.lista
-    .filter(a => !q || Ricerca.corrisponde(a.nome, q))
-    .sort((a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' }));
+  const conFile = st.gruppi
+    .filter(g => g.fileOrigine != null)
+    .filter(g => !q || Ricerca.corrisponde(g.fileOrigine, q))
+    .sort((a, b) => a.fileOrigine.localeCompare(b.fileOrigine, 'it', { sensitivity: 'base' }));
+  // A differenza del gruppo "senza laboratorio" lato esterno (che compare solo
+  // quando ha gia' delle clip dentro, perche' un laboratorio si crea altrove,
+  // in Gestione concorrenti), qui non esiste una pagina separata per creare un
+  // "PDF": il gruppo senza provenienza e' l'unico punto in cui si puo'
+  // aggiungere il primissimo analizzatore a mano. Deve restare apribile anche
+  // a zero righe, altrimenti un catalogo vuoto non avrebbe alcun modo di
+  // ricevere la prima riga.
+  const senza = st.gruppi.find(g => g.fileOrigine == null) || { fileOrigine: null, n: 0, dataUltimo: null };
 
-  if (!righe.length) {
+  const dataFmt = d => d ? new Date(d).toLocaleDateString('it-IT') : '';
+
+  const rigaHtml = g => `<tr>
+    <td>${escHtml(g.fileOrigine)}</td>
+    <td class="td-muted">${g.n}</td>
+    <td class="td-muted">${dataFmt(g.dataUltimo)}</td>
+    <td><button class="btn-outline" onclick="renderAnalizzatoriDettaglio(${jsAttr(g.fileOrigine)})">${t('analizzatori.vediRighe')}</button></td>
+  </tr>`;
+
+  const rigaSenza = (!q || Ricerca.corrisponde(t('analizzatori.senzaFile'), q))
+    ? `<tr>
+        <td><em>${t('analizzatori.senzaFile')}</em></td>
+        <td class="td-muted">${senza.n}</td>
+        <td class="td-muted">${dataFmt(senza.dataUltimo)}</td>
+        <td><button class="btn-outline" onclick="renderAnalizzatoriDettaglio(null)">${t('analizzatori.vediRighe')}</button></td>
+      </tr>`
+    : '';
+
+  if (!conFile.length && !rigaSenza) {
     wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🔬</div>
       <div class="empty-title">${t('analizzatori.nessunAnalizzatore')}</div></div>`;
     return;
   }
 
-  // Dove il prezzo o il canone non sono previsti la cella resta vuota, non
-  // mostra zero: zero e' un fatto diverso ("gratis"), e questa e' l'unica
-  // riga di tutta la vista dove quella distinzione puo' perdersi.
-  const rigaHtml = a => `<tr data-analiz-id="${a.id}">
-    <td>${escHtml(a.nome)}</td>
-    <td><input class="roi-input roi-num" data-campo="prezzo" value="${a.prezzo != null ? a.prezzo : ''}" style="width:100px"></td>
-    <td><input class="roi-input roi-num" data-campo="noleggio" value="${a.noleggio != null ? a.noleggio : ''}" style="width:100px"></td>
-    <td><input class="roi-input" data-campo="note" value="${escHtml(a.note || '')}" style="width:200px"></td>
-    <td style="display:flex;gap:6px">
-      <button class="btn-outline" onclick="salvaModificaAnalizzatore(${a.id})">${t('comune.salva')}</button>
-      <button class="btn-outline" onclick="eliminaAnalizzatoreUI(${a.id}, ${jsAttr(a.nome)})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
-    </td>
-  </tr>`;
-
   wrap.innerHTML = `
     <div class="table-scroll">
-      <table class="roi-editable-table">
-        <thead><tr>
-          <th>${t('analizzatori.tabella.nome')}</th><th>${t('analizzatori.tabella.prezzo')}</th>
-          <th>${t('analizzatori.tabella.noleggio')}</th><th>${t('analizzatori.tabella.note')}</th><th></th>
-        </tr></thead>
-        <tbody>${righe.map(rigaHtml).join('')}</tbody>
+      <table>
+        <thead><tr><th>${t('cronologia.tabella.file')}</th><th>${t('cronologiaClip.tabella.righe')}</th>
+          <th>${t('cronologia.tabella.data')}</th><th></th></tr></thead>
+        <tbody>${conFile.map(rigaHtml).join('')}${rigaSenza}</tbody>
       </table>
     </div>`;
 }
 
-function filtraAnalizzatori(v) {
+function filtraAnalizzatoriFile(v) {
   if (!S.analiz) return;
   S.analiz.filtro = v;
   renderAnalizzatoriListaBody();
@@ -2754,24 +2768,123 @@ function importaPdfAnalizzatori() {
   });
 }
 
+// fileOrigine puo' essere null: e' il gruppo "senza provenienza". Diversamente
+// dal lato esterno (dove il filtro sulle clip e' fatto lato client perche' non
+// esiste una rotta server dedicata), qui GET /api/analizzatori?fileOrigine=...
+// fa il filtro nel database: vedi server.js per ANALIZ_SENZA_FILE.
+async function renderAnalizzatoriDettaglio(fileOrigine) {
+  _sottoVista = { tipo: 'analizDett', arg: fileOrigine };
+  let righe;
+  try {
+    const qs = fileOrigine == null ? ANALIZ_SENZA_FILE : encodeURIComponent(fileOrigine);
+    righe = await api(`/api/analizzatori?fileOrigine=${qs}`);
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
+
+  S.analizDett = { fileOrigine, righe, filtro: '' };
+
+  const wrap = el('analiz-dettaglio-wrap');
+  if (!wrap) return;
+
+  const titolo = fileOrigine == null
+    ? t('analizzatori.senzaFile')
+    : t('analizzatori.dettaglio.titolo', { nome: escHtml(fileOrigine) });
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">${titolo}</div>
+      <div class="dett-toolbar">
+        <input class="roi-input dett-search" id="analiz-riga-search" placeholder="${escHtml(t('analizzatori.cercaPlaceholder'))}"
+               oninput="filtraAnalizzatoriRighe(this.value)" autocomplete="off">
+      </div>
+      <div id="analiz-riga-body"></div>
+      <div class="section-card-title" style="margin-top:16px;font-size:13px">${t('analizzatori.aggiungiTitolo')}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label>${t('analizzatori.tabella.nome')}<br><input class="roi-input" id="analiz-nuovo-nome" placeholder="${escHtml(t('analizzatori.placeholderNome'))}" style="width:200px"></label>
+        <label>${t('clip.tabella.prezzoConf')}<br><input class="roi-input" id="analiz-nuovo-prezzo" type="number" step="0.01" style="width:100px"></label>
+        <label>${t('clip.tabella.pezzi')}<br><input class="roi-input" id="analiz-nuovo-pezzi" type="number" style="width:70px"></label>
+        <label>${t('concorrenti.tabella.sconto')}<br><input class="roi-input" id="analiz-nuovo-sconto" type="number" step="0.1" style="width:70px"></label>
+        <label>${t('analizzatori.tabella.noleggio')}<br><input class="roi-input" id="analiz-nuovo-noleggio" type="number" step="0.01" style="width:100px"></label>
+        <label>${t('analizzatori.tabella.note')}<br><input class="roi-input" id="analiz-nuovo-note" style="width:200px"></label>
+        <button class="btn-primary" onclick="salvaAnalizzatoreManuale(${fileOrigine == null ? 'null' : jsAttr(fileOrigine)})">${t('comune.salva')}</button>
+      </div>
+    </div>`;
+  renderAnalizzatoriRigaBody();
+}
+
+function renderAnalizzatoriRigaBody() {
+  const body = el('analiz-riga-body');
+  const st = S.analizDett;
+  if (!body || !st) return;
+
+  const q = st.filtro.trim();
+  const filtrate = st.righe
+    .filter(a => !q || Ricerca.corrisponde(a.nome, q))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' }));
+
+  if (!filtrate.length) {
+    body.innerHTML = `<div class="td-muted" style="padding:8px 0">${t('analizzatori.nessunaRiga')}</div>`;
+    return;
+  }
+
+  // Dove il prezzo, il canone, i pezzi o lo sconto non sono previsti la cella
+  // resta vuota, non mostra zero: zero e' un fatto diverso ("gratis" per il
+  // canone, "compreso" per lo sconto). Il costo per clip segue la stessa
+  // regola tramite fmtE (mostra '—'), ed e' vuoto su quasi tutte le 1280 righe
+  // in archivio perche' quasi nessuna ha i pezzi: e' l'informazione corretta,
+  // non un difetto (vedi il costo mancante contro un costo sbagliato di un
+  // fattore dodici, stesso principio di calcolaRigaClip).
+  const rigaHtml = a => `<tr data-analiz-id="${a.id}">
+    <td>${escHtml(a.nome)}</td>
+    <td><input class="roi-input roi-num" data-campo="prezzo" value="${a.prezzo != null ? a.prezzo : ''}" style="width:90px"></td>
+    <td><input class="roi-input roi-num" data-campo="pezzi" value="${a.pezzi != null ? a.pezzi : ''}" style="width:60px"></td>
+    <td><input class="roi-input roi-num" data-campo="sconto" value="${a.sconto != null ? a.sconto : ''}" style="width:60px"></td>
+    <td class="td-muted">${fmtE(costoPerClipCatalogo({ pezzi: a.pezzi, prezzoConfezione: a.prezzo, sconto: a.sconto }))}</td>
+    <td><input class="roi-input roi-num" data-campo="noleggio" value="${a.noleggio != null ? a.noleggio : ''}" style="width:90px"></td>
+    <td><input class="roi-input" data-campo="note" value="${escHtml(a.note || '')}" style="width:160px"></td>
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="salvaModificaAnalizzatore(${a.id})">${t('comune.salva')}</button>
+      <button class="btn-outline" onclick="eliminaAnalizzatoreUI(${a.id}, ${jsAttr(a.nome)})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
+    </td>
+  </tr>`;
+
+  body.innerHTML = `
+    <table class="roi-editable-table">
+      <thead><tr>
+        <th>${t('analizzatori.tabella.nome')}</th><th>${t('clip.tabella.prezzoConf')}</th>
+        <th>${t('clip.tabella.pezzi')}</th><th>${t('concorrenti.tabella.sconto')}</th>
+        <th>${t('clip.tabella.costoClip')}</th>
+        <th>${t('analizzatori.tabella.noleggio')}</th><th>${t('analizzatori.tabella.note')}</th><th></th>
+      </tr></thead>
+      <tbody>${filtrate.map(rigaHtml).join('')}</tbody>
+    </table>`;
+}
+
+function filtraAnalizzatoriRighe(v) {
+  if (!S.analizDett) return;
+  S.analizDett.filtro = v;
+  renderAnalizzatoriRigaBody();
+}
+
 async function salvaModificaAnalizzatore(id) {
   if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
   const tr = document.querySelector(`tr[data-analiz-id="${id}"]`);
   if (!tr) return;
   const val = campo => { const inp = tr.querySelector(`[data-campo="${campo}"]`); return inp ? inp.value.trim() : ''; };
-  const prezzo = val('prezzo'), noleggio = val('noleggio'), note = val('note');
+  const prezzo = val('prezzo'), pezzi = val('pezzi'), sconto = val('sconto'), noleggio = val('noleggio'), note = val('note');
   try {
     await api(`/api/analizzatori/${id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prezzo, noleggio, note })
+      body: JSON.stringify({ prezzo, pezzi, sconto, noleggio, note })
     });
-    const a = S.analiz.lista.find(x => x.id === id);
+    const a = S.analizDett ? S.analizDett.righe.find(x => x.id === id) : null;
     if (a) {
       a.prezzo = prezzo === '' ? null : Number(prezzo);
+      a.pezzi = pezzi === '' ? null : Number(pezzi);
+      a.sconto = sconto === '' ? null : Number(sconto);
       a.noleggio = noleggio === '' ? null : Number(noleggio);
       a.note = note === '' ? null : note;
     }
-    renderAnalizzatoriListaBody();
+    renderAnalizzatoriRigaBody();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
@@ -2779,24 +2892,38 @@ async function eliminaAnalizzatoreUI(id, nome) {
   if (!confirm(t('analizzatori.confermaElimina', { nome }))) return;
   try {
     await api(`/api/analizzatori/${id}`, { method: 'DELETE' });
-    S.analiz.lista = S.analiz.lista.filter(a => a.id !== id);
-    renderAnalizzatoriListaBody();
+    if (S.analizDett) S.analizDett.righe = S.analizDett.righe.filter(a => a.id !== id);
+    renderAnalizzatoriRigaBody();
+    if (S.analiz) {
+      S.analiz.gruppi = await api('/api/analizzatori/gruppi').catch(() => S.analiz.gruppi);
+      S.analiz.totale = S.analiz.gruppi.reduce((s, g) => s + g.n, 0);
+      renderAnalizzatoriListaBody();
+    }
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
-async function salvaAnalizzatoreManuale() {
+// fileOrigine e' quello del gruppo aperto: una riga aggiunta a mano da dentro
+// un PDF resta in quel gruppo quando si riapre (stesso comportamento di
+// salvaClipManuale lato esterno, che lega la nuova clip al laboratorio aperto).
+async function salvaAnalizzatoreManuale(fileOrigine) {
   if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
   const nome = (el('analiz-nuovo-nome')?.value || '').trim();
   if (!nome) return alert(t('analizzatori.scriviNome'));
   const prezzo = (el('analiz-nuovo-prezzo')?.value || '').trim();
+  const pezzi = (el('analiz-nuovo-pezzi')?.value || '').trim();
+  const sconto = (el('analiz-nuovo-sconto')?.value || '').trim();
   const noleggio = (el('analiz-nuovo-noleggio')?.value || '').trim();
   const note = (el('analiz-nuovo-note')?.value || '').trim();
   try {
     await api('/api/analizzatori', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, prezzo, noleggio, note })
+      body: JSON.stringify({ nome, prezzo, pezzi, sconto, noleggio, note,
+        fileOrigine: fileOrigine == null ? undefined : fileOrigine })
     });
-    await renderMacchinariInterni();
+    S.analiz.gruppi = await api('/api/analizzatori/gruppi').catch(() => S.analiz.gruppi);
+    S.analiz.totale = S.analiz.gruppi.reduce((s, g) => s + g.n, 0);
+    renderAnalizzatoriListaBody();
+    await renderAnalizzatoriDettaglio(fileOrigine);
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 

@@ -482,6 +482,11 @@
       'analizzatori.scriviNome': "Scrivi il nome dell'analizzatore",
       'analizzatori.nessunAnalizzatore': 'Nessun analizzatore in catalogo.',
       'analizzatori.confermaElimina': 'Eliminare l\'analizzatore "{nome}"?',
+      'analizzatori.senzaFile': 'Importate prima che si tenesse traccia del file',
+      'analizzatori.vediRighe': 'Vedi righe',
+      'analizzatori.cercaFilePlaceholder': '🔍 Cerca file…',
+      'analizzatori.dettaglio.titolo': 'Analizzatori di {nome}',
+      'analizzatori.nessunaRiga': 'Nessuna riga per questo gruppo.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Struttura:',
@@ -1028,6 +1033,11 @@
       'analizzatori.scriviNome': 'Enter the analyser name',
       'analizzatori.nessunAnalizzatore': 'No analyser in the catalogue.',
       'analizzatori.confermaElimina': 'Delete the analyser "{nome}"?',
+      'analizzatori.senzaFile': 'Imported before the file was tracked',
+      'analizzatori.vediRighe': 'View rows',
+      'analizzatori.cercaFilePlaceholder': '🔍 Search file…',
+      'analizzatori.dettaglio.titolo': 'Analysers from {nome}',
+      'analizzatori.nessunaRiga': 'No row in this group.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Practice:',
@@ -1574,6 +1584,11 @@
       'analizzatori.scriviNome': "Écrivez le nom de l'analyseur",
       'analizzatori.nessunAnalizzatore': 'Aucun analyseur dans le catalogue.',
       'analizzatori.confermaElimina': 'Supprimer l\'analyseur "{nome}" ?',
+      'analizzatori.senzaFile': 'Importées avant que le fichier ne soit suivi',
+      'analizzatori.vediRighe': 'Voir les lignes',
+      'analizzatori.cercaFilePlaceholder': '🔍 Rechercher un fichier…',
+      'analizzatori.dettaglio.titolo': 'Analyseurs de {nome}',
+      'analizzatori.nessunaRiga': 'Aucune ligne pour ce groupe.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Clinique :',
@@ -2120,6 +2135,11 @@
       'analizzatori.scriviNome': 'Escribe el nombre del analizador',
       'analizzatori.nessunAnalizzatore': 'Ningún analizador en el catálogo.',
       'analizzatori.confermaElimina': '¿Eliminar el analizador "{nome}"?',
+      'analizzatori.senzaFile': 'Importadas antes de que se registrara el archivo',
+      'analizzatori.vediRighe': 'Ver filas',
+      'analizzatori.cercaFilePlaceholder': '🔍 Buscar archivo…',
+      'analizzatori.dettaglio.titolo': 'Analizadores de {nome}',
+      'analizzatori.nessunaRiga': 'Ninguna fila para este grupo.',
 
       // ── Cronologia file, corpo (fetta 6) ──
       'cronologia.filtroLabel': 'Clínica:',
