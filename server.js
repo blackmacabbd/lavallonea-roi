@@ -1555,17 +1555,27 @@ app.get('/api/clip', requireAuth, (req, res) => {
 
 app.post('/api/clip', requireAuth, express.json(), (req, res) => {
   try {
-    const { nome, prezzoConfezione, pezzi, sconto, fonte } = req.body || {};
+    const { nome, prezzoConfezione, pezzi, sconto, fonte, concorrenteId } = req.body || {};
     const nomeTrim = String(nome == null ? '' : nome).trim();
+
+    // L'inserimento manuale (dalla scheda di un laboratorio, o dalla conferma
+    // del recupero) puo' indicare un laboratorio: senza, la clip nasce nel
+    // gruppo "laboratorio non indicato", come prima di questa fetta.
+    let concorrenteOk = null;
+    if (concorrenteId != null && concorrenteId !== '') {
+      concorrenteOk = Number(concorrenteId);
+      const proprio = db.prepare(`SELECT 1 FROM concorrenti WHERE id = ? AND user_id = ?`).get(concorrenteOk, req.user.id);
+      if (!proprio) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
+    }
+
     // L'inserimento manuale non deve sovrascrivere in silenzio una clip
     // esistente con lo stesso nome: quello e' il comportamento dell'import
     // (upsertClip), qui l'operatore va avvisato invece di perdere il prezzo
-    // gia' salvato. L'inserimento manuale non assegna un laboratorio (fetta
-    // successiva), quindi il controllo guarda solo le clip gia' senza
-    // laboratorio: un nome gia' usato da un laboratorio non collide, perche'
-    // sono due indici univoci diversi.
+    // gia' salvato. Il controllo guarda solo le clip dello STESSO laboratorio
+    // (o dello stesso gruppo senza laboratorio): un nome gia' usato altrove
+    // non collide, perche' sono indici univoci diversi.
     const esiste = nomeTrim
-      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND concorrente_id IS NULL`).get(req.user.id, nomeTrim)
+      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND concorrente_id IS ?`).get(req.user.id, nomeTrim, concorrenteOk)
       : null;
     if (esiste) {
       return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome', codice: 'CLIP_DUPLICATA' });
@@ -1573,7 +1583,7 @@ app.post('/api/clip', requireAuth, express.json(), (req, res) => {
     // Pezzi non indicato -> si prova a leggerlo dal nome, come fa il riconoscimento import.
     const pezziOk = (pezzi == null || pezzi === '') ? clipLib.leggiPezzi(nomeTrim) : Number(pezzi);
     const { id } = clipLib.upsertClip(db, {
-      userId: req.user.id, nome: nomeTrim, prezzoConfezione, pezzi: pezziOk,
+      userId: req.user.id, concorrenteId: concorrenteOk, nome: nomeTrim, prezzoConfezione, pezzi: pezziOk,
       sconto, fonte: fonte || 'manuale'
     });
     res.status(201).json({ id });
@@ -1596,6 +1606,12 @@ app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
     const numero = v => (v === '' || v == null ? null : v);
     const { id } = clipLib.upsertClip(db, {
       userId: req.user.id,
+      // Il laboratorio NON si cambia da qui (c'e' /api/clip/:id/laboratorio):
+      // va pero' passato a upsertClip, altrimenti l'assenza della chiave lo
+      // fa leggere come null e ogni modifica di prezzo sposterebbe la clip
+      // nel gruppo "senza laboratorio", creando un doppione invece di
+      // aggiornare la riga giusta.
+      concorrenteId: riga.concorrente_id,
       nome: riga.nome,
       prezzoConfezione: numero(campo('prezzoConfezione', riga.prezzo_confezione)),
       pezzi: numero(campo('pezzi', riga.pezzi)),
@@ -1608,11 +1624,74 @@ app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
   }
 });
 
+// Assegna (o riassegna) il laboratorio di una clip. Va per id, non per nome
+// come upsertClip: cambiare solo concorrente_id sulla riga esistente evita di
+// crearne una seconda con lo stesso nome nel laboratorio di destinazione, che
+// e' quello che succederebbe passando da upsertClip (chiave nome+laboratorio,
+// non id). Serve soprattutto per il gruppo "laboratorio non indicato": senza
+// un modo di spostarle, quelle clip restano invisibili per sempre.
+app.put('/api/clip/:id/laboratorio', requireAuth, express.json(), (req, res) => {
+  try {
+    const riga = db.prepare(`SELECT * FROM clip WHERE id = ? AND user_id = ?`).get(Number(req.params.id), req.user.id);
+    if (!riga) return res.status(404).json({ error: 'Clip non trovata', codice: 'CLIP_NON_TROVATA' });
+
+    const { concorrenteId } = req.body || {};
+    const concorrenteOk = (concorrenteId == null || concorrenteId === '') ? null : Number(concorrenteId);
+    if (concorrenteOk != null) {
+      const proprio = db.prepare(`SELECT 1 FROM concorrenti WHERE id = ? AND user_id = ?`).get(concorrenteOk, req.user.id);
+      if (!proprio) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
+    }
+    const collisione = db.prepare(
+      `SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND id != ? AND concorrente_id IS ?`
+    ).get(req.user.id, riga.nome, riga.id, concorrenteOk);
+    if (collisione) {
+      return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome in quel laboratorio', codice: 'CLIP_DUPLICATA' });
+    }
+    db.prepare(`UPDATE clip SET concorrente_id = ? WHERE id = ? AND user_id = ?`).run(concorrenteOk, riga.id, req.user.id);
+    res.json({ id: riga.id });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.delete('/api/clip/:id', requireAuth, (req, res) => {
   try {
     const ok = clipLib.eliminaClip(db, req.params.id, req.user.id);
     if (!ok) return res.status(404).json({ error: 'Clip non trovata', codice: 'CLIP_NON_TROVATA' });
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Il recupero rilegge i listini dei laboratori gia' importati e propone le
+// righe che sembrano clip (stesso riconoscimento dell'import, sembraClip +
+// leggiPezzi): NON scrive nulla. E' il client, dopo la conferma esplicita
+// dell'operatore, a mandare ogni riga scelta a POST /api/clip una per una.
+// Serve a chi ha importato un listino prima che la spunta clip esistesse: le
+// sue righe-clip sono ferme in esami_concorrente, mai entrate nel catalogo.
+app.post('/api/clip/recupera', requireAuth, (req, res) => {
+  try {
+    const righe = db.prepare(`
+      SELECT ec.nome_originale AS nome, ec.prezzo, ec.concorrente_id, c.nome AS concorrente_nome
+      FROM esami_concorrente ec
+      JOIN concorrenti c ON c.id = ec.concorrente_id
+      WHERE c.user_id = ?
+      ORDER BY c.nome, ec.nome_originale
+    `).all(req.user.id);
+
+    const trovate = [];
+    for (const r of righe) {
+      if (!clipLib.sembraClip(r.nome)) continue;
+      const giaInCatalogo = !!db.prepare(
+        `SELECT 1 FROM clip WHERE user_id = ? AND concorrente_id = ? AND nome = ?`
+      ).get(req.user.id, r.concorrente_id, r.nome);
+      trovate.push({
+        nome: r.nome,
+        prezzoConfezione: r.prezzo,
+        pezzi: clipLib.leggiPezzi(r.nome),
+        concorrenteId: r.concorrente_id,
+        concorrenteNome: r.concorrente_nome,
+        giaInCatalogo
+      });
+    }
+    res.json({ trovate });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 

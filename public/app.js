@@ -236,6 +236,9 @@ function buildSidebar() {
     <div class="nav-item ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
       <span class="nav-icon">🏷️</span> ${t('menu.concorrenti')}
     </div>
+    <div class="nav-item ${isActive('macchinari-esterni')}" onclick="navigate('macchinari-esterni')">
+      <span class="nav-icon">🧰</span> ${t('menu.macchinariEsterni')}
+    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -380,6 +383,7 @@ function riapriSottoVista(sotto) {
   if (!sotto) return Promise.resolve();
   if (sotto.tipo === 'pianoEdit') return Promise.resolve(renderPianoEdit(sotto.arg));
   if (sotto.tipo === 'concorrente') return Promise.resolve(renderConcorrenteDettaglio(sotto.arg));
+  if (sotto.tipo === 'macchDett') return Promise.resolve(renderMacchinariDettaglio(sotto.arg));
   return Promise.resolve();
 }
 
@@ -410,6 +414,7 @@ function navigate(view, params = {}) {
     case 'risparmio-totale': disegno = renderRisparmioTotale();                  break;
     case 'piani':      disegno = renderPiani();                                  break;
     case 'concorrenti': disegno = renderConcorrentiAdmin();                      break;
+    case 'macchinari-esterni': disegno = renderMacchinariEsterni();              break;
     case 'calcolatore-clip': disegno = renderCalcolatoreClip();                  break;
   }
   buildSidebar();
@@ -2068,6 +2073,7 @@ async function eliminaConcorrenteUI(id) {
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     scordaSottoVista('concorrente', id);
+    scordaSottoVista('macchDett', id);
     await loadConcorrenti();
     renderConcorrentiAdmin();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
@@ -2219,6 +2225,398 @@ async function rimuoviMappaturaManuale(concorrenteId, esameConcorrenteId) {
       renderDettaglioBody();
     }
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+// ══════════════════════════════════════════════════
+// GESTIONE MACCHINARI ESTERNI — il catalogo clip per laboratorio
+// ══════════════════════════════════════════════════
+// Stessa struttura a due livelli di renderConcorrentiAdmin/Dettaglio: un
+// elenco di laboratori con quante clip ha ciascuno, e aprendone uno la
+// tabella delle sue clip. Il gruppo "senza laboratorio" e' lo stesso elenco
+// filtrato su concorrenteId nullo: senza quel gruppo quelle righe
+// esisterebbero nel database e non si vedrebbero da nessuna parte.
+
+// Il costo per clip (prezzo di confezione diviso i pezzi, meno lo sconto):
+// senza i pezzi non si inventa un numero, si lascia vuoto (fmtE lo mostra
+// come '—'). Stessa formula di calcolaRigaClip, sui dati del catalogo invece
+// che su una riga del calcolatore.
+function costoPerClipCatalogo(c) {
+  const pezzi = Number(c.pezzi) || 0;
+  const prezzo = Number(c.prezzoConfezione) || 0;
+  const sconto = Number(c.sconto) || 0;
+  return pezzi > 0 ? (prezzo / pezzi) * (1 - sconto / 100) : null;
+}
+
+async function renderMacchinariEsterni() {
+  let concorrenti, clip;
+  try {
+    [concorrenti, clip] = await Promise.all([api('/api/concorrenti'), api('/api/clip')]);
+  } catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+  S.concorrenti = concorrenti;
+  S.macch = { concorrenti, clip, filtro: '' };
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">${t('pagina.macchinariEsterni.titolo')}</div>
+        <div class="page-subtitle" id="macch-sottotitolo"></div>
+      </div>
+      <div class="page-actions">
+        <button class="btn-outline" onclick="avviaRecuperoClip()">${t('macchinari.recuperaBtn')}</button>
+      </div>
+    </div>
+    <div class="page-body">
+      <input class="roi-input dett-search" id="macch-search" placeholder="${escHtml(t('macchinari.cercaLaboratorioPlaceholder'))}"
+             oninput="filtraMacchinariLab(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
+      <div class="table-card" id="macch-lista-wrap"></div>
+      <div id="macch-recupero-wrap"></div>
+      <div id="macch-dettaglio-wrap"></div>
+    </div>
+  `);
+  renderMacchinariListaBody();
+}
+
+function renderMacchinariListaBody() {
+  const st = S.macch;
+  const wrap = el('macch-lista-wrap');
+  if (!wrap || !st) return;
+
+  const perLab = {};
+  let nSenza = 0;
+  st.clip.forEach(c => {
+    if (c.concorrenteId == null) { nSenza++; return; }
+    perLab[c.concorrenteId] = (perLab[c.concorrenteId] || 0) + 1;
+  });
+
+  const sub = el('macch-sottotitolo');
+  if (sub) sub.textContent = t('pagina.macchinariEsterni.sottotitolo' + (st.concorrenti.length === 1 ? '.uno' : ''), { n: st.concorrenti.length });
+
+  const q = st.filtro.trim();
+  const righe = st.concorrenti
+    .map(c => ({ id: c.id, nome: c.nome, nClip: perLab[c.id] || 0 }))
+    .filter(r => !q || Ricerca.corrisponde(r.nome, q));
+
+  const rigaHtml = r => `<tr>
+    <td>${escHtml(r.nome)}</td>
+    <td class="td-muted">${r.nClip}</td>
+    <td><button class="btn-outline" onclick="renderMacchinariDettaglio(${r.id})">${t('macchinari.vediClip')}</button></td>
+  </tr>`;
+
+  // Il gruppo "senza laboratorio" compare solo quando ha righe dentro: vuoto,
+  // non aggiunge niente da raggiungere e affollerebbe solo la lista.
+  const rigaSenza = (nSenza > 0 && (!q || Ricerca.corrisponde(t('macchinari.senzaLaboratorio'), q)))
+    ? `<tr>
+        <td><em>${t('macchinari.senzaLaboratorio')}</em></td>
+        <td class="td-muted">${nSenza}</td>
+        <td><button class="btn-outline" onclick="renderMacchinariDettaglio(null)">${t('macchinari.vediClip')}</button></td>
+      </tr>`
+    : '';
+
+  if (!righe.length && !rigaSenza) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🧰</div>
+      <div class="empty-title">${t('stato.nessunDato')}</div></div>`;
+    return;
+  }
+
+  wrap.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>${t('macchinari.tabella.laboratorio')}</th><th>${t('clip.tabella.clip')}</th><th></th></tr></thead>
+        <tbody>${righe.map(rigaHtml).join('')}${rigaSenza}</tbody>
+      </table>
+    </div>`;
+}
+
+function filtraMacchinariLab(v) {
+  if (!S.macch) return;
+  S.macch.filtro = v;
+  renderMacchinariListaBody();
+}
+
+// concorrenteId puo' essere null: e' il gruppo "laboratorio non indicato". Il
+// filtro e' fatto lato client sul catalogo completo (gia' disponibile da
+// listaClip senza filtro): evita una seconda forma di query al server solo
+// per isolare le clip senza laboratorio, che la rotta GET /api/clip di oggi
+// non sa esprimere.
+async function renderMacchinariDettaglio(concorrenteId) {
+  _sottoVista = { tipo: 'macchDett', arg: concorrenteId };
+  let tutteLeClip;
+  try { tutteLeClip = await api('/api/clip'); }
+  catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
+
+  const clipDelGruppo = tutteLeClip.filter(c =>
+    concorrenteId == null ? c.concorrenteId == null : c.concorrenteId === concorrenteId);
+  const lab = concorrenteId == null ? null : (S.concorrenti || []).find(c => c.id === concorrenteId);
+
+  S.macchDett = { concorrenteId, nomeLab: lab ? lab.nome : null, clip: clipDelGruppo, filtro: '' };
+
+  const wrap = el('macch-dettaglio-wrap');
+  if (!wrap) return;
+
+  const titolo = concorrenteId == null
+    ? t('macchinari.dettaglio.titoloSenzaLaboratorio')
+    : t('macchinari.dettaglio.titolo', { nome: escHtml(S.macchDett.nomeLab || '') });
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">${titolo}</div>
+      <div class="dett-toolbar">
+        <input class="roi-input dett-search" id="macch-clip-search" placeholder="${escHtml(t('macchinari.cercaClipPlaceholder'))}"
+               oninput="filtraMacchinariClip(this.value)" autocomplete="off">
+      </div>
+      <div id="macch-clip-body"></div>
+      <div class="section-card-title" style="margin-top:16px;font-size:13px">${t('macchinari.aggiungiClip')}</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <label>${t('clip.tabella.clip')}<br><input class="roi-input" id="macch-nuova-nome" placeholder="${escHtml(t('clip.placeholderClip'))}" style="width:220px"></label>
+        <label>${t('clip.tabella.prezzoConf')}<br><input class="roi-input" id="macch-nuova-prezzo" type="number" step="0.01" style="width:110px"></label>
+        <label>${t('clip.tabella.pezzi')}<br><input class="roi-input" id="macch-nuova-pezzi" type="number" style="width:80px"></label>
+        <label>${t('concorrenti.tabella.sconto')}<br><input class="roi-input" id="macch-nuova-sconto" type="number" step="0.1" style="width:80px"></label>
+        <button class="btn-primary" onclick="salvaClipManuale(${concorrenteId == null ? 'null' : concorrenteId})">${t('comune.salva')}</button>
+      </div>
+    </div>`;
+  renderMacchinariDettaglioBody();
+}
+
+function renderMacchinariDettaglioBody() {
+  const body = el('macch-clip-body');
+  const st = S.macchDett;
+  if (!body || !st) return;
+
+  const q = st.filtro.trim();
+  const filtrate = st.clip
+    .filter(c => !q || Ricerca.corrisponde(c.nome, q))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' }));
+
+  const senzaLab = st.concorrenteId == null;
+
+  const rigaHtml = c => `<tr data-clip-id="${c.id}">
+    <td>${escHtml(c.nome)}</td>
+    <td><input class="roi-input roi-num" data-campo="prezzoConfezione" value="${c.prezzoConfezione != null ? c.prezzoConfezione : ''}" style="width:90px"></td>
+    <td><input class="roi-input roi-num" data-campo="pezzi" value="${c.pezzi != null ? c.pezzi : ''}" style="width:60px"></td>
+    <td><input class="roi-input roi-num" data-campo="sconto" value="${c.sconto != null ? c.sconto : ''}" style="width:60px"></td>
+    <td class="td-muted">${fmtE(costoPerClipCatalogo(c))}</td>
+    ${senzaLab ? `<td>
+        <select class="roi-input" data-assegna-select style="width:170px">
+          <option value="">${t('macchinari.selezionaLaboratorio')}</option>
+          ${(S.concorrenti || []).map(l => `<option value="${l.id}">${escHtml(l.nome)}</option>`).join('')}
+        </select>
+      </td>` : ''}
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="salvaModificaClip(${c.id})">${t('comune.salva')}</button>
+      ${senzaLab ? `<button class="btn-outline" onclick="assegnaLaboratorioClip(${c.id})">${t('macchinari.assegnaBtn')}</button>` : ''}
+      <button class="btn-outline" onclick="eliminaClipUI(${c.id}, ${jsAttr(c.nome)})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
+    </td>
+  </tr>`;
+
+  if (!filtrate.length) {
+    body.innerHTML = `<div class="td-muted" style="padding:8px 0">${t('macchinari.nessunaClip')}</div>`;
+    return;
+  }
+
+  body.innerHTML = `
+    <table class="roi-editable-table">
+      <thead><tr>
+        <th>${t('clip.tabella.clip')}</th><th>${t('clip.tabella.prezzoConf')}</th><th>${t('clip.tabella.pezzi')}</th>
+        <th>${t('concorrenti.tabella.sconto')}</th><th>${t('clip.tabella.costoClip')}</th>
+        ${senzaLab ? `<th>${t('macchinari.assegnaLaboratorio')}</th>` : ''}
+        <th></th>
+      </tr></thead>
+      <tbody>${filtrate.map(rigaHtml).join('')}</tbody>
+    </table>`;
+}
+
+function filtraMacchinariClip(v) {
+  if (!S.macchDett) return;
+  S.macchDett.filtro = v;
+  renderMacchinariDettaglioBody();
+}
+
+async function salvaModificaClip(id) {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const tr = document.querySelector(`tr[data-clip-id="${id}"]`);
+  if (!tr) return;
+  const val = campo => { const inp = tr.querySelector(`[data-campo="${campo}"]`); return inp ? inp.value.trim() : ''; };
+  const prezzoConfezione = val('prezzoConfezione'), pezzi = val('pezzi'), sconto = val('sconto');
+  try {
+    await api(`/api/clip/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prezzoConfezione, pezzi, sconto })
+    });
+    const c = trovaClipInCache(id);
+    if (c) {
+      c.prezzoConfezione = prezzoConfezione === '' ? null : Number(prezzoConfezione);
+      c.pezzi = pezzi === '' ? null : Number(pezzi);
+      c.sconto = sconto === '' ? null : Number(sconto);
+    }
+    renderMacchinariDettaglioBody();
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+// La riga vive in due posti (la cache della lista e quella del dettaglio
+// aperto): tenerle allineate qui evita che salvare o eliminare in un punto
+// lasci l'altro con dati vecchi finche' non si ricarica la pagina.
+function trovaClipInCache(id) {
+  const inLista = S.macch ? S.macch.clip.find(c => c.id === id) : null;
+  const inDett = S.macchDett ? S.macchDett.clip.find(c => c.id === id) : null;
+  return inDett || inLista;
+}
+
+async function eliminaClipUI(id, nome) {
+  if (!confirm(t('macchinari.confermaEliminaClip', { nome }))) return;
+  try {
+    await api(`/api/clip/${id}`, { method: 'DELETE' });
+    if (S.macchDett) S.macchDett.clip = S.macchDett.clip.filter(c => c.id !== id);
+    if (S.macch) S.macch.clip = S.macch.clip.filter(c => c.id !== id);
+    renderMacchinariDettaglioBody();
+    renderMacchinariListaBody();
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+async function assegnaLaboratorioClip(id) {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const tr = document.querySelector(`tr[data-clip-id="${id}"]`);
+  const sel = tr ? tr.querySelector('[data-assegna-select]') : null;
+  const concorrenteId = sel ? sel.value : '';
+  if (!concorrenteId) { alert(t('macchinari.selezionaLaboratorio')); return; }
+  try {
+    await api(`/api/clip/${id}/laboratorio`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ concorrenteId })
+    });
+    // La clip lascia il gruppo "senza laboratorio": nella vista aperta (che di
+    // quel gruppo mostra solo le righe rimaste) sparisce; nella cache della
+    // lista resta, con il laboratorio aggiornato, per il conteggio.
+    if (S.macchDett) S.macchDett.clip = S.macchDett.clip.filter(c => c.id !== id);
+    const c = S.macch ? S.macch.clip.find(x => x.id === id) : null;
+    if (c) c.concorrenteId = Number(concorrenteId);
+    renderMacchinariDettaglioBody();
+    renderMacchinariListaBody();
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+async function salvaClipManuale(concorrenteId) {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const nome = (el('macch-nuova-nome')?.value || '').trim();
+  if (!nome) return alert(t('macchinari.scriviNomeClip'));
+  const prezzoConfezione = (el('macch-nuova-prezzo')?.value || '').trim();
+  const pezzi = (el('macch-nuova-pezzi')?.value || '').trim();
+  const sconto = (el('macch-nuova-sconto')?.value || '').trim();
+  try {
+    await api('/api/clip', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome, prezzoConfezione, pezzi, sconto, concorrenteId, fonte: 'manuale' })
+    });
+    S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
+    renderMacchinariListaBody();
+    await renderMacchinariDettaglio(concorrenteId);
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+// ── Recupero dai listini gia' importati ──────────────
+// Il server non scrive nulla: restituisce solo le righe che sembrano clip.
+// Qui si mostra l'elenco con una casella per riga, gia' spuntata dove la clip
+// non e' ancora in catalogo, e si scrive solo alla conferma esplicita — riga
+// per riga, con POST /api/clip. Smistare righe senza conferma e' l'errore che
+// ha gia' fatto buttare una volta questa logica.
+async function avviaRecuperoClip() {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const wrap = el('macch-recupero-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = `<div class="section-card">${t('stato.caricamento')}</div>`;
+  let dati;
+  try { dati = await api('/api/clip/recupera', { method: 'POST' }); }
+  catch (e) {
+    wrap.innerHTML = `<div class="section-card"><div class="empty-sub">${escHtml(e.message)}</div></div>`;
+    return;
+  }
+  S.macchRecupero = { trovate: (dati.trovate || []).map(r => ({ ...r, selezionata: !r.giaInCatalogo })) };
+  renderRecuperoPanel();
+}
+
+function renderRecuperoPanel() {
+  const wrap = el('macch-recupero-wrap');
+  const st = S.macchRecupero;
+  if (!wrap || !st) return;
+
+  if (!st.trovate.length) {
+    wrap.innerHTML = `<div class="section-card"><div class="empty-sub">${t('macchinari.recupero.nessuna')}</div></div>`;
+    return;
+  }
+
+  const n = st.trovate.length;
+  const rigaHtml = (r, i) => `<tr>
+    <td><input type="checkbox" ${r.selezionata ? 'checked' : ''} onchange="toggleRecuperoRiga(${i}, this.checked)"></td>
+    <td>${escHtml(r.nome)}</td>
+    <td class="td-muted">${escHtml(r.concorrenteNome || '')}</td>
+    <td class="td-muted">${fmtE(r.prezzoConfezione)}</td>
+    <td class="td-muted">${r.pezzi != null ? r.pezzi : '—'}</td>
+    <td class="td-muted">${r.giaInCatalogo ? t('macchinari.recupero.giaPresente') : ''}</td>
+  </tr>`;
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">${t(n === 1 ? 'macchinari.recupero.trovate.uno' : 'macchinari.recupero.trovate', { n })}</div>
+      <div class="table-scroll" style="margin-bottom:12px">
+        <table>
+          <thead><tr><th></th><th>${t('clip.tabella.clip')}</th><th>${t('macchinari.tabella.laboratorio')}</th>
+            <th>${t('clip.tabella.prezzoConf')}</th><th>${t('clip.tabella.pezzi')}</th><th></th></tr></thead>
+          <tbody>${st.trovate.map(rigaHtml).join('')}</tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confermaRecuperoClip()">${t('macchinari.recupero.confermaBtn')}</button>
+        <button class="btn-outline" onclick="annullaRecuperoClip()">${t('comune.annulla')}</button>
+      </div>
+      <div id="macch-recupero-esito" style="margin-top:8px;font-size:13px"></div>
+    </div>`;
+}
+
+function toggleRecuperoRiga(i, checked) {
+  if (!S.macchRecupero) return;
+  const r = S.macchRecupero.trovate[i];
+  if (r) r.selezionata = checked;
+}
+
+function annullaRecuperoClip() {
+  S.macchRecupero = null;
+  const wrap = el('macch-recupero-wrap');
+  if (wrap) wrap.innerHTML = '';
+}
+
+async function confermaRecuperoClip() {
+  const st = S.macchRecupero;
+  if (!st) return;
+  const scelte = st.trovate.filter(r => r.selezionata);
+  if (!scelte.length) { alert(t('macchinari.recupero.nessunaSelezionata')); return; }
+
+  let aggiunte = 0;
+  for (const r of scelte) {
+    try {
+      await api('/api/clip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome: r.nome, prezzoConfezione: r.prezzoConfezione, pezzi: r.pezzi,
+          concorrenteId: r.concorrenteId, fonte: 'concorrente'
+        })
+      });
+      aggiunte++;
+    } catch (e) {
+      // Gia' in catalogo: non blocca il resto della conferma, e' solo una
+      // riga che non aveva bisogno di essere scritta.
+      if (e.codice !== 'CLIP_DUPLICATA') { alert(t('errore.generico', { msg: e.message })); }
+    }
+  }
+
+  const esito = el('macch-recupero-esito');
+  if (esito) esito.textContent = t(aggiunte === 1 ? 'macchinari.recupero.aggiunte.uno' : 'macchinari.recupero.aggiunte', { n: aggiunte });
+
+  S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
+  renderMacchinariListaBody();
+  if (S.macchDett) await renderMacchinariDettaglio(S.macchDett.concorrenteId);
+  S.macchRecupero = null;
 }
 
 // ══════════════════════════════════════════════════
