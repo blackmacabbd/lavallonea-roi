@@ -1535,9 +1535,22 @@ app.delete('/api/concorrenti/:id', requireAuth, (req, res) => {
 // Un catalogo per account: nome, prezzo di confezione, pezzi, sconto e fonte
 // (import PDF, import concorrenti o inserimento manuale). Il costo per clip
 // (prezzo / pezzi) e' calcolato da chi consuma il catalogo, non qui.
+// Senza il parametro si vede tutto il catalogo (usato dal calcolatore clip);
+// con concorrenteId solo le clip di quel laboratorio (usato dalla sua scheda).
+// «Parametro assente» e «parametro passato» sono due domande diverse per
+// listaClip, non la stessa con un default: qui la distinzione e' se la chiave
+// concorrenteId compare o no nella query string.
 app.get('/api/clip', requireAuth, (req, res) => {
-  try { res.json(clipLib.listaClip(db, req.user.id)); }
-  catch (err) { res.status(500).json({ error: err.message }); }
+  try {
+    if (req.query.concorrenteId == null || req.query.concorrenteId === '') {
+      return res.json(clipLib.listaClip(db, req.user.id));
+    }
+    const concorrenteId = Number(req.query.concorrenteId);
+    if (!Number.isFinite(concorrenteId)) {
+      return res.status(400).json({ error: 'concorrenteId non valido' });
+    }
+    res.json(clipLib.listaClip(db, req.user.id, concorrenteId));
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.post('/api/clip', requireAuth, express.json(), (req, res) => {
@@ -1547,9 +1560,12 @@ app.post('/api/clip', requireAuth, express.json(), (req, res) => {
     // L'inserimento manuale non deve sovrascrivere in silenzio una clip
     // esistente con lo stesso nome: quello e' il comportamento dell'import
     // (upsertClip), qui l'operatore va avvisato invece di perdere il prezzo
-    // gia' salvato.
+    // gia' salvato. L'inserimento manuale non assegna un laboratorio (fetta
+    // successiva), quindi il controllo guarda solo le clip gia' senza
+    // laboratorio: un nome gia' usato da un laboratorio non collide, perche'
+    // sono due indici univoci diversi.
     const esiste = nomeTrim
-      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ?`).get(req.user.id, nomeTrim)
+      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND concorrente_id IS NULL`).get(req.user.id, nomeTrim)
       : null;
     if (esiste) {
       return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome', codice: 'CLIP_DUPLICATA' });
@@ -1782,7 +1798,7 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     for (const r of (bozza.entita === 'concorrente' ? valide : [])) {
       if (!r.clip) continue;
       clipLib.upsertClip(db, {
-        userId: req.user.id, nome: r.nome, prezzoConfezione: r.prezzo,
+        userId: req.user.id, concorrenteId: risultato.concorrenteId, nome: r.nome, prezzoConfezione: r.prezzo,
         pezzi: clipLib.leggiPezzi(r.nome), sconto: null, fonte: 'concorrente'
       });
       clipImportate++;

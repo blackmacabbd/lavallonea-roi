@@ -2052,10 +2052,19 @@ async function eliminaConcorrenteUI(id) {
   const c = S.concorrenti.find(x => x.id === id);
   const nome = c ? c.nome : t('concorrenti.questoConcorrente');
   const nEsami = c && c.n_esami != null ? c.n_esami : null;
-  const chiave = nEsami == null
-    ? 'concorrenti.confermaElimina.senzaConteggio'
-    : (nEsami === 1 ? 'concorrenti.confermaElimina.uno' : 'concorrenti.confermaElimina.molti');
-  if (!confirm(t(chiave, { nome, n: nEsami }))) return;
+  // Il laboratorio porta via anche le sue clip (Task 2): la conferma deve
+  // nominarle, altrimenti chi elimina non sa che sta perdendo anche quelle.
+  // Interrogare il catalogo filtrato per laboratorio e' l'unico modo di
+  // saperlo prima di cancellare, perche' l'elenco concorrenti non le conta.
+  let nClip = 0;
+  try { nClip = (await api(`/api/clip?concorrenteId=${id}`)).length; } catch (_) { /* meglio un avviso incompleto che nessuno */ }
+
+  const chiave = nClip > 0
+    ? (nClip === 1 ? 'concorrenti.confermaElimina.conClip.uno' : 'concorrenti.confermaElimina.conClip')
+    : (nEsami == null
+      ? 'concorrenti.confermaElimina.senzaConteggio'
+      : (nEsami === 1 ? 'concorrenti.confermaElimina.uno' : 'concorrenti.confermaElimina.molti'));
+  if (!confirm(t(chiave, { nome, n: nEsami, nClip }))) return;
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     scordaSottoVista('concorrente', id);
