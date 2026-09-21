@@ -1837,7 +1837,8 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     }
 
     // Una sola destinazione per import: per l'entita' 'concorrente' le righe
-    // vanno nel listino del concorrente, altrimenti nella propria copia del
+    // vanno nel listino del concorrente, per 'clip' diventano tutte clip del
+    // laboratorio dichiarato (vedi sotto), altrimenti nella propria copia del
     // catalogo piani.
     //
     // Il catalogo si scrive prima di confermare la bozza: gli upsert sono
@@ -1856,6 +1857,24 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
         valide.map(r => ({ nome_originale: r.nome, prezzo: r.prezzo, sconto: null })),
         req.user.id
       );
+    } else if (bozza.entita === 'clip') {
+      // Chi importa qui sta dichiarando che questo PDF e' un listino di macchinari:
+      // ogni riga col prezzo e' una clip di quel laboratorio. I pezzi si leggono dal
+      // nome quando ci sono; quando non ci sono si lascia vuoto, perche' un costo
+      // per clip sbagliato di un fattore dodici e' peggio di un costo mancante, e
+      // l'operatore lo completa dal catalogo.
+      const nomeLab = String(nome || '').trim();
+      if (!nomeLab) return res.status(400).json({
+        error: 'Manca il nome del laboratorio', codice: 'NOME_LABORATORIO_MANCANTE' });
+      const lab = concorrenti.trovaOCreaConcorrente(db, nomeLab, req.user.id);
+      for (const r of valide) {
+        clipLib.upsertClip(db, {
+          userId: req.user.id, concorrenteId: lab.id, nome: r.nome,
+          prezzoConfezione: r.prezzo, pezzi: clipLib.leggiPezzi(r.nome),
+          sconto: null, fonte: 'pdf'
+        });
+      }
+      risultato = { concorrenteId: lab.id, clipImportate: valide.length };
     } else {
       // Aggiorna i prezzi base della PROPRIA copia del catalogo: upsert per nome,
       // nessuna cancellazione degli esami assenti dal PDF e nessun piano toccato.
@@ -1873,6 +1892,12 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     // guardia lo ripete qui: la finestra e' un vincolo del client, e una
     // chiamata diretta con entita' 'piano' e righe spuntate riempirebbe il
     // catalogo di voci dichiarate come venute da un concorrente.
+    //
+    // L'entita' 'clip' resta fuori da questo giro apposta: le sue clip sono
+    // gia' state scritte tutte nel ramo sopra (e' la dichiarazione stessa
+    // dell'import, non una spunta per riga). Farle passare anche di qui le
+    // scriverebbe due volte, la seconda con fonte 'concorrente' invece di
+    // 'pdf'.
     let clipImportate = 0;
     for (const r of (bozza.entita === 'concorrente' ? valide : [])) {
       if (!r.clip) continue;
