@@ -129,3 +129,78 @@ detto prima.
 4. **Colonna Laboratorio nel calcolatore clip**, coi suggerimenti filtrati.
 5. **Gestione macchinari interni**: catalogo degli analizzatori Mylav.
 6. **Traduzioni e verifica end-to-end** nelle quattro lingue.
+
+---
+
+# Correzione del 2026-09-21, dopo la revisione del committente
+
+Le fette 1-3 sono state costruite su una lettura sbagliata. Il committente ha
+chiarito, e qui si registra cio' che cambia. Le fette 4-6 vanno rifatte.
+
+## Cosa avevo capito male
+
+**Le clip entravano solo come spunta dentro l'import degli esami.** Non e' cosi':
+**ogni sezione ha il suo import PDF**, esattamente come le due sezioni degli
+esami. Si importa un PDF in Gestione macchinari esterni e **quello e' un listino
+di macchinari**: tutte le righe col prezzo diventano clip di quel laboratorio.
+Chi importa li' sta dichiarando di che listino si tratta, e l'applicazione gli
+crede invece di indovinare riga per riga.
+
+**Il laboratorio non e' un selettore in cima al calcolatore, e' una colonna**,
+subito dopo la struttura. Si scrive la struttura, si scrive il laboratorio, e da
+quel momento la ricerca delle clip pesca **da quel PDF**.
+
+## Le tre strade per popolare il catalogo
+
+Restano tutte e tre, e non si escludono:
+
+1. **Import dedicato** in Gestione macchinari esterni: tutte le righe col prezzo
+   diventano clip del laboratorio che si nomina all'import.
+2. **Spunta nella revisione dell'import esami**: serve perche' il listino reale
+   del committente contiene esami e clip nello stesso PDF, e importarlo due
+   volte sarebbe lavoro inutile.
+3. **Recupero dai listini gia' importati**: per quelli entrati prima che tutto
+   questo esistesse.
+
+## Gestione macchinari interni
+
+Anche questa ha il suo import PDF: e' il listino degli analizzatori che Mylav
+vende o noleggia. Non chiede un laboratorio, perche' il laboratorio e' Mylav.
+
+Resta l'assunzione gia' dichiarata e non contestata: **e' un catalogo, non entra
+nel calcolo** del calcolatore macchinari, dove il lato Mylav e' il piano di
+scontistica sugli esami.
+
+## La colonna nel calcolatore
+
+Ordine delle colonne: **Struttura · Laboratorio conc. · [blocco clip] · [blocco
+Mylav] · Risparmio**.
+
+Il campo del laboratorio e' a testo libero con i suggerimenti, come gli altri:
+si scrive qualche lettera e compaiono i laboratori che hanno clip in catalogo,
+con la ricerca tollerante agli errori di battitura. Quando il nome corrisponde a
+un laboratorio esistente, la colonna della clip propone **solo le clip di quel
+listino**. Senza laboratorio, il campo della clip lo chiede invece di proporre
+tutto: proporre tutto e' il mix da cui nasce questo lavoro.
+
+## Le quattro sezioni si leggono come due coppie
+
+Il progetto usa gia' il colore per dire una cosa vera: **blu `--blue` = Mylav,
+rosso `--red` = concorrenza**. Le quattro sezioni ereditano quel codice —
+**interni blu, esterni rossi** — invece di essere quattro voci identiche in
+fila. Non e' decorazione: e' la stessa informazione che il testo gia' porta,
+detta anche dall'occhio, e con un vocabolario che l'operatore conosce gia'
+perche' e' quello dei due calcolatori.
+
+Nel calcolatore, la colonna del laboratorio appartiene al lato della
+concorrenza e ne prende la tinta: introduce il blocco rosso invece di stare in
+un limbo neutro.
+
+## Fette che restano
+
+4. **Import PDF dedicato in Gestione macchinari esterni**, col nome del
+   laboratorio chiesto all'import.
+5. **Gestione macchinari interni**: sezione, import PDF, catalogo.
+6. **Colonna Laboratorio nel calcolatore macchinari**, coi suggerimenti
+   filtrati sul listino di quel laboratorio.
+7. **Colore delle quattro sezioni, traduzioni e verifica end-to-end.**
