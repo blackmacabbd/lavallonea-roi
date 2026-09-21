@@ -1742,3 +1742,22 @@ body.imp-aperto #selettore-lingua { display: none; }
   cursor: pointer; opacity: .75;
 }
 .roi-lega-btn:hover { opacity: 1; border-color: var(--blue); }
+
+/* I due calcolatori sono cio' che si apre ogni giorno: stanno in cima e si
+   leggono come una coppia. Piu' grandi del resto perche' la barra elenca anche
+   cose che si guardano una volta al mese. */
+.nav-item-primario {
+  font-size: 14.5px;
+  font-weight: 600;
+  padding: 11px 16px;
+  color: var(--ink);
+}
+.nav-item-primario .nav-icon { font-size: 17px; }
+.nav-item-primario.active {
+  background: var(--blue-tint);
+  color: var(--blue);
+  box-shadow: inset 3px 0 0 var(--blue);
+  /* Ripetuto qui perche' .nav-item.active e' piu' specifico di
+     .nav-item-primario e gli portava via il peso del testo. */
+  font-weight: 600;
+}

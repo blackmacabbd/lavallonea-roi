@@ -151,32 +151,58 @@ function buildSidebar() {
     <div class="nav-upload" onclick="openUploadModal()">
       <span class="nav-icon">+</span> ${t('menu.upload')}
     </div>
-    <div class="nav-item ${isActive('dashboard')}" onclick="navigate('dashboard')">
-      <span class="nav-icon">📊</span> ${t('menu.dashboard')}
+    <div class="nav-divider">${t('sidebar.divCalcolatori')}</div>
+    <div class="nav-item nav-item-primario ${isActive('dashboard')}" onclick="navigate('dashboard')">
+      <span class="nav-icon">🧮</span> ${t('menu.dashboard')}
     </div>
-    <div class="nav-item ${isActive('calcolatore-clip')}" onclick="navigate('calcolatore-clip')">
-      <span class="nav-icon">🧪</span> ${t('menu.calcolatoreClip')}
+    <div class="nav-item nav-item-primario ${isActive('calcolatore-clip')}" onclick="navigate('calcolatore-clip')">
+      <span class="nav-icon">🔬</span> ${t('menu.calcolatoreClip')}
     </div>
-    <div class="nav-divider">${t('sidebar.divStrutture')}</div>
+
+    <div class="nav-divider">${t('sidebar.divCronologia')}</div>
+    <div class="nav-item ${isActive('cronologia')}" onclick="navigate('cronologia')">
+      <span class="nav-icon">🕘</span> ${t('menu.cronologia')}
+    </div>
+    <div class="nav-item ${isActive('cronologia-clip')}" onclick="navigate('cronologia-clip')">
+      <span class="nav-icon">🕘</span> ${t('menu.cronologiaClip')}
+    </div>
   `;
 
+  // Le strutture si accumulano a parte: sono un elenco lungo e vanno in fondo,
+  // sotto i comandi che si usano ogni giorno.
+  let htmlStrutture = '';
   if (S.strutture.length === 0) {
-    html += `<div style="padding:8px 16px;font-size:12px;color:#9ca3af">${t('sidebar.nessunaStruttura')}</div>`;
+    htmlStrutture += `<div style="padding:8px 16px;font-size:12px;color:#9ca3af">${t('sidebar.nessunaStruttura')}</div>`;
   }
 
   for (const s of S.strutture) {
     const files = s.files || [];
     if (files.length > 1) {
-      // Piu' calcoli salvati sotto la stessa struttura: una riga per file,
-      // etichettate nome, nome(2), nome(3)... in ordine di creazione.
+      // Piu' calcoli salvati sotto la stessa struttura: una riga per file.
+      // "giordano(2)", "giordano(3)" non dicevano niente; il giorno e l'ora si',
+      // perche' e' cosi' che l'operatore ricorda quale dei suoi calcoli cerca.
+      // Due salvati nello stesso minuto restano pero' identici: in quel caso, e
+      // solo in quello, torna il numero a distinguerli.
+      const etichette = files.map(f => {
+        const q = f.data_carico ? new Date(f.data_carico) : null;
+        const quando = q ? q.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '') : '';
+        return quando ? `${s.nome} · ${quando}` : s.nome;
+      });
+      const quante = {};
+      etichette.forEach(e => { quante[e] = (quante[e] || 0) + 1; });
+      const viste = {};
       files.forEach((f, i) => {
-        const label = i === 0 ? s.nome : `${s.nome}(${i + 1})`;
+        let label = etichette[i];
+        if (quante[label] > 1) {
+          viste[label] = (viste[label] || 0) + 1;
+          label = `${label} (${viste[label]})`;
+        }
         const foglio = f.fogli && f.fogli.length ? f.fogli[0] : '';
         const attiva = (window._currentFileId === f.id) ? 'active' : '';
         const onclick = foglio
           ? `navigate('foglio', { fileId: ${f.id}, foglio: '${foglio}', strutturaId: ${s.id} })`
           : `navigate('dashboard')`;
-        html += `
+        htmlStrutture += `
           <div class="struttura-group">
             <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
               <span class="sname">${escHtml(label)}</span>
@@ -191,7 +217,7 @@ function buildSidebar() {
       const onclick = primoFoglio
         ? `navigateToStruttura(${s.id}, '${primoFoglio}')`
         : `navigate('dashboard')`;
-      html += `
+      htmlStrutture += `
         <div class="struttura-group">
           <div class="struttura-header struttura-flat ${attiva}" onclick="${onclick}">
             <span class="sname">${escHtml(s.nome)}</span>
@@ -220,6 +246,11 @@ function buildSidebar() {
     `;
   }
 
+  // Le strutture in fondo: e' l'elenco che cresce di piu' e quello da cui si
+  // decide di meno.
+  html += `<div class="nav-divider" style="margin-top:8px">${t('sidebar.divStrutture')}</div>`;
+  html += htmlStrutture;
+
   // Gruppo a scomparsa "Altro": voci usate raramente / tecniche
   const altroOpen = S.gestioneOpen ? 'open' : '';
   html += `
@@ -231,8 +262,6 @@ function buildSidebar() {
       </div>
       <div class="struttura-children ${altroOpen}">
         <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">${t('menu.risparmioTotale')}</div>
-        <div class="struttura-child ${isActive('cronologia')}" onclick="navigate('cronologia')">${t('menu.cronologia')}</div>
-        <div class="struttura-child ${isActive('cronologia-clip')}" onclick="navigate('cronologia-clip')">${t('menu.cronologiaClip')}</div>
         <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">${t('menu.debugExcel')}</div>
       </div>
     </div>
