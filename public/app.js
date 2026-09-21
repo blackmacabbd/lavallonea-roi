@@ -3700,7 +3700,7 @@ function calcolaRigaClip(r) {
   return { costo_clip: costoClip, totale_clip: totaleClip, totale_mylav: totaleMylav, risparmio };
 }
 
-// Le 14 colonne della tabella, nell'ordine in cui compaiono: struttura, le 6
+// Le 15 colonne della tabella, nell'ordine in cui compaiono: struttura, le 7
 // della clip (concorrenza, nel senso del motore comune: il costo che il
 // veterinario sostiene da solo), le 6 di Mylav, il risparmio e l'eliminazione
 // riga. Le tre colonne del conto — prezzo confezione, pezzi, costo clip — sono
@@ -3713,7 +3713,7 @@ const COLONNE_CLIP = [
   // in un limbo neutro. L'elenco 'clip-lab-list' e' fisso (i laboratori che
   // hanno almeno una clip in catalogo, vedi laboratoriConClip()), a
   // differenza di 'clip-list' che invece cambia riga per riga: vedi
-  // aggiornaListaClipRiga.
+  // aggiornaSuggerimentiClipRiga.
   { col: 'laboratorio',       intestazione: 'clip.tabella.laboratorio', tipo: 'testo',    larghezza: 150, gruppo: 'concorrenza', elenco: 'clip-lab-list',
     segnaposto: () => t('clip.placeholderLaboratorio') },
   { col: 'clip_nome',         intestazione: 'clip.tabella.clip',       tipo: 'testo',     larghezza: 200, larghezzaCampo: 190, gruppo: 'concorrenza', elenco: 'clip-list',
@@ -4021,18 +4021,28 @@ const motoreClip = window.Calcolatore.crea({
     // tutte le righe: si aggiorna al catalogo DELLA RIGA quando quel campo
     // riceve il focus, cosi' mostra sempre le clip del laboratorio scritto
     // li' e mai quello di un'altra riga.
-    wrap.addEventListener('focusin', e => {
-      if (!e.target.matches('[data-col="clip_nome"]')) return;
-      const tr = e.target.closest('tr');
-      if (tr) aggiornaSuggerimentiClipRiga(tr);
-    });
-    // Mentre si scrive il laboratorio, tendina e placeholder seguono a ogni
-    // tasto: non serve aspettare il blur per vedere l'elenco corretto.
-    wrap.addEventListener('input', e => {
-      if (!e.target.matches('[data-col="laboratorio"]')) return;
-      const tr = e.target.closest('tr');
-      if (tr) aggiornaSuggerimentiClipRiga(tr);
-    });
+    //
+    // I due ascoltatori si registrano UNA volta sola sul contenitore.
+    // dopoInizializzaEventi rigira a ogni riga aggiunta o tolta, ma il
+    // contenitore e' sempre lo stesso nodo (cambia solo il suo innerHTML):
+    // senza questa guardia ogni aggiunta di riga ne impilerebbe un altro paio,
+    // mai rimossi. Il marcatore sta sul nodo, quindi si azzera da solo quando
+    // renderCalcolatoreClip ricostruisce la sezione.
+    if (wrap.dataset.ascoltatoriClip !== '1') {
+      wrap.dataset.ascoltatoriClip = '1';
+      wrap.addEventListener('focusin', e => {
+        if (!e.target.matches('[data-col="clip_nome"]')) return;
+        const tr = e.target.closest('tr');
+        if (tr) aggiornaSuggerimentiClipRiga(tr);
+      });
+      // Mentre si scrive il laboratorio, tendina e placeholder seguono a ogni
+      // tasto: non serve aspettare il blur per vedere l'elenco corretto.
+      wrap.addEventListener('input', e => {
+        if (!e.target.matches('[data-col="laboratorio"]')) return;
+        const tr = e.target.closest('tr');
+        if (tr) aggiornaSuggerimentiClipRiga(tr);
+      });
+    }
   },
   // Il lato rosso qui non e' un concorrente ma il costo della clip precaricata:
   // l'etichetta la dichiara il descrittore, invece di correggere il DOM dopo il
