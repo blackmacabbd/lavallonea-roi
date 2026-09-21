@@ -134,8 +134,13 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
    (blu Mylav, rosso concorrenza). Nessun colore nuovo. */
 .nav-item-interni { box-shadow: inset 3px 0 0 var(--blue); }
 .nav-item-esterni { box-shadow: inset 3px 0 0 var(--red); }
-/* Ripetute qui perche' .nav-item.active e' piu' specifico di una singola
-   classe e le vincerebbe: la barretta sparirebbe proprio dentro la sezione. */
+/* Ripetute per prudenza, non per necessita': oggi .nav-item.active non imposta
+   box-shadow, quindi non c'e' nessun conflitto e la barretta si vedrebbe anche
+   senza queste due righe. Restano perche' il giorno in cui .nav-item.active
+   dovesse guadagnare un box-shadow vincerebbe su una classe sola, e la
+   barretta sparirebbe proprio dentro la sezione aperta: e' gia' successo poco
+   piu' sotto con .nav-item-primario, dove il conflitto sul font-weight era
+   invece reale. */
 .nav-item-interni.active { box-shadow: inset 3px 0 0 var(--blue); }
 .nav-item-esterni.active { box-shadow: inset 3px 0 0 var(--red); }
 
