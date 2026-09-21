@@ -239,6 +239,9 @@ function buildSidebar() {
     <div class="nav-item ${isActive('macchinari-esterni')}" onclick="navigate('macchinari-esterni')">
       <span class="nav-icon">🧰</span> ${t('menu.macchinariEsterni')}
     </div>
+    <div class="nav-item ${isActive('macchinari-interni')}" onclick="navigate('macchinari-interni')">
+      <span class="nav-icon">🔬</span> ${t('menu.macchinariInterni')}
+    </div>
   `;
 
   if (S.strutture.length >= 2) {
@@ -415,6 +418,7 @@ function navigate(view, params = {}) {
     case 'piani':      disegno = renderPiani();                                  break;
     case 'concorrenti': disegno = renderConcorrentiAdmin();                      break;
     case 'macchinari-esterni': disegno = renderMacchinariEsterni();              break;
+    case 'macchinari-interni': disegno = renderMacchinariInterni();              break;
     case 'calcolatore-clip': disegno = renderCalcolatoreClip();                  break;
   }
   buildSidebar();
@@ -2636,6 +2640,158 @@ async function confermaRecuperoClip() {
   renderMacchinariListaBody();
   if (S.macchDett) await renderMacchinariDettaglio(S.macchDett.concorrenteId);
   S.macchRecupero = null;
+}
+
+// ══════════════════════════════════════════════════
+// GESTIONE MACCHINARI INTERNI — il catalogo analizzatori Mylav
+// ══════════════════════════════════════════════════
+// E' un catalogo piatto, senza laboratori: il venditore e' sempre Mylav.
+// Non entra in nessun calcolatore (vedi server.js): vendere o noleggiare un
+// analizzatore e' una trattativa a se', separata dal piano di scontistica
+// sugli esami che il calcolatore macchinari confronta.
+
+async function renderMacchinariInterni() {
+  let lista;
+  try { lista = await api('/api/analizzatori'); }
+  catch (e) {
+    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    return;
+  }
+  S.analiz = { lista, filtro: '' };
+
+  setMain(`
+    <div class="page-header">
+      <div><div class="page-title">${t('pagina.macchinariInterni.titolo')}</div>
+        <div class="page-subtitle" id="analiz-sottotitolo"></div>
+      </div>
+      <div class="page-actions">
+        <button class="btn-outline" onclick="importaPdfAnalizzatori()">${t('comune.importaListinoPdf')}</button>
+      </div>
+    </div>
+    <div class="page-body">
+      <div class="td-muted" style="margin-bottom:12px;font-size:13px">${t('analizzatori.importPdfNota')}</div>
+      <input class="roi-input dett-search" id="analiz-search" placeholder="${escHtml(t('analizzatori.cercaPlaceholder'))}"
+             oninput="filtraAnalizzatori(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
+      <div class="table-card" id="analiz-lista-wrap"></div>
+      <div class="section-card" style="margin-top:16px">
+        <div class="section-card-title">${t('analizzatori.aggiungiTitolo')}</div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <label>${t('analizzatori.tabella.nome')}<br><input class="roi-input" id="analiz-nuovo-nome" placeholder="${escHtml(t('analizzatori.placeholderNome'))}" style="width:220px"></label>
+          <label>${t('analizzatori.tabella.prezzo')}<br><input class="roi-input" id="analiz-nuovo-prezzo" type="number" step="0.01" style="width:110px"></label>
+          <label>${t('analizzatori.tabella.noleggio')}<br><input class="roi-input" id="analiz-nuovo-noleggio" type="number" step="0.01" style="width:110px"></label>
+          <label>${t('analizzatori.tabella.note')}<br><input class="roi-input" id="analiz-nuovo-note" style="width:220px"></label>
+          <button class="btn-primary" onclick="salvaAnalizzatoreManuale()">${t('comune.salva')}</button>
+        </div>
+      </div>
+    </div>
+  `);
+  renderAnalizzatoriListaBody();
+}
+
+function renderAnalizzatoriListaBody() {
+  const st = S.analiz;
+  const wrap = el('analiz-lista-wrap');
+  if (!wrap || !st) return;
+
+  const sub = el('analiz-sottotitolo');
+  if (sub) sub.textContent = t('pagina.macchinariInterni.sottotitolo' + (st.lista.length === 1 ? '.uno' : ''), { n: st.lista.length });
+
+  const q = st.filtro.trim();
+  const righe = st.lista
+    .filter(a => !q || Ricerca.corrisponde(a.nome, q))
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'it', { sensitivity: 'base' }));
+
+  if (!righe.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🔬</div>
+      <div class="empty-title">${t('analizzatori.nessunAnalizzatore')}</div></div>`;
+    return;
+  }
+
+  // Dove il prezzo o il canone non sono previsti la cella resta vuota, non
+  // mostra zero: zero e' un fatto diverso ("gratis"), e questa e' l'unica
+  // riga di tutta la vista dove quella distinzione puo' perdersi.
+  const rigaHtml = a => `<tr data-analiz-id="${a.id}">
+    <td>${escHtml(a.nome)}</td>
+    <td><input class="roi-input roi-num" data-campo="prezzo" value="${a.prezzo != null ? a.prezzo : ''}" style="width:100px"></td>
+    <td><input class="roi-input roi-num" data-campo="noleggio" value="${a.noleggio != null ? a.noleggio : ''}" style="width:100px"></td>
+    <td><input class="roi-input" data-campo="note" value="${escHtml(a.note || '')}" style="width:200px"></td>
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="salvaModificaAnalizzatore(${a.id})">${t('comune.salva')}</button>
+      <button class="btn-outline" onclick="eliminaAnalizzatoreUI(${a.id}, ${jsAttr(a.nome)})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
+    </td>
+  </tr>`;
+
+  wrap.innerHTML = `
+    <div class="table-scroll">
+      <table class="roi-editable-table">
+        <thead><tr>
+          <th>${t('analizzatori.tabella.nome')}</th><th>${t('analizzatori.tabella.prezzo')}</th>
+          <th>${t('analizzatori.tabella.noleggio')}</th><th>${t('analizzatori.tabella.note')}</th><th></th>
+        </tr></thead>
+        <tbody>${righe.map(rigaHtml).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+function filtraAnalizzatori(v) {
+  if (!S.analiz) return;
+  S.analiz.filtro = v;
+  renderAnalizzatoriListaBody();
+}
+
+function importaPdfAnalizzatori() {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
+  ImportPdf.avvia({
+    entita: 'analizzatore',
+    alFine: async () => { await renderMacchinariInterni(); }
+  });
+}
+
+async function salvaModificaAnalizzatore(id) {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const tr = document.querySelector(`tr[data-analiz-id="${id}"]`);
+  if (!tr) return;
+  const val = campo => { const inp = tr.querySelector(`[data-campo="${campo}"]`); return inp ? inp.value.trim() : ''; };
+  const prezzo = val('prezzo'), noleggio = val('noleggio'), note = val('note');
+  try {
+    await api(`/api/analizzatori/${id}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prezzo, noleggio, note })
+    });
+    const a = S.analiz.lista.find(x => x.id === id);
+    if (a) {
+      a.prezzo = prezzo === '' ? null : Number(prezzo);
+      a.noleggio = noleggio === '' ? null : Number(noleggio);
+      a.note = note === '' ? null : note;
+    }
+    renderAnalizzatoriListaBody();
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+async function eliminaAnalizzatoreUI(id, nome) {
+  if (!confirm(t('analizzatori.confermaElimina', { nome }))) return;
+  try {
+    await api(`/api/analizzatori/${id}`, { method: 'DELETE' });
+    S.analiz.lista = S.analiz.lista.filter(a => a.id !== id);
+    renderAnalizzatoriListaBody();
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+async function salvaAnalizzatoreManuale() {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const nome = (el('analiz-nuovo-nome')?.value || '').trim();
+  if (!nome) return alert(t('analizzatori.scriviNome'));
+  const prezzo = (el('analiz-nuovo-prezzo')?.value || '').trim();
+  const noleggio = (el('analiz-nuovo-noleggio')?.value || '').trim();
+  const note = (el('analiz-nuovo-note')?.value || '').trim();
+  try {
+    await api('/api/analizzatori', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nome, prezzo, noleggio, note })
+    });
+    await renderMacchinariInterni();
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 // ══════════════════════════════════════════════════

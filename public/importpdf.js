@@ -1,15 +1,17 @@
 /* Import PDF condiviso — analisi guidata, revisione e conferma.
  *
- * Componente unico usato da Gestione piani, Gestione concorrenti e Gestione
- * macchinari esterni.
+ * Componente unico usato da Gestione piani, Gestione concorrenti, Gestione
+ * macchinari esterni e Gestione macchinari interni.
  * Il PDF non viene mai riscaricato dal server: il browser rende il file
  * locale scelto dall'utente, mentre le coordinate delle righe riconosciute
  * arrivano dall'analisi lato server (punti PDF a scala 1, origine in alto a
  * sinistra).
  *
- * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'clip', nomeDefault, file, alFine })
+ * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'clip' | 'analizzatore', nomeDefault, file, alFine })
  * ('clip' e' l'entita' usata da Gestione macchinari esterni: il nome resta
- * quello storico della tabella, il chiamante e' cambiato.)
+ * quello storico della tabella, il chiamante e' cambiato.
+ * 'analizzatore' e' Gestione macchinari interni: a differenza di 'clip' non
+ * chiede nessun nome di laboratorio, perche' il venditore e' sempre Mylav.)
  * Senza `file` il documento viene chiesto all'utente; con `file` si usa quello
  * (serve quando il documento e' gia' stato scelto da un input della pagina).
  * `alFine` viene chiamata dopo un import confermato con successo.
@@ -46,7 +48,7 @@
   // qui, a decidere dove finiscono le righe. Un valore fuori da questa lista
   // (o assente, come nelle chiamate storiche di Gestione piani) ricade su
   // 'piano', il comportamento di sempre.
-  const ENTITA_VALIDE = ['piano', 'concorrente', 'clip'];
+  const ENTITA_VALIDE = ['piano', 'concorrente', 'clip', 'analizzatore'];
 
   // Fascia, sopra e sotto la vista, di pagine tenute gia' disegnate.
   const MARGINE_ANTEPRIMA = 800;

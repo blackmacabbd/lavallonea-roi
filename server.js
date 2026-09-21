@@ -12,6 +12,7 @@ const pdfestrazione = require('./lib/pdfestrazione');
 const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
 const clipLib = require('./lib/clip');
+const analizzatoriLib = require('./lib/analizzatori');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -142,6 +143,9 @@ importbozze.ensureSchema(db);
 
 // ── Catalogo clip ────────────────────────────────────
 clipLib.ensureSchema(db);
+
+// ── Catalogo macchinari interni (analizzatori Mylav) ─
+analizzatoriLib.ensureSchema(db);
 
 // ── Calcolatore clip: fare in casa (clip) o mandare a Mylav? ────────────
 // I valori si salvano come erano al momento del salvataggio, non come
@@ -1710,6 +1714,70 @@ app.post('/api/clip/riconosci', requireAuth, express.json({ limit: '2mb' }), (re
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Catalogo macchinari interni (analizzatori che Mylav vende o noleggia) ──
+// E' un catalogo, non un calcolatore: non serve nessun laboratorio (il
+// venditore e' sempre Mylav), a differenza del catalogo clip.
+app.get('/api/analizzatori', requireAuth, (req, res) => {
+  try { res.json(analizzatoriLib.listaAnalizzatori(db, req.user.id)); }
+  catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
+  try {
+    const { nome, prezzo, noleggio, note } = req.body || {};
+    const nomeTrim = String(nome == null ? '' : nome).trim();
+
+    // Come per le clip: l'inserimento manuale non deve sovrascrivere in
+    // silenzio un analizzatore gia' in catalogo con lo stesso nome. Quel
+    // comportamento (upsert silenzioso) resta dell'import, non della scheda.
+    const esiste = nomeTrim
+      ? db.prepare(`SELECT 1 FROM analizzatori_mylav WHERE user_id = ? AND nome = ?`).get(req.user.id, nomeTrim)
+      : null;
+    if (esiste) {
+      return res.status(409).json({ error: 'Esiste gia\' un analizzatore con questo nome', codice: 'ANALIZZATORE_DUPLICATO' });
+    }
+    const { id } = analizzatoriLib.upsertAnalizzatore(db, {
+      userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note
+    });
+    res.status(201).json({ id });
+  } catch (err) {
+    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
+  }
+});
+
+app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
+  try {
+    const riga = db.prepare(`SELECT * FROM analizzatori_mylav WHERE id = ? AND user_id = ?`).get(Number(req.params.id), req.user.id);
+    if (!riga) return res.status(404).json({ error: 'Analizzatore non trovato', codice: 'ANALIZZATORE_NON_TROVATO' });
+    // Aggiornamento parziale: un campo assente nel corpo lascia il valore
+    // salvato, un campo presente (anche null/'') lo sostituisce. Il nome NON
+    // si cambia da qui: upsertAnalizzatore fa l'upsert per (user_id, nome), e
+    // rinominare per questa via sposterebbe la riga su un'altra chiave invece
+    // di aggiornare quella giusta (stesso motivo per cui /api/clip/:id non
+    // tocca ne' il nome ne' il laboratorio).
+    const body = req.body || {};
+    const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
+    const { id } = analizzatoriLib.upsertAnalizzatore(db, {
+      userId: req.user.id,
+      nome: riga.nome,
+      prezzo: campo('prezzo', riga.prezzo),
+      noleggio: campo('noleggio', riga.noleggio),
+      note: campo('note', riga.note)
+    });
+    res.json({ id });
+  } catch (err) {
+    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
+  }
+});
+
+app.delete('/api/analizzatori/:id', requireAuth, (req, res) => {
+  try {
+    const ok = analizzatoriLib.eliminaAnalizzatore(db, req.params.id, req.user.id);
+    if (!ok) return res.status(404).json({ error: 'Analizzatore non trovato', codice: 'ANALIZZATORE_NON_TROVATO' });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Import PDF condiviso (Gestione Piani e Gestione Concorrenti) ───
 // Due passi distinti: l'analisi NON scrive nel catalogo, produce una bozza;
 // solo la conferma esplicita dell'operatore promuove i dati. Il PDF caricato
@@ -1895,16 +1963,22 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
         plans: {}
       }, req.user.id);
     } else if (bozza.entita === 'analizzatore') {
-      // Guardia esplicita, non un else catch-all: senza questo ramo una bozza
-      // 'analizzatore' (raggiungibile solo con una chiamata diretta all'API,
-      // l'interfaccia non la propone ancora) cadrebbe nell'else e finirebbe
-      // scritta nel catalogo piani Mylav, un catalogo sbagliato per dati di
-      // macchinari interni. Il Task 5 sostituira' questo ramo con la scrittura
-      // reale nel catalogo macchinari interni.
-      return res.status(400).json({
-        error: 'Import macchinari interni non ancora supportato',
-        codice: 'ANALIZZATORE_NON_ANCORA_SUPPORTATO'
-      });
+      // Nessun laboratorio da chiedere qui: il venditore e' sempre Mylav.
+      // Ogni riga col prezzo entra nel catalogo macchinari interni, stessa
+      // forma del ramo 'clip' sopra (transazione unica, tutto o niente).
+      db.exec('BEGIN');
+      try {
+        for (const r of valide) {
+          analizzatoriLib.upsertAnalizzatore(db, {
+            userId: req.user.id, nome: r.nome, prezzo: r.prezzo
+          });
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      risultato = { analizzatoriImportati: valide.length };
     } else {
       // Nessun'altra entita' e' prevista: stesso codice usato all'analisi per
       // lo stesso tipo di errore (rilievo su ENTITA che non deve mai cadere
@@ -1942,14 +2016,18 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       });
       clipImportate++;
     }
+    // Stessa forma di clipImportate sopra: gli analizzatori sono gia' tutti
+    // scritti nel ramo 'analizzatore', il conteggio serve solo per l'audit e
+    // la risposta.
+    const analizzatoriImportati = bozza.entita === 'analizzatore' ? valide.length : 0;
 
     const confermata = importbozze.confermaBozza(db, bozza.id, req.user.id, valide);
     if (!confermata) return res.status(409).json({ error: 'Questa bozza e stata gia confermata', codice: 'BOZZA_GIA_CONFERMATA' });
 
     annota('confermato',
-      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}${clipImportate ? `, ${clipImportate} clip nel catalogo` : ''}`,
+      `${valide.length} righe importate, ${ignorate} ignorate${duplicate ? `, ${duplicate} duplicate accorpate` : ''}${clipImportate ? `, ${clipImportate} clip nel catalogo` : ''}${analizzatoriImportati ? `, ${analizzatoriImportati} analizzatori nel catalogo` : ''}`,
       { nRighe: valide.length });
-    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, clipImportate, ...risultato });
+    res.json({ success: true, entita: bozza.entita, importate: valide.length, ignorate, duplicate, clipImportate, analizzatoriImportati, ...risultato });
   } catch (err) {
     // Un errore che dice "non trovato" e' una risorsa inesistente per questo
     // account: 404. Gli altri sono dati non validi: 400.
