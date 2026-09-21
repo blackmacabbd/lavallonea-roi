@@ -129,6 +129,16 @@ button { cursor: pointer; border: none; background: none; font: inherit; }
 .nav-item.active { background: var(--blue-tint); color: var(--blue); font-weight: 500; }
 .nav-item .nav-icon { font-size: 14px; flex-shrink: 0; }
 
+/* Le quattro sezioni di gestione sono due coppie: il colore lo dice senza
+   parole, riusando il codice che l'operatore gia' legge nei calcolatori
+   (blu Mylav, rosso concorrenza). Nessun colore nuovo. */
+.nav-item-interni { box-shadow: inset 3px 0 0 var(--blue); }
+.nav-item-esterni { box-shadow: inset 3px 0 0 var(--red); }
+/* Ripetute qui perche' .nav-item.active e' piu' specifico di una singola
+   classe e le vincerebbe: la barretta sparirebbe proprio dentro la sezione. */
+.nav-item-interni.active { box-shadow: inset 3px 0 0 var(--blue); }
+.nav-item-esterni.active { box-shadow: inset 3px 0 0 var(--red); }
+
 .nav-upload {
   display: flex;
   align-items: center;

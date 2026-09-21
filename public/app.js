@@ -231,17 +231,17 @@ function buildSidebar() {
 
   html += `
     <div class="nav-divider" style="margin-top:8px">${t('sidebar.divGestione')}</div>
-    <div class="nav-item ${isActive('piani')}" onclick="navigate('piani')">
+    <div class="nav-item nav-item-interni ${isActive('piani')}" onclick="navigate('piani')">
       <span class="nav-icon">💰</span> ${t('menu.piani')}
     </div>
-    <div class="nav-item ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
+    <div class="nav-item nav-item-esterni ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
       <span class="nav-icon">🏷️</span> ${t('menu.concorrenti')}
     </div>
-    <div class="nav-item ${isActive('macchinari-esterni')}" onclick="navigate('macchinari-esterni')">
-      <span class="nav-icon">🧰</span> ${t('menu.macchinariEsterni')}
-    </div>
-    <div class="nav-item ${isActive('macchinari-interni')}" onclick="navigate('macchinari-interni')">
+    <div class="nav-item nav-item-interni ${isActive('macchinari-interni')}" onclick="navigate('macchinari-interni')">
       <span class="nav-icon">🔬</span> ${t('menu.macchinariInterni')}
+    </div>
+    <div class="nav-item nav-item-esterni ${isActive('macchinari-esterni')}" onclick="navigate('macchinari-esterni')">
+      <span class="nav-icon">🧰</span> ${t('menu.macchinariEsterni')}
     </div>
   `;
 
