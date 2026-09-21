@@ -1682,6 +1682,23 @@ app.put('/api/clip/:id/laboratorio', requireAuth, express.json(), (req, res) => 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Elimina un intero listino (tutte le clip di un PDF) in un colpo solo: la via
+// d'uscita per chi ha importato per sbaglio un listino non di macchinari, senza
+// doverne eliminare le righe una per una con una conferma ciascuna. Il nome del
+// file arriva nel CORPO della richiesta, non nell'indirizzo: un nome di file
+// contiene punti, spazi e barre, e infilarlo in un percorso e' un invito agli
+// sbagli. fileOrigine null (o assente dal corpo) chiede il gruppo senza
+// provenienza, che si elimina come gli altri.
+// Va dichiarata prima di DELETE /api/clip/:id, altrimenti 'gruppo' verrebbe
+// letto come un id (stessa cautela di /api/import-pdf/audit sopra).
+app.delete('/api/clip/gruppo', requireAuth, express.json(), (req, res) => {
+  try {
+    const { fileOrigine } = req.body || {};
+    const r = clipLib.eliminaGruppoClip(db, fileOrigine == null ? null : fileOrigine, req.user.id);
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.delete('/api/clip/:id', requireAuth, (req, res) => {
   try {
     const ok = clipLib.eliminaClip(db, req.params.id, req.user.id);
@@ -1840,6 +1857,25 @@ app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
   } catch (err) {
     res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
   }
+});
+
+// Elimina un intero listino (tutti gli analizzatori di un PDF) in un colpo
+// solo. Stessa forma di DELETE /api/clip/gruppo: il file nel corpo, non
+// nell'indirizzo. ANALIZ_SENZA_FILE puo' arrivare qui per lo stesso motivo per
+// cui POST /api/analizzatori lo normalizza: non e' un nome di file, e' il
+// valore convenzionale che il client usa quando la query string non puo'
+// portare NULL. Nel corpo di una DELETE non c'e' quel limite (JSON porta null
+// direttamente), ma si normalizza comunque per non trattarlo come un nome di
+// file vero se un chiamante lo manda per abitudine.
+// Va dichiarata prima di DELETE /api/analizzatori/:id, altrimenti 'gruppo'
+// verrebbe letto come un id (stessa cautela di /api/import-pdf/audit sopra).
+app.delete('/api/analizzatori/gruppo', requireAuth, express.json(), (req, res) => {
+  try {
+    const { fileOrigine } = req.body || {};
+    const fileOrigineOk = fileOrigine === ANALIZ_SENZA_FILE ? null : fileOrigine;
+    const r = analizzatoriLib.eliminaGruppoAnalizzatori(db, fileOrigineOk == null ? null : fileOrigineOk, req.user.id);
+    res.json(r);
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 app.delete('/api/analizzatori/:id', requireAuth, (req, res) => {

@@ -2289,11 +2289,103 @@ async function renderMacchinariEsterni() {
       <input class="roi-input dett-search" id="macch-search" placeholder="${escHtml(t('macchinari.cercaLaboratorioPlaceholder'))}"
              oninput="filtraMacchinariLab(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
       <div class="table-card" id="macch-lista-wrap"></div>
+      <div id="macch-listini-wrap" style="margin-top:16px"></div>
       <div id="macch-recupero-wrap"></div>
       <div id="macch-dettaglio-wrap"></div>
     </div>
   `);
   renderMacchinariListaBody();
+  renderMacchinariListiniBody();
+}
+
+// ── Elenco dei PDF importati, per eliminarli in blocco ──
+// Ortogonale al raggruppamento per laboratorio sopra: una stessa clip ha un
+// laboratorio (a chi appartiene) e un file di provenienza (da quale PDF viene
+// l'ultima volta), e le due cose non coincidono. Calcolato lato client sul
+// catalogo completo (S.macch.clip, gia' caricato sopra): non serve una rotta
+// server dedicata solo per questo elenco, la stessa cosa che fa gia'
+// renderMacchinariListaBody per i conteggi per laboratorio.
+function gruppiClipClient(clip) {
+  const perFile = new Map();
+  clip.forEach(c => {
+    const chiave = c.fileOrigine == null ? null : c.fileOrigine;
+    if (!perFile.has(chiave)) perFile.set(chiave, { fileOrigine: chiave, n: 0, dataUltimo: null });
+    const g = perFile.get(chiave);
+    g.n++;
+    if (c.dataImport && (!g.dataUltimo || c.dataImport > g.dataUltimo)) g.dataUltimo = c.dataImport;
+  });
+  return [...perFile.values()];
+}
+
+function renderMacchinariListiniBody() {
+  const st = S.macch;
+  const wrap = el('macch-listini-wrap');
+  if (!wrap || !st) return;
+
+  const gruppi = gruppiClipClient(st.clip);
+  const conFile = gruppi.filter(g => g.fileOrigine != null)
+    .sort((a, b) => a.fileOrigine.localeCompare(b.fileOrigine, 'it', { sensitivity: 'base' }));
+  const senza = gruppi.find(g => g.fileOrigine == null);
+
+  // Nessun listino PDF (ne' un gruppo senza provenienza con righe dentro):
+  // niente da eliminare in blocco, la sezione non compare.
+  if (!conFile.length && !senza) {
+    wrap.innerHTML = '';
+    return;
+  }
+
+  const dataFmt = d => d ? new Date(d).toLocaleDateString('it-IT') : '';
+
+  const rigaHtml = g => `<tr>
+    <td>${escHtml(g.fileOrigine)}</td>
+    <td class="td-muted">${g.n}</td>
+    <td class="td-muted">${dataFmt(g.dataUltimo)}</td>
+    <td><button class="btn-outline" onclick="eliminaGruppoClipUI(${jsAttr(g.fileOrigine)}, ${g.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button></td>
+  </tr>`;
+
+  const rigaSenza = senza ? `<tr>
+      <td><em>${t('analizzatori.senzaFile')}</em></td>
+      <td class="td-muted">${senza.n}</td>
+      <td class="td-muted">${dataFmt(senza.dataUltimo)}</td>
+      <td><button class="btn-outline" onclick="eliminaGruppoClipUI(null, ${senza.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button></td>
+    </tr>` : '';
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">${t('macchinari.listiniTitolo')}</div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>${t('cronologia.tabella.file')}</th><th>${t('cronologiaClip.tabella.righe')}</th>
+            <th>${t('cronologia.tabella.data')}</th><th></th></tr></thead>
+          <tbody>${conFile.map(rigaHtml).join('')}${rigaSenza}</tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// Elimina un intero listino (tutte le clip di un PDF, gruppo senza
+// provenienza incluso): la via d'uscita per chi ha importato per sbaglio un
+// listino che non era di macchinari. Il numero di righe nella conferma non e'
+// un dettaglio: e' l'unica cosa che distingue tre righe da milleduecentottanta.
+async function eliminaGruppoClipUI(fileOrigine, n) {
+  const nome = fileOrigine == null ? t('analizzatori.senzaFile') : fileOrigine;
+  if (!confirm(t('macchinari.confermaEliminaListino', { nome, n }))) return;
+  try {
+    await api('/api/clip/gruppo', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileOrigine })
+    });
+    S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
+    renderMacchinariListaBody();
+    renderMacchinariListiniBody();
+    // Il laboratorio aperto (se ne ha uno) puo' avere perso righe di quel PDF:
+    // si riallinea alla stessa cache appena ricaricata, come fa eliminaClipUI.
+    if (S.macchDett) {
+      S.macchDett.clip = S.macch.clip.filter(c =>
+        S.macchDett.concorrenteId == null ? c.concorrenteId == null : c.concorrenteId === S.macchDett.concorrenteId);
+      renderMacchinariDettaglioBody();
+    }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
 function renderMacchinariListaBody() {
@@ -2502,6 +2594,7 @@ async function eliminaClipUI(id, nome) {
     if (S.macch) S.macch.clip = S.macch.clip.filter(c => c.id !== id);
     renderMacchinariDettaglioBody();
     renderMacchinariListaBody();
+    renderMacchinariListiniBody();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
@@ -2541,6 +2634,7 @@ async function salvaClipManuale(concorrenteId) {
     });
     S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
     renderMacchinariListaBody();
+    renderMacchinariListiniBody();
     await renderMacchinariDettaglio(concorrenteId);
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
@@ -2645,6 +2739,7 @@ async function confermaRecuperoClip() {
 
   S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
   renderMacchinariListaBody();
+  renderMacchinariListiniBody();
   if (S.macchDett) await renderMacchinariDettaglio(S.macchDett.concorrenteId);
   S.macchRecupero = null;
 }
@@ -2726,7 +2821,10 @@ function renderAnalizzatoriListaBody() {
     <td>${escHtml(g.fileOrigine)}</td>
     <td class="td-muted">${g.n}</td>
     <td class="td-muted">${dataFmt(g.dataUltimo)}</td>
-    <td><button class="btn-outline" onclick="renderAnalizzatoriDettaglio(${jsAttr(g.fileOrigine)})">${t('analizzatori.vediRighe')}</button></td>
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="renderAnalizzatoriDettaglio(${jsAttr(g.fileOrigine)})">${t('analizzatori.vediRighe')}</button>
+      <button class="btn-outline" onclick="eliminaGruppoAnalizzatoriUI(${jsAttr(g.fileOrigine)}, ${g.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button>
+    </td>
   </tr>`;
 
   const rigaSenza = (!q || Ricerca.corrisponde(t('analizzatori.senzaFile'), q))
@@ -2734,7 +2832,10 @@ function renderAnalizzatoriListaBody() {
         <td><em>${t('analizzatori.senzaFile')}</em></td>
         <td class="td-muted">${senza.n}</td>
         <td class="td-muted">${dataFmt(senza.dataUltimo)}</td>
-        <td><button class="btn-outline" onclick="renderAnalizzatoriDettaglio(null)">${t('analizzatori.vediRighe')}</button></td>
+        <td style="display:flex;gap:6px">
+          <button class="btn-outline" onclick="renderAnalizzatoriDettaglio(null)">${t('analizzatori.vediRighe')}</button>
+          ${senza.n > 0 ? `<button class="btn-outline" onclick="eliminaGruppoAnalizzatoriUI(null, ${senza.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button>` : ''}
+        </td>
       </tr>`
     : '';
 
@@ -2894,6 +2995,36 @@ async function eliminaAnalizzatoreUI(id, nome) {
     await api(`/api/analizzatori/${id}`, { method: 'DELETE' });
     if (S.analizDett) S.analizDett.righe = S.analizDett.righe.filter(a => a.id !== id);
     renderAnalizzatoriRigaBody();
+    if (S.analiz) {
+      S.analiz.gruppi = await api('/api/analizzatori/gruppi').catch(() => S.analiz.gruppi);
+      S.analiz.totale = S.analiz.gruppi.reduce((s, g) => s + g.n, 0);
+      renderAnalizzatoriListaBody();
+    }
+  } catch (e) { alert(t('errore.generico', { msg: e.message })); }
+}
+
+// Elimina un intero listino (tutte le righe di un PDF, gruppo senza
+// provenienza incluso): la via d'uscita per chi ha importato per sbaglio un
+// listino che non era di macchinari. Il numero di righe nella conferma non e'
+// un dettaglio: e' l'unica cosa che distingue tre righe da milleduecentottanta.
+async function eliminaGruppoAnalizzatoriUI(fileOrigine, n) {
+  const nome = fileOrigine == null ? t('analizzatori.senzaFile') : fileOrigine;
+  if (!confirm(t('macchinari.confermaEliminaListino', { nome, n }))) return;
+  try {
+    await api('/api/analizzatori/gruppo', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileOrigine })
+    });
+    // Il gruppo aperto (se e' proprio questo) non ha piu' righe da mostrare:
+    // si chiude, altrimenti resterebbe a video con dati ormai cancellati.
+    if (_sottoVista && _sottoVista.tipo === 'analizDett' && _sottoVista.arg === fileOrigine) {
+      _sottoVista = null;
+    }
+    if (S.analizDett && S.analizDett.fileOrigine === fileOrigine) {
+      S.analizDett = null;
+      const wrap = el('analiz-dettaglio-wrap');
+      if (wrap) wrap.innerHTML = '';
+    }
     if (S.analiz) {
       S.analiz.gruppi = await api('/api/analizzatori/gruppi').catch(() => S.analiz.gruppi);
       S.analiz.totale = S.analiz.gruppi.reduce((s, g) => s + g.n, 0);

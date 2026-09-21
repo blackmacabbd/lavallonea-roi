@@ -469,6 +469,9 @@
       'macchinari.assegnaLaboratorio': 'Assegna a un laboratorio',
       'macchinari.assegnaBtn': 'Assegna',
       'macchinari.confermaEliminaClip': 'Eliminare la clip "{nome}"?',
+      'macchinari.listiniTitolo': 'Listini PDF importati',
+      'macchinari.eliminaListinoBtn': 'Elimina questo listino',
+      'macchinari.confermaEliminaListino': 'Eliminare "{nome}"? Se ne vanno tutte le sue righe ({n}). L\'operazione non è reversibile.',
 
       // ── Gestione macchinari interni — il catalogo analizzatori Mylav ──
       'analizzatori.tabella.nome': 'Analizzatore',
@@ -1020,6 +1023,9 @@
       'macchinari.assegnaLaboratorio': 'Assign to laboratory',
       'macchinari.assegnaBtn': 'Assign',
       'macchinari.confermaEliminaClip': 'Delete the clip "{nome}"?',
+      'macchinari.listiniTitolo': 'Imported PDF price lists',
+      'macchinari.eliminaListinoBtn': 'Delete this list',
+      'macchinari.confermaEliminaListino': 'Delete "{nome}"? All its rows will be removed ({n}). This action cannot be undone.',
 
       // ── Internal equipment management — the Mylav analyser catalogue ──
       'analizzatori.tabella.nome': 'Analyser',
@@ -1571,6 +1577,9 @@
       'macchinari.assegnaLaboratorio': 'Attribuer à un laboratoire',
       'macchinari.assegnaBtn': 'Attribuer',
       'macchinari.confermaEliminaClip': 'Supprimer le clip "{nome}" ?',
+      'macchinari.listiniTitolo': 'Tarifs PDF importés',
+      'macchinari.eliminaListinoBtn': 'Supprimer ce tarif',
+      'macchinari.confermaEliminaListino': 'Supprimer "{nome}" ? Toutes ses lignes seront supprimées ({n}). Cette action est irréversible.',
 
       // ── Gestion des équipements internes — le catalogue des analyseurs Mylav ──
       'analizzatori.tabella.nome': 'Analyseur',
@@ -2122,6 +2131,9 @@
       'macchinari.assegnaLaboratorio': 'Asignar a un laboratorio',
       'macchinari.assegnaBtn': 'Asignar',
       'macchinari.confermaEliminaClip': '¿Eliminar el clip "{nome}"?',
+      'macchinari.listiniTitolo': 'Tarifas PDF importadas',
+      'macchinari.eliminaListinoBtn': 'Eliminar esta tarifa',
+      'macchinari.confermaEliminaListino': '¿Eliminar "{nome}"? Se eliminarán todas sus filas ({n}). Esta acción no se puede deshacer.',
 
       // ── Gestión de equipos internos — el catálogo de analizadores Mylav ──
       'analizzatori.tabella.nome': 'Analizador',
