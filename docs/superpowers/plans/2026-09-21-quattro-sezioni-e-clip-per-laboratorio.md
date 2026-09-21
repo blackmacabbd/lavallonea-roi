@@ -421,48 +421,91 @@ git commit -m "feat: catalogo clip visibile e correggibile, con recupero dai lis
 
 ---
 
-### Task 4: Il selettore del laboratorio nel calcolatore clip
+### Task 4: Import PDF dedicato in Gestione macchinari esterni
 
 **Files:**
-- Modify: `public/app.js`, `public/i18n.js`
+- Modify: `lib/importbozze.js`, `lib/concorrenti.js`, `lib/concorrenti.test.js`, `server.js`, `public/importpdf.js`, `public/app.js`, `public/i18n.js`
 
 **Interfaces:**
-- Consumes: `GET /api/clip?concorrenteId=N` dal Task 2.
-- Il descrittore del calcolatore clip vive in `public/app.js` (cercare `motoreClip`); il selettore del concorrente nel calcolatore esami (`selezionaConcorrente`, `roi-concorrente-btn`) e' il modello da imitare.
+- `ENTITA` in `lib/importbozze.js` diventa `['piano', 'concorrente', 'clip', 'analizzatore']`.
+- `trovaOCreaConcorrente(db, nome, userId)` in `lib/concorrenti.js` → `{ id }`: trova il laboratorio per nome o lo crea, **senza scrivere righe di esami**. Serve perche' `upsertConcorrente` scrive anche il listino, e qui il listino e' di clip.
+- Il Task 5 usa la stessa forma per `'analizzatore'`.
 
-- [ ] **Step 1: Il selettore**
+**La regola decisa dal committente:** chi importa in questa sezione sta dichiarando che quel PDF e' un listino di macchinari. Quindi **tutte le righe col prezzo diventano clip**, non solo quelle riconosciute: l'applicazione crede alla dichiarazione invece di indovinare riga per riga. Il riconoscimento serve ancora per **leggere i pezzi** dal nome, non per decidere cosa entra.
 
-In cima al calcolatore clip, accanto al piano, un selettore **Laboratorio** con lo stesso aspetto di quello del concorrente nel calcolatore esami. Alla scelta si carica il catalogo di quel laboratorio in `S.clip.catalogo` e si aggiorna l'elenco dei suggerimenti.
+- [ ] **Step 1: Il laboratorio senza listino esami**
 
-- [ ] **Step 2: I suggerimenti filtrati**
+Scrivere prima il test in `lib/concorrenti.test.js`:
 
-`trovaClip` e la tendina leggono `S.clip.catalogo`, che ora contiene **solo** le clip del laboratorio scelto: e' questo che elimina il mix.
+```javascript
+test('trovaOCreaConcorrente crea il laboratorio senza scrivere esami', () => {
+  const db = new DatabaseSync(':memory:');
+  ensureSchema(db);
+  const a = trovaOCreaConcorrente(db, 'IDEXX', 9);
+  assert.ok(a.id > 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM esami_concorrente').get().c, 0,
+    'un listino di clip non deve inventare righe di esami');
+  const b = trovaOCreaConcorrente(db, 'IDEXX', 9);
+  assert.equal(b.id, a.id, 'lo stesso nome non crea un secondo laboratorio');
+  const c = trovaOCreaConcorrente(db, 'IDEXX', 10);
+  assert.notEqual(c.id, a.id, 'un altro account ha il suo');
+  db.close();
+});
+```
 
-**Senza laboratorio scelto** il campo della clip lo chiede, invece di proporre tutto. Proporre tutto e' esattamente il problema da cui nasce questo lavoro.
+Poi implementarlo: cerca per `nome` e `user_id`, inserisce se manca. E' lo stesso ritaglio gia' presente dentro `upsertConcorrente`: va **estratto e riusato da entrambi**, non copiato, altrimenti nascono due modi di creare un laboratorio che possono divergere.
 
-- [ ] **Step 3: Cambiare laboratorio a riga compilata**
+- [ ] **Step 2: La destinazione `clip` nell'import**
 
-Valgono le due regole gia' in uso negli altri calcolatori, ed e' costato farle funzionare:
-- un valore scritto dall'operatore non viene **mai** sovrascritto da un riempimento automatico;
-- cambiando laboratorio, cio' che era stato riempito **da solo** con le clip del laboratorio precedente si azzera; quello scritto a mano resta.
+In `lib/importbozze.js`, `'clip'` entra in `ENTITA`. In `public/importpdf.js`, `'clip'` entra in `ENTITA_VALIDE` e la finestra chiede **il nome del laboratorio**, con lo stesso campo che gia' chiede il nome del concorrente: e' obbligatorio, e senza di esso la conferma si blocca con un avviso.
+
+In `server.js`, nella conferma, accanto ai rami esistenti:
+
+```javascript
+} else if (bozza.entita === 'clip') {
+  // Chi importa qui sta dichiarando che questo PDF e' un listino di macchinari:
+  // ogni riga col prezzo e' una clip di quel laboratorio. I pezzi si leggono dal
+  // nome quando ci sono; quando non ci sono si lascia vuoto, perche' un costo
+  // per clip sbagliato di un fattore dodici e' peggio di un costo mancante, e
+  // l'operatore lo completa dal catalogo.
+  const nomeLab = String(nome || '').trim();
+  if (!nomeLab) return res.status(400).json({
+    error: 'Manca il nome del laboratorio', codice: 'NOME_LABORATORIO_MANCANTE' });
+  const lab = concorrenti.trovaOCreaConcorrente(db, nomeLab, req.user.id);
+  for (const r of valide) {
+    clipLib.upsertClip(db, {
+      userId: req.user.id, concorrenteId: lab.id, nome: r.nome,
+      prezzoConfezione: r.prezzo, pezzi: clipLib.leggiPezzi(r.nome),
+      sconto: null, fonte: 'pdf'
+    });
+  }
+  risultato = { concorrenteId: lab.id, clipImportate: valide.length };
+}
+```
+
+La chiave `errore.NOME_LABORATORIO_MANCANTE` va nelle quattro lingue.
+
+- [ ] **Step 3: Il pulsante nella sezione**
+
+In Gestione macchinari esterni, un pulsante **«Importa listino PDF»** come quello di Gestione esami esterni, che apre `ImportPdf.avvia({ entita: 'clip', alFine: ... })`.
+
+Sotto il pulsante, una riga che dice cosa succede, perche' qui la regola e' diversa dall'altra sezione: **ogni riga con un prezzo diventera' una clip di questo laboratorio.** Dirlo prima evita la sorpresa di un listino misto importato per errore.
 
 - [ ] **Step 4: Verificare**
 
 ```bash
-node --check public/app.js && npm test
+node --check server.js && node --check public/importpdf.js && node --check public/app.js && npm test
 ```
 
-Con due laboratori in catalogo, ciascuno con una clip dallo stesso nome ma prezzo diverso: scegliere il primo e verificare che il suggerimento e il prezzo siano i suoi; passare al secondo e verificare che cambino. E' la prova che il mix e' sparito.
+Riavviare il server: `server.js` e `lib/` non ricaricano a caldo. Con un account di prova, importare `lib/fixtures/listino-misto-macchine.pdf` come listino di macchinari del laboratorio «ZZ Prova»: **tutte** le righe col prezzo devono diventare clip di quel laboratorio, comprese quelle che sembrano esami — e' la regola decisa. Verificare che i pezzi siano letti dove il nome li porta e vuoti dove non ci sono. Confermare senza il nome del laboratorio deve essere impedito.
 
-Verificare anche il conto: una clip da **448,50** su **12** pezzi deve dare **37,38**.
-
-**Al termine rimuovere l'account di prova.**
+**Al termine rimuovere l'account di prova seguendo l'ordine dei vincoli globali.**
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add public/app.js public/i18n.js
-git commit -m "feat: il calcolatore clip propone solo le clip del laboratorio scelto"
+git add lib/ server.js public/
+git commit -m "feat: import PDF dedicato per i listini di macchinari esterni"
 ```
 
 ---
@@ -470,14 +513,86 @@ git commit -m "feat: il calcolatore clip propone solo le clip del laboratorio sc
 ### Task 5: Gestione macchinari interni
 
 **Files:**
-- Modify: `public/app.js`, `public/i18n.js`, `server.js`
+- Create: `lib/analizzatori.js`, `lib/analizzatori.test.js`
+- Modify: `server.js`, `public/app.js`, `public/i18n.js`, `public/importpdf.js`, `lib/importbozze.js`
 
 **Interfaces:**
-- Produces: tabella `analizzatori_mylav`, rotte `GET/POST/PUT/DELETE /api/analizzatori`, vista `'macchinari-interni'`.
+- `lib/analizzatori.js`: `ensureSchema(db)`, `upsertAnalizzatore(db, {userId, nome, prezzo, noleggio, note})`, `listaAnalizzatori(db, userId)`, `eliminaAnalizzatore(db, id, userId)`.
+- Rotte `GET/POST/PUT/DELETE /api/analizzatori`, e la destinazione `'analizzatore'` nell'import.
 
-**Portata dichiarata:** e' un **catalogo consultabile**, non entra nel calcolo del calcolatore clip. Li' il lato Mylav e' il piano di scontistica sugli esami; vendere o noleggiare un analizzatore e' un'altra trattativa. Se dovesse entrare nel confronto, la struttura cambierebbe e il committente lo dira'.
+**Portata dichiarata:** e' un catalogo. Non entra nel calcolo del calcolatore macchinari, dove il lato Mylav e' il piano di scontistica sugli esami.
 
-- [ ] **Step 1: La tabella**
+- [ ] **Step 1: Scrivere i test**
+
+Creare `lib/analizzatori.test.js`:
+
+```javascript
+'use strict';
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { DatabaseSync } = require('node:sqlite');
+const an = require('./analizzatori');
+
+function dbProva() { const db = new DatabaseSync(':memory:'); an.ensureSchema(db); return db; }
+
+test('upsertAnalizzatore salva e rilegge', () => {
+  const db = dbProva();
+  const { id } = an.upsertAnalizzatore(db, { userId: 1, nome: 'Catalyst One', prezzo: 12000, noleggio: 250 });
+  assert.ok(id > 0);
+  const righe = an.listaAnalizzatori(db, 1);
+  assert.equal(righe.length, 1);
+  assert.equal(righe[0].prezzo, 12000);
+  assert.equal(righe[0].noleggio, 250);
+  db.close();
+});
+
+// Un analizzatore puo' essere solo venduto o solo noleggiato: entrambi i campi
+// sono facoltativi, e "non previsto" non e' la stessa cosa di "costa zero".
+test('prezzo e noleggio sono facoltativi e restano distinti da zero', () => {
+  const db = dbProva();
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Solo noleggio', prezzo: null, noleggio: 180 });
+  const r = an.listaAnalizzatori(db, 1)[0];
+  assert.equal(r.prezzo, null);
+  assert.equal(r.noleggio, 180);
+  db.close();
+});
+
+test('reimportare lo stesso nome aggiorna invece di duplicare', () => {
+  const db = dbProva();
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Catalyst One', prezzo: 12000 });
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Catalyst One', prezzo: 11500 });
+  const righe = an.listaAnalizzatori(db, 1);
+  assert.equal(righe.length, 1);
+  assert.equal(righe[0].prezzo, 11500);
+  db.close();
+});
+
+test('gli analizzatori sono isolati per account', () => {
+  const db = dbProva();
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'A', prezzo: 1 });
+  an.upsertAnalizzatore(db, { userId: 2, nome: 'A', prezzo: 2 });
+  assert.equal(an.listaAnalizzatori(db, 1).length, 1);
+  assert.equal(an.listaAnalizzatori(db, 1)[0].prezzo, 1);
+  db.close();
+});
+
+test('eliminaAnalizzatore tocca solo il proprio account', () => {
+  const db = dbProva();
+  const { id } = an.upsertAnalizzatore(db, { userId: 1, nome: 'A', prezzo: 1 });
+  an.eliminaAnalizzatore(db, id, 2);
+  assert.equal(an.listaAnalizzatori(db, 1).length, 1, 'un altro account non puo cancellarlo');
+  an.eliminaAnalizzatore(db, id, 1);
+  assert.equal(an.listaAnalizzatori(db, 1).length, 0);
+  db.close();
+});
+```
+
+- [ ] **Step 2: Eseguire i test per vederli fallire**
+
+Run: `node --test lib/analizzatori.test.js`
+Expected: FAIL, il modulo non esiste.
+
+- [ ] **Step 3: Il modulo**
 
 ```sql
 CREATE TABLE IF NOT EXISTS analizzatori_mylav (
@@ -492,65 +607,144 @@ CREATE TABLE IF NOT EXISTS analizzatori_mylav (
 );
 ```
 
-`prezzo` e' il prezzo di vendita, `noleggio` il canone: un analizzatore puo' avere l'uno, l'altro o entrambi, quindi entrambi sono facoltativi.
+Stesso stile degli altri moduli: `snake_case` nel database, `camelCase` in uscita, filtro per `user_id` su ogni lettura e scrittura. Attenzione a non confondere `null` con `0` nella conversione: un canone non previsto e un canone gratuito sono due cose diverse.
 
-- [ ] **Step 2: Le rotte**
+- [ ] **Step 4: Rotte e import**
 
-Quattro rotte con `requireAuth`, tutte filtrate per `req.user.id`, con un `codice` sugli errori come le altre: `ANALIZZATORE_NON_TROVATO`, `ANALIZZATORE_DUPLICATO`.
+Le quattro rotte con `requireAuth`, coi codici `ANALIZZATORE_NON_TROVATO` e `ANALIZZATORE_DUPLICATO`, tradotti nelle quattro lingue. E la destinazione `'analizzatore'` nell'import, che **non chiede nessun laboratorio** — il laboratorio e' Mylav — e porta ogni riga col prezzo nel catalogo, come fa `'clip'` col suo.
 
-- [ ] **Step 3: La sezione**
+- [ ] **Step 5: La sezione**
 
-**«Gestione macchinari interni»** — `Mylav equipment` / `Équipements Mylav` / `Equipos Mylav`. Elenco con nome, prezzo, canone e note; aggiunta, modifica e cancellazione a mano; barra di ricerca con `Ricerca.corrisponde`.
+**«Gestione macchinari interni»**, con lo stesso impianto delle altre: pulsante di import, elenco con nome, prezzo, canone e note, aggiunta, modifica e cancellazione a mano, barra di ricerca con `Ricerca.corrisponde`.
 
-L'import PDF di un listino di analizzatori Mylav **non** fa parte di questa fetta: prima serve capire se il committente ha un PDF di quel tipo, e con che forma.
+Dove il canone non e' previsto la cella resta vuota, non mostra zero: zero vuol dire gratis, ed e' un'altra informazione.
 
-- [ ] **Step 4: Verificare**
+- [ ] **Step 6: Verificare**
+
+```bash
+node --check server.js && node --check public/app.js && npm test
+```
+
+Riavviare il server. Con un account di prova: importare un PDF come listino Mylav e verificare che le righe entrino nel catalogo; aggiungere un analizzatore a mano con il solo canone e verificare che il prezzo resti vuoto; modificarlo, cercarlo, eliminarlo.
+
+**Al termine rimuovere l'account di prova.**
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add lib/analizzatori.js lib/analizzatori.test.js server.js public/
+git commit -m "feat: gestione macchinari interni, con import PDF e catalogo"
+```
+
+---
+
+### Task 6: La colonna Laboratorio nel calcolatore macchinari
+
+**Files:**
+- Modify: `public/app.js`, `public/i18n.js`, `public/style.css`, `server.js`
+
+**Interfaces:**
+- Consumes: `GET /api/clip?concorrenteId=N` e l'elenco dei laboratori.
+- Il descrittore del calcolatore vive in `public/app.js` (cercare `motoreClip`); il motore comune e' `public/calcolatore.js`.
+
+**Come lo vuole il committente:** si scrive la struttura, si scrive il laboratorio, e da quel momento la ricerca delle clip pesca **dal listino di quel laboratorio**.
+
+- [ ] **Step 1: La colonna**
+
+Nuova colonna `laboratorio`, **subito dopo `struttura`**, prima del blocco delle clip:
+
+```javascript
+{ col: 'laboratorio', intestazione: 'clip.tabella.laboratorio', tipo: 'testo',
+  larghezza: 150, gruppo: 'concorrenza', elenco: 'clip-lab-list',
+  segnaposto: 'clip.placeholderLaboratorio' }
+```
+
+Sta nel gruppo della concorrenza e ne prende la tinta rossa: e' il lato di chi vende la clip, e cosi' introduce il blocco invece di restare in un limbo neutro.
+
+La riga vuota guadagna `laboratorio: ''`. Il salvataggio e la riapertura lo conservano, quindi serve una colonna `laboratorio` anche in `righe_calcolo_clip`, aggiunta con `addColIfMissing` — additiva, mai distruttiva.
+
+- [ ] **Step 2: I suggerimenti del laboratorio**
+
+Il campo e' a testo libero con la tendina, come gli altri: si scrive qualche lettera e compaiono i laboratori **che hanno clip in catalogo**, con `Ricerca.corrisponde`, quindi tollerante agli errori di battitura e all'ordine delle parole.
+
+- [ ] **Step 3: Il filtro delle clip, per riga**
+
+Scritto un laboratorio che corrisponde a uno esistente, il catalogo **di quella riga** diventa il suo: la tendina della clip e `trovaClip` propongono solo le sue.
+
+**Il catalogo filtrato deve stare per riga, non per tabella.** Due righe possono confrontare laboratori diversi nello stesso calcolo, ed e' un caso normale quando si mettono a confronto due fornitori: tenerlo in una variabile unica del calcolatore darebbe alla seconda riga le clip della prima, che e' il mix in forma peggiore perche' sembra corretto.
+
+Senza laboratorio scritto, il campo della clip **lo chiede** invece di proporre tutto.
+
+- [ ] **Step 4: Cambiare laboratorio a riga compilata**
+
+Valgono le due regole degli altri calcolatori, ed e' costato farle funzionare:
+- un valore scritto dall'operatore non viene **mai** sovrascritto da un riempimento automatico;
+- cambiando laboratorio, cio' che era stato riempito **da solo** per il laboratorio precedente si azzera, **e anche il nome della clip** se quella clip non esiste nel listino nuovo. Lasciarlo mostrerebbe la clip di un laboratorio sotto il nome di un altro.
+
+- [ ] **Step 5: Verificare**
 
 ```bash
 node --check public/app.js && node --check server.js && npm test
 ```
 
-Con un account di prova: creare un analizzatore, modificarlo, cercarlo, eliminarlo; verificare che un altro account non veda il primo.
+Con **due** laboratori, ciascuno con una clip dallo stesso nome e prezzo diverso: scrivere il primo e verificare che suggerimento e prezzo siano i suoi; passare al secondo e verificare che cambino. Poi **due righe con due laboratori diversi nello stesso calcolo**: ciascuna deve proporre le sue. E' la prova che il mix e' sparito.
+
+Verificare anche che 448,50 su 12 pezzi dia **37,38**, e che salvando e riaprendo il calcolo il laboratorio resti.
 
 **Al termine rimuovere l'account di prova.**
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add public/app.js public/i18n.js server.js
-git commit -m "feat: catalogo degli analizzatori che Mylav vende o noleggia"
+git add public/app.js public/i18n.js public/style.css server.js
+git commit -m "feat: colonna laboratorio nel calcolatore, con le clip di quel listino"
 ```
 
 ---
 
-### Task 6: Traduzioni e verifica end-to-end
+### Task 7: Le quattro sezioni come due coppie, traduzioni e verifica
 
 **Files:**
-- Modify: `public/i18n.js`, e correzioni dove la verifica le richiede.
+- Modify: `public/app.js`, `public/style.css`, `public/i18n.js`
 
-- [ ] **Step 1: Censire le stringhe nuove**
+- [ ] **Step 1: Il colore dice a chi appartiene la cosa**
 
-```bash
-grep -nE ">[A-ZÀ-Ú][^<>{}]{3,70}<|placeholder=\"[^\"]+\"|alert\('[^']+'|alert\(\`[^\`]+|confirm\(\`[^\`]+|confirm\('[^']+'" public/app.js public/importpdf.js
+Il progetto usa gia' **blu `--blue` per Mylav e rosso `--red` per la concorrenza**, ed e' il vocabolario dei due calcolatori. Le quattro voci di gestione lo ereditano: **interni blu, esterni rossi**, con una barretta di colore a sinistra della voce nel menu.
+
+Non e' decorazione: e' l'informazione che il testo gia' porta, detta anche dall'occhio. E **non si aggiunge nessun colore nuovo** — la tavolozza resta quella, che e' il motivo per cui l'operatore la sa gia' leggere.
+
+Le quattro voci stanno sotto un unico divisore **GESTIONE**, in quest'ordine: esami interni, esami esterni, macchinari interni, macchinari esterni. Prima la coppia che si usa di piu', e dentro ogni coppia prima Mylav.
+
+```css
+/* Le quattro sezioni di gestione sono due coppie: il colore lo dice senza
+   parole, riusando il codice che l'operatore gia' legge nei calcolatori. */
+.nav-item-interni { box-shadow: inset 3px 0 0 var(--blue); }
+.nav-item-esterni { box-shadow: inset 3px 0 0 var(--red); }
 ```
 
-Ogni stringa visibile introdotta dai task 2-5 deve passare da `t()`, con la chiave nei quattro blocchi. Il censimento va nel report.
+Attenzione alla specificita': `.nav-item.active` definisce gia' un `box-shadow` e vincerebbe. Le regole della voce attiva vanno scritte per entrambe le classi, altrimenti la barretta sparisce proprio quando sei dentro quella sezione — e' un difetto gia' incontrato in questo progetto con il peso del testo.
 
-- [ ] **Step 2: Parita' delle chiavi**
+- [ ] **Step 2: Censire le stringhe nuove**
+
+```bash
+grep -nE ">[A-ZÀ-Ú][^<>{}]{3,70}<|placeholder=\"[^\"]+\"|alert\('[^']+'|confirm\('[^']+'" public/app.js public/importpdf.js
+```
+
+Ogni stringa visibile introdotta dai task 4-6 deve passare da `t()`, con la chiave nei quattro blocchi.
+
+- [ ] **Step 3: Parita' delle chiavi**
 
 Rieseguire il controllo dello Step 3 del Task 1.
 
-- [ ] **Step 3: Giro completo nelle quattro lingue**
+- [ ] **Step 4: Giro completo nelle quattro lingue**
 
-Con un account di prova, in italiano, inglese, francese e spagnolo: le quattro sezioni nuove o rinominate, i due calcolatori, le due cronologie, e la finestra di import fino alla revisione. Cercare testo italiano residuo e avvisi «chiave mancante» in console.
+Le quattro sezioni, i due calcolatori, le due cronologie e la finestra di import fino alla revisione, in italiano, inglese, francese e spagnolo. Cercare testo italiano residuo e avvisi «chiave mancante» in console.
 
-- [ ] **Step 4: La prova che conta**
+- [ ] **Step 5: La prova che conta**
 
-Due laboratori, ciascuno con una `Chem 17 CLIP` a prezzi diversi. Nel calcolatore, scegliendo l'uno o l'altro, il suggerimento e il prezzo devono cambiare. E il costo per clip di una confezione da **448,50** su **12** pezzi deve essere **37,38**.
+Importare un listino di macchinari per il laboratorio A e uno per il laboratorio B, con una clip dallo stesso nome e prezzi diversi. Nel calcolatore, due righe: scrivendo A nella prima e B nella seconda, ciascuna deve proporre e riempire **le sue**. E 448,50 su 12 pezzi deve dare **37,38**.
 
-Sul listino reale, il recupero deve trovare **11 clip**.
-
-- [ ] **Step 5: Suite e stato del database**
+- [ ] **Step 6: Suite e stato del database**
 
 ```bash
 npm test
@@ -566,34 +760,35 @@ db.close();"
 
 Attese: 11 utenti, 1 concorrente, 0 orfani, e le tabelle nuove vuote dopo la pulizia.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add -A
-git commit -m "feat: traduzioni delle quattro sezioni e verifica nelle quattro lingue"
+git commit -m "feat: le quattro sezioni si leggono come due coppie, e verifica nelle quattro lingue"
 ```
 
 ---
 
 ## Self-review
 
-**Copertura dello spec:**
+**Copertura della correzione del 2026-09-21:**
 
 | Requisito | Task |
 |---|---|
-| Rinomina esami interni ed esterni | 1 |
-| Un laboratorio, due listini | 2 |
-| Le clip esistenti non si perdono e non vengono attribuite d'ufficio | 2 (test), 3 (gruppo «non indicato») |
-| Due laboratori possono vendere la stessa clip | 2 (test) |
-| Catalogo clip visibile e correggibile | 3 |
-| Recupero dai listini gia' importati, con conferma | 3 |
-| Selettore laboratorio, suggerimenti filtrati | 4 |
-| Gestione macchinari interni come catalogo | 5 |
-| Quattro lingue | 1-5 per le chiavi, 6 per la verifica |
+| Ogni sezione ha il suo import PDF | 4 (esterni), 5 (interni) |
+| Tutte le righe col prezzo diventano clip | 4 |
+| Il laboratorio si nomina all'import | 4 |
+| La spunta e il recupero restano | gia' fatti nelle fette 2 e 3 |
+| Gestione macchinari interni esiste | 5 |
+| Colonna laboratorio subito dopo struttura | 6 |
+| I suggerimenti pescano da quel listino | 6 |
+| Le quattro sezioni come due coppie, coi colori Mylav | 7 |
+| Quattro lingue | 4-6 per le chiavi, 7 per la verifica |
 
 **Punti annotati durante la stesura:**
 
-- Il vincolo `UNIQUE(user_id, nome)` sulla tabella `clip` e' il punto rischioso: impedirebbe a due laboratori di vendere la stessa clip, e SQLite non sa toglierlo senza ricostruire la tabella. Il Task 2 lo fa dentro una transazione, conservando gli id, con un test che parte dallo schema vecchio e verifica che la riga sopravviva.
-- In SQLite i `NULL` sono distinti fra loro dentro un `UNIQUE`: senza il secondo indice parziale, una clip senza laboratorio potrebbe entrare due volte. E' un difetto in cui questo progetto e' gia' incappato, e c'e' un test apposta.
-- Le clip senza laboratorio devono essere **visibili**, altrimenti esistono nel database e non si vedono da nessuna parte. Il gruppo «laboratorio non indicato» del Task 3 e' cio' che le rende raggiungibili.
-- Il recupero dai listini **non scrive niente** finche' l'operatore non conferma. Smistare righe senza conferma e' l'errore che ha reso sbagliata la logica dei macchinari.
+- `trovaOCreaConcorrente` esiste perche' `upsertConcorrente` scrive anche righe di esami: usarlo per un listino di clip inventerebbe un listino esami vuoto. Il ritaglio va estratto e condiviso, non copiato, altrimenti nascono due modi di creare un laboratorio che possono divergere.
+- Il catalogo filtrato dev'essere **per riga** e non per tabella. Due righe possono confrontare laboratori diversi nello stesso calcolo, e una variabile unica darebbe alla seconda le clip della prima: e' lo stesso errore del mix che questo lavoro elimina, in forma peggiore perche' non si vede.
+- Cambiando laboratorio va azzerato anche il nome della clip se non appartiene al listino nuovo. Lasciarlo mostrerebbe la clip di un laboratorio sotto il nome di un altro, e sembrerebbe corretto.
+- Il colore delle quattro sezioni non introduce nulla di nuovo: riusa il blu e il rosso che l'operatore gia' legge nei calcolatori. Un terzo colore avrebbe aggiunto una convenzione da imparare per dire una cosa che il testo gia' dice.
+- La specificita' di `.nav-item.active` ha gia' morso una volta in questo progetto, portando via il peso del testo alle voci grandi della barra. Qui porterebbe via la barretta di colore esattamente quando serve.
