@@ -2269,10 +2269,12 @@ async function renderMacchinariEsterni() {
         <div class="page-subtitle" id="macch-sottotitolo"></div>
       </div>
       <div class="page-actions">
+        <button class="btn-outline" onclick="importaPdfMacchinari()">${t('comune.importaListinoPdf')}</button>
         <button class="btn-outline" onclick="avviaRecuperoClip()">${t('macchinari.recuperaBtn')}</button>
       </div>
     </div>
     <div class="page-body">
+      <div class="td-muted" style="margin-bottom:12px;font-size:13px">${t('macchinari.importPdfNota')}</div>
       <input class="roi-input dett-search" id="macch-search" placeholder="${escHtml(t('macchinari.cercaLaboratorioPlaceholder'))}"
              oninput="filtraMacchinariLab(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
       <div class="table-card" id="macch-lista-wrap"></div>
@@ -2338,6 +2340,19 @@ function filtraMacchinariLab(v) {
   if (!S.macch) return;
   S.macch.filtro = v;
   renderMacchinariListaBody();
+}
+
+// ── Import PDF ──
+// Stesso componente condiviso di Gestione piani e Gestione concorrenti, con
+// una regola diversa dalle altre due: qui l'operatore sta dichiarando che
+// l'intero PDF e' un listino di macchinari, quindi ogni riga col prezzo
+// diventa una clip del laboratorio indicato (vedi server.js, entita' 'clip').
+function importaPdfMacchinari() {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.importareListino') })); return; }
+  ImportPdf.avvia({
+    entita: 'clip',
+    alFine: async () => { await renderMacchinariEsterni(); }
+  });
 }
 
 // concorrenteId puo' essere null: e' il gruppo "laboratorio non indicato". Il

@@ -6,7 +6,7 @@
  * arrivano dall'analisi lato server (punti PDF a scala 1, origine in alto a
  * sinistra).
  *
- * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente', nomeDefault, file, alFine })
+ * Uso:  ImportPdf.avvia({ entita: 'piano' | 'concorrente' | 'clip', nomeDefault, file, alFine })
  * Senza `file` il documento viene chiesto all'utente; con `file` si usa quello
  * (serve quando il documento e' gia' stato scelto da un input della pagina).
  * `alFine` viene chiamata dopo un import confermato con successo.
@@ -43,7 +43,7 @@
   // qui, a decidere dove finiscono le righe. Un valore fuori da questa lista
   // (o assente, come nelle chiamate storiche di Gestione piani) ricade su
   // 'piano', il comportamento di sempre.
-  const ENTITA_VALIDE = ['piano', 'concorrente'];
+  const ENTITA_VALIDE = ['piano', 'concorrente', 'clip'];
 
   // Fascia, sopra e sotto la vista, di pagine tenute gia' disegnate.
   const MARGINE_ANTEPRIMA = 800;
@@ -431,12 +431,12 @@
               <button type="button" class="imp-mini" id="imp-aggiungi">${esc(t('importPdf.aggiungiRigaBtn'))}</button>
             </div>
           </div>
-          ${S.entita === 'concorrente' ? `
+          ${S.entita === 'concorrente' || S.entita === 'clip' ? `
             <div class="imp-campo">
-              <label for="imp-nome-conc">${esc(t('importPdf.labelNomeConcorrente'))}</label>
+              <label for="imp-nome-conc">${esc(t(S.entita === 'clip' ? 'importPdf.labelNomeLaboratorio' : 'importPdf.labelNomeConcorrente'))}</label>
               <input class="roi-input" id="imp-nome-conc" value="${esc(S.nomeDefault)}" placeholder="${esc(t('concorrenti.placeholderNomeEsempio'))}">
             </div>
-            <div class="imp-campo imp-clip-barra" id="imp-clip-barra"></div>` : ''}
+            ${S.entita === 'concorrente' ? `<div class="imp-campo imp-clip-barra" id="imp-clip-barra"></div>` : ''}` : ''}
           <div class="imp-tab" id="imp-tab"></div>
         </div>
       </div>
@@ -775,13 +775,15 @@
   async function conferma() {
     const righe = valide();
     if (!righe.length) return;
-    // Per l'entita' 'concorrente' il nome e' testo libero digitato
-    // dall'operatore. Nessun altro caso invia questo campo.
-    const nomeConc = S.entita === 'concorrente'
+    // Per le entita' 'concorrente' e 'clip' il nome e' testo libero digitato
+    // dall'operatore (il concorrente o il laboratorio). Nessun altro caso
+    // invia questo campo.
+    const chiedeNome = S.entita === 'concorrente' || S.entita === 'clip';
+    const nomeConc = chiedeNome
       ? String((document.getElementById('imp-nome-conc') || {}).value || '').trim()
       : '';
-    if (S.entita === 'concorrente' && !nomeConc) {
-      alert(t('importPdf.alertNomeConcorrente'));
+    if (chiedeNome && !nomeConc) {
+      alert(t(S.entita === 'clip' ? 'importPdf.alertNomeLaboratorio' : 'importPdf.alertNomeConcorrente'));
       const i = document.getElementById('imp-nome-conc');
       if (i) i.focus();
       return;
