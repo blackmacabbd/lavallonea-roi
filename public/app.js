@@ -2064,12 +2064,16 @@ async function eliminaConcorrenteUI(id) {
   let nClip = 0;
   try { nClip = (await api(`/api/clip?concorrenteId=${id}`)).length; } catch (_) { /* meglio un avviso incompleto che nessuno */ }
 
+  // Una frase sola per il caso con le clip: i conteggi fra parentesi non hanno
+  // singolare ne' plurale, quindi non producono "i suoi 1 esami" in nessuna
+  // delle quattro lingue. E il conteggio degli esami non puo' arrivare nullo
+  // dentro la frase, altrimenti a schermo comparirebbe il segnaposto.
   const chiave = nClip > 0
-    ? (nClip === 1 ? 'concorrenti.confermaElimina.conClip.uno' : 'concorrenti.confermaElimina.conClip')
+    ? 'concorrenti.confermaElimina.conClip'
     : (nEsami == null
       ? 'concorrenti.confermaElimina.senzaConteggio'
       : (nEsami === 1 ? 'concorrenti.confermaElimina.uno' : 'concorrenti.confermaElimina.molti'));
-  if (!confirm(t(chiave, { nome, n: nEsami, nClip }))) return;
+  if (!confirm(t(chiave, { nome, n: nEsami == null ? '?' : nEsami, nClip }))) return;
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     scordaSottoVista('concorrente', id);
