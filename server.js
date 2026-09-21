@@ -1867,21 +1867,52 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
       if (!nomeLab) return res.status(400).json({
         error: 'Manca il nome del laboratorio', codice: 'NOME_LABORATORIO_MANCANTE' });
       const lab = concorrenti.trovaOCreaConcorrente(db, nomeLab, req.user.id);
-      for (const r of valide) {
-        clipLib.upsertClip(db, {
-          userId: req.user.id, concorrenteId: lab.id, nome: r.nome,
-          prezzoConfezione: r.prezzo, pezzi: clipLib.leggiPezzi(r.nome),
-          sconto: null, fonte: 'pdf'
-        });
+      // Stessa forma di upsertConcorrente (lib/concorrenti.js): un fallimento a
+      // meta' elenco non deve lasciare solo alcune clip scritte. Il PRAGMA
+      // foreign_keys non e' toccato qui: in node:sqlite non e' transazionale
+      // ed e' un no-op dentro una transazione, quindi non ha nulla da fare in
+      // questo blocco.
+      db.exec('BEGIN');
+      try {
+        for (const r of valide) {
+          clipLib.upsertClip(db, {
+            userId: req.user.id, concorrenteId: lab.id, nome: r.nome,
+            prezzoConfezione: r.prezzo, pezzi: clipLib.leggiPezzi(r.nome),
+            sconto: null, fonte: 'pdf'
+          });
+        }
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
       }
       risultato = { concorrenteId: lab.id, clipImportate: valide.length };
-    } else {
+    } else if (bozza.entita === 'piano') {
       // Aggiorna i prezzi base della PROPRIA copia del catalogo: upsert per nome,
       // nessuna cancellazione degli esami assenti dal PDF e nessun piano toccato.
       risultato = piani.upsertFromJson(db, {
         exams_base_price: Object.fromEntries(valide.map(r => [r.nome, r.prezzo])),
         plans: {}
       }, req.user.id);
+    } else if (bozza.entita === 'analizzatore') {
+      // Guardia esplicita, non un else catch-all: senza questo ramo una bozza
+      // 'analizzatore' (raggiungibile solo con una chiamata diretta all'API,
+      // l'interfaccia non la propone ancora) cadrebbe nell'else e finirebbe
+      // scritta nel catalogo piani Mylav, un catalogo sbagliato per dati di
+      // macchinari interni. Il Task 5 sostituira' questo ramo con la scrittura
+      // reale nel catalogo macchinari interni.
+      return res.status(400).json({
+        error: 'Import macchinari interni non ancora supportato',
+        codice: 'ANALIZZATORE_NON_ANCORA_SUPPORTATO'
+      });
+    } else {
+      // Nessun'altra entita' e' prevista: stesso codice usato all'analisi per
+      // lo stesso tipo di errore (rilievo su ENTITA che non deve mai cadere
+      // in un ramo implicito).
+      return res.status(400).json({
+        error: `Destinazione non valida: attese ${importbozze.ENTITA.join(' o ')}`,
+        codice: 'DESTINAZIONE_NON_VALIDA'
+      });
     }
 
     // Una clip e' una voce del listino del concorrente e li' resta: entra nel
@@ -1898,7 +1929,11 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     // dell'import, non una spunta per riga). Farle passare anche di qui le
     // scriverebbe due volte, la seconda con fonte 'concorrente' invece di
     // 'pdf'.
-    let clipImportate = 0;
+    // Per l'entita' 'clip' le clip sono gia' tutte scritte nel ramo sopra: il
+    // conteggio parte da li' cosi' l'audit di conferma le nomina, senza
+    // toccare il messaggio prodotto per le altre entita' (che restano a 0 e
+    // passano dal solo ciclo sotto, come prima).
+    let clipImportate = bozza.entita === 'clip' ? valide.length : 0;
     for (const r of (bozza.entita === 'concorrente' ? valide : [])) {
       if (!r.clip) continue;
       clipLib.upsertClip(db, {
