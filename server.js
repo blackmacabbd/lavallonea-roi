@@ -1863,17 +1863,17 @@ app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
 // solo. Stessa forma di DELETE /api/clip/gruppo: il file nel corpo, non
 // nell'indirizzo. ANALIZ_SENZA_FILE puo' arrivare qui per lo stesso motivo per
 // cui POST /api/analizzatori lo normalizza: non e' un nome di file, e' il
-// valore convenzionale che il client usa quando la query string non puo'
-// portare NULL. Nel corpo di una DELETE non c'e' quel limite (JSON porta null
-// direttamente), ma si normalizza comunque per non trattarlo come un nome di
-// file vero se un chiamante lo manda per abitudine.
+// Qui il nome viaggia nel corpo, e un corpo JSON sa portare null: la sentinella
+// ANALIZ_SENZA_FILE NON si usa e non si traduce. Tradurla qui aprirebbe l'unico
+// caso in cui il numero mostrato nella conferma e il numero davvero cancellato
+// possono divergere, e questa e' un'operazione irreversibile. Il lato clip fa
+// gia' cosi'; le due cancellazioni si comportano allo stesso modo.
 // Va dichiarata prima di DELETE /api/analizzatori/:id, altrimenti 'gruppo'
 // verrebbe letto come un id (stessa cautela di /api/import-pdf/audit sopra).
 app.delete('/api/analizzatori/gruppo', requireAuth, express.json(), (req, res) => {
   try {
     const { fileOrigine } = req.body || {};
-    const fileOrigineOk = fileOrigine === ANALIZ_SENZA_FILE ? null : fileOrigine;
-    const r = analizzatoriLib.eliminaGruppoAnalizzatori(db, fileOrigineOk == null ? null : fileOrigineOk, req.user.id);
+    const r = analizzatoriLib.eliminaGruppoAnalizzatori(db, fileOrigine == null ? null : fileOrigine, req.user.id);
     res.json(r);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
