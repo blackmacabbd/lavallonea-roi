@@ -968,7 +968,8 @@ console.log('orfani piani:', db.prepare('SELECT COUNT(*) c FROM piani_sconto WHE
 db.close();"
 ```
 
-Attese: 11 utenti, 1 concorrente, 0 orfani, e le tabelle nuove vuote dopo la pulizia.
+Attese: 11 utenti, 0 concorrenti (il committente ha eliminato il suo il 21/09), 0 orfani, e
+le tabelle nuove vuote dopo la pulizia.
 
 - [ ] **Step 7: Commit**
 
