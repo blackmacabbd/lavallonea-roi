@@ -1090,6 +1090,13 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   font-style: italic;
 }
 
+/* Stessa cosa, lato blu: il campo profilo Mylav "chiede" il listino Mylav
+   invece di proporre tutto il catalogo quando la riga non ne ha ancora uno
+   risolto (vedi aggiornaSuggerimentiMylavRiga in app.js). */
+#clip-table-wrap input[data-col="profilo_mylav"].roi-clip-in-attesa-listino::placeholder {
+  font-style: italic;
+}
+
 .roi-del-btn {
   width: 22px;
   height: 22px;

@@ -25,6 +25,12 @@ const S = {
     catalogo: [],           // clip dell'account (GET /api/clip), per i suggerimenti
     righe: [clipRigaVuota()]
   },
+  // Catalogo analizzatori_mylav (GET /api/analizzatori, tutte le righe
+  // dell'account), condiviso dai DUE calcolatori per la colonna "Listino
+  // Mylav": non e' per-calcolatore come S.clip/S.roi, quindi vive qui e non
+  // dentro S.analiz (quello e' lo stato della pagina Gestione macchinari
+  // interni, sostituito per intero ogni volta che quella pagina si apre).
+  analizzatoriCatalogo: null,
   auth: {
     token: localStorage.getItem('authToken') || null,
     email: localStorage.getItem('authEmail') || null,
@@ -39,6 +45,10 @@ function roiRigaVuota() {
   // I due campi nuovi sono il lato concorrenza.
   return {
     esame_concorrente: '', n_concorrenza: '',
+    // listino_mylav: quale PDF di analizzatori_mylav guida i suggerimenti/il
+    // prezzo del lato Mylav per QUESTA riga (colonna "Listino Mylav", non
+    // salvata: vedi la nota nel calcolatore).
+    listino_mylav: '',
     esame: '', n_esami: 1,
     listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: ''
   };
@@ -51,6 +61,9 @@ function clipRigaVuota() {
   return {
     laboratorio: '',
     clip_nome: '', n_clip: 1, prezzo_confezione: '', pezzi: '', sconto_clip: '',
+    // listino_mylav: a specchio di laboratorio ma sul lato blu — quale PDF di
+    // analizzatori_mylav guida i suggerimenti e il prezzo di QUESTA riga.
+    listino_mylav: '',
     profilo_mylav: '', n_mylav: 1, listino_lav: '', prezzo_scontato_lav: ''
   };
 }
@@ -512,6 +525,11 @@ async function renderDashboard() {
   }
 
   const { strutture_count, file_count, differenziale_totale, ultimi_file, per_struttura } = data;
+
+  // Catalogo analizzatori_mylav per la colonna Listino Mylav (comune ai due
+  // calcolatori, vedi renderCalcolatoreClip): in cache, un fallimento (ospite,
+  // rete) lo lascia vuoto invece di bloccare la dashboard.
+  if (!S.analizzatoriCatalogo) S.analizzatoriCatalogo = await api('/api/analizzatori').catch(() => []);
 
   if (strutture_count === 0) {
     setMain(`
@@ -1488,6 +1506,9 @@ async function apriCalcoloClipDaCronologia(id) {
     prezzo_confezione: r.prezzo_confezione ?? '',
     pezzi: r.pezzi ?? '',
     sconto_clip: r.sconto_clip ?? '',
+    // listino_mylav e' per riga come laboratorio, per la stessa ragione: due
+    // righe possono pescare da due listini Mylav diversi nello stesso calcolo.
+    listino_mylav: r.listino_mylav || '',
     profilo_mylav: r.profilo_mylav || '',
     n_mylav: r.n_mylav || 1,
     listino_lav: r.listino_lav ?? '',
@@ -3088,8 +3109,17 @@ const colonneRoiEsami = [
     intestazione: 'roi.tabella.totConc', totale: 'tot_conc' },
   { col: 'prezzo_conc', tipo: 'calcolato', larghezza: 95, gruppo: 'concorrenza',
     intestazione: 'comune.scontatoConc', totale: 'tot_prezzo_conc' },
+  // A specchio della stessa colonna nel calcolatore clip: quale PDF di
+  // analizzatori_mylav guida i suggerimenti/il prezzo di listino di questa
+  // riga. Lasciata vuota, 'esame' si comporta esattamente come prima di
+  // questa colonna (vedi aggiornaListinoLavRoi): l'elenco 'roi-esame-listino-list'
+  // e' un datalist in piu' per 'esame', non un sostituto della tendina
+  // custom gia' esistente (colonnaAutocomplete piu' sotto).
+  { col: 'listino_mylav', tipo: 'testo', larghezza: 150, gruppo: 'mylav',
+    intestazione: 'comune.listinoMylav', elenco: 'roi-listino-mylav-list',
+    segnaposto: () => t('comune.placeholderListinoMylav') },
   { col: 'esame', tipo: 'testo', larghezza: 170, larghezzaCampo: 160, gruppo: 'mylav',
-    intestazione: 'roi.tabella.esameMyl', posizioneRelativa: true,
+    intestazione: 'roi.tabella.esameMyl', posizioneRelativa: true, elenco: 'roi-esame-listino-list',
     segnaposto: () => t('roi.placeholderEsame'),
     extra: (r, i) => `<button class="roi-lega-btn" data-idx="${i}" onclick="salvaAbbinamentoRiga(${i})" title="${escHtml(t('roi.legaTooltip'))}" style="display:none">🔗</button>` },
   { col: 'n_esami', tipo: 'numero', larghezza: 60, larghezzaCampo: 50, gruppo: 'mylav',
@@ -3132,6 +3162,8 @@ async function suCampoUscitoRoiEsami(tr, col) {
         inp.title = t('roi.tooltip.prezzoCustomSalvatoOra');
       }
     }
+  } else if (col === 'listino_mylav') {
+    await suListinoMylavCambiatoRoi(tr);
   }
 }
 
@@ -3175,6 +3207,26 @@ const motoreEsami = window.Calcolatore.crea({
     wrap.querySelectorAll('[data-col="esame"]').forEach(inp => {
       inp.dataset.lastEsame = (inp.value || '').trim();
     });
+    wrap.querySelectorAll('[data-col="listino_mylav"]').forEach(inp => {
+      inp.dataset.lastListinoMylav = (inp.value || '').trim();
+    });
+    // La tendina #roi-esame-listino-list (un solo nodo condiviso) si aggiorna
+    // al catalogo DELLA RIGA: stesso meccanismo del calcolatore clip, vedi
+    // aggiornaSuggerimentiMylavRigaRoi.
+    wrap.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaSuggerimentiMylavRigaRoi(tr));
+    if (wrap.dataset.ascoltatoriListinoMylav !== '1') {
+      wrap.dataset.ascoltatoriListinoMylav = '1';
+      wrap.addEventListener('focusin', e => {
+        if (!e.target.matches('[data-col="esame"]')) return;
+        const tr = e.target.closest('tr');
+        if (tr) aggiornaSuggerimentiMylavRigaRoi(tr);
+      });
+      wrap.addEventListener('input', e => {
+        if (!e.target.matches('[data-col="listino_mylav"]')) return;
+        const tr = e.target.closest('tr');
+        if (tr) aggiornaSuggerimentiMylavRigaRoi(tr);
+      });
+    }
   },
   tipoRiga: 'Platinum',
   etichettaTotaleRiga: 'roi.tabella.totale',
@@ -3185,9 +3237,17 @@ const motoreEsami = window.Calcolatore.crea({
 function buildRoiSectionHtml() {
   const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
 
+  // 'roi-listino-mylav-list' e' fisso (i PDF disponibili non dipendono dalla
+  // riga); 'roi-esame-listino-list' invece e' vuoto qui e si riscrive al volo
+  // col catalogo DELLA RIGA (vedi aggiornaSuggerimentiMylavRigaRoi), come
+  // 'mylav-esami-list' nel calcolatore clip.
+  const listinoMylavOpts = listiniMylavDisponibili().map(l => `<option value="${escHtml(l.etichetta)}">`).join('');
+
   return `
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <datalist id="roi-esami-conc-list">${(S.roi.esamiConc || []).map(e => `<option value="${escHtml(e.nome_originale)}">`).join('')}</datalist>
+    <datalist id="roi-listino-mylav-list">${listinoMylavOpts}</datalist>
+    <datalist id="roi-esame-listino-list"></datalist>
     <div class="roi-toolbar">
       <div>
         <div class="roi-toolbar-title">${t('roi.toolbarTitolo')}</div>
@@ -3650,6 +3710,73 @@ function campoFillabile(inp) {
   return !parseFloat(inp.value) || inp.dataset.auto === '1';
 }
 
+// Aggiorna la tendina nativa dell'esame Mylav (#roi-esame-listino-list, un
+// solo nodo condiviso da tutte le righe) al catalogo DELLA RIGA passata.
+// A differenza del calcolatore clip il placeholder di 'esame' non cambia mai:
+// senza listino scelto il campo si comporta esattamente come prima di questa
+// colonna (ricerca ampia via /api/esami/autocomplete, colonnaAutocomplete piu'
+// sotto), la tendina in piu' e' solo un aiuto quando un listino c'e'.
+function aggiornaSuggerimentiMylavRigaRoi(tr) {
+  const listInp = tr.querySelector('[data-col="listino_mylav"]');
+  const nomeInp = tr.querySelector('[data-col="esame"]');
+  if (!nomeInp) return;
+  const listino = listInp ? listInp.value : '';
+  const dl = el('roi-esame-listino-list');
+  if (dl) dl.innerHTML = catalogoPerListinoMylav(listino).map(a => `<option value="${escHtml(a.nome)}">`).join('');
+}
+
+// Riempie listino_lav della riga (calcolatore esami): stessa logica di
+// aggiornaListinoLavClip (vedi piu' sotto, sezione clip) applicata a 'esame'
+// invece che a 'profilo_mylav'. Nessun listino scritto, o l'esame non e' nel
+// listino scelto -> resta il vecchio fetch a /api/esami-riferimento/prezzo-base,
+// bit per bit identico a prima di questa colonna.
+async function aggiornaListinoLavRoi(tr) {
+  const esameInp = tr.querySelector('[data-col="esame"]');
+  const llInp    = tr.querySelector('[data-col="listino_lav"]');
+  const listInp  = tr.querySelector('[data-col="listino_mylav"]');
+  if (!esameInp || !llInp) return;
+  const esame = esameInp.value.trim();
+  if (!esame || !campoFillabile(llInp)) return;
+
+  const analizzatore = trovaAnalizzatore(esame, catalogoPerListinoMylav(listInp ? listInp.value : ''));
+  if (analizzatore) {
+    const costo = costoAnalizzatore(analizzatore);
+    if (costo != null) { llInp.value = costo; llInp.dataset.auto = '1'; }
+    return;
+  }
+
+  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`, { headers: authHeaders() })
+    .then(r => r.json()).catch(() => ({}));
+  if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
+    llInp.value = baseResp.prezzo_base;
+    llInp.dataset.auto = '1';
+  }
+}
+
+// Cambiato il listino Mylav della riga: rilancia la cascata del prezzo di
+// listino (che decide da sola, riga per riga, se pescare da li' o dal vecchio
+// percorso). A differenza del calcolatore clip il nome 'esame' non si azzera
+// mai se non e' nel listino scelto: 'esame' resta valido anche per esami che
+// non sono affatto nel catalogo macchinari (e' li' che vive gia' oggi, negli
+// esami di riferimento), e azzerarlo qui cancellerebbe righe corrette senza
+// alcun motivo — l'eccezione che suLaboratorioCambiatoClip si concede non vale
+// qui, perche' 'esame' non e' mai stato esclusivamente un nome di catalogo.
+async function suListinoMylavCambiatoRoi(tr) {
+  const listInp = tr.querySelector('[data-col="listino_mylav"]');
+  if (!listInp) return;
+  const listino = listInp.value.trim();
+  const prec = listInp.dataset.lastListinoMylav || '';
+  if (listino === prec) return;
+  listInp.dataset.lastListinoMylav = listino;
+
+  const llInp = tr.querySelector('[data-col="listino_lav"]');
+  if (llInp && llInp.dataset.auto === '1') { llInp.value = ''; llInp.dataset.auto = '0'; }
+
+  aggiornaSuggerimentiMylavRigaRoi(tr);
+  await aggiornaListinoLavRoi(tr);
+  aggiornaRigaDOM(tr);
+}
+
 async function aggiornaPrezziAutomatici(tr, force = false) {
   // force=true: la cascata è stata innescata da una scelta ESPLICITA del piano
   // → il prezzo Mylav va ricalcolato per il nuovo piano anche se un valore è già
@@ -3692,12 +3819,12 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
     return;
   }
 
-  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`, { headers: authHeaders() })
-    .then(r => r.json()).catch(() => ({}));
-  if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
-    llInp.value = baseResp.prezzo_base;
-    llInp.dataset.auto = '1';
-  }
+  // Il riempimento di listino_lav e' delegato: se un listino Mylav e' scelto
+  // per questa riga e la contiene, il valore viene da li'; altrimenti e'
+  // esattamente il vecchio fetch a /api/esami-riferimento/prezzo-base — senza
+  // scrivere nulla nella colonna nuova, questa riga si comporta esattamente
+  // come prima che esistesse.
+  await aggiornaListinoLavRoi(tr);
 
   if (S.roi.pianoId) {
     const requestedPianoId = S.roi.pianoId;
@@ -3986,8 +4113,19 @@ const COLONNE_CLIP = [
     valore: r => { const sc = parseFloat(r.sconto_clip) || 0; return sc > 0 ? String(sc) : ''; } },
   { col: 'costo_clip',        intestazione: 'clip.tabella.costoClip',  tipo: 'calcolato', larghezza: 95,  gruppo: 'concorrenza', totale: 'tot_costo_clip', tenue: true },
   { col: 'totale_clip',       intestazione: 'clip.tabella.totaleClip', tipo: 'calcolato', larghezza: 95,  gruppo: 'concorrenza', totale: 'tot_totale_clip' },
+  // A specchio di 'laboratorio' ma sul lato blu: quale PDF di
+  // analizzatori_mylav ("Listino Mylav") guida i suggerimenti di profilo_mylav
+  // subito dopo. L'elenco 'clip-listino-mylav-list' e' fisso (i PDF che hanno
+  // almeno una riga in analizzatori_mylav, vedi listiniMylavDisponibili()), a
+  // differenza di 'mylav-esami-list' che cambia riga per riga: vedi
+  // aggiornaSuggerimentiMylavRiga.
+  { col: 'listino_mylav',     intestazione: 'comune.listinoMylav',     tipo: 'testo',     larghezza: 150, gruppo: 'mylav', elenco: 'clip-listino-mylav-list',
+    segnaposto: () => t('comune.placeholderListinoMylav') },
   { col: 'profilo_mylav',     intestazione: 'clip.tabella.profilo',    tipo: 'testo',     larghezza: 180, larghezzaCampo: 170, gruppo: 'mylav', elenco: 'mylav-esami-list',
-    segnaposto: () => t('clip.placeholderProfilo') },
+    // Senza un listino risolto il campo lo chiede invece di proporre tutto il
+    // catalogo (vedi aggiornaSuggerimentiMylavRiga per l'aggiornamento dal
+    // vivo mentre si scrive il listino).
+    segnaposto: r => trovaListinoMylav(r.listino_mylav) ? t('clip.placeholderProfilo') : t('clip.placeholderProfiloSenzaListino') },
   { col: 'n_mylav',           intestazione: 'roi.tabella.n',           tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'mylav', fallbackSuZero: 1, segnaposto: '1' },
   { col: 'listino_lav',       intestazione: 'roi.tabella.listinoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_listino_lav', segnaposto: '0.00' },
   { col: 'prezzo_scontato_lav', intestazione: 'roi.tabella.pianoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_prezzo_scontato_lav', segnaposto: '0.00' },
@@ -4113,6 +4251,83 @@ function aggiornaSuggerimentiClipRiga(tr) {
 // nuovo — l'unica eccezione alla regola "l'operatore non si tocca mai",
 // perche' lasciarlo mostrerebbe la clip di un laboratorio sotto il nome di un
 // altro.
+// ── LISTINO MYLAV (colonna per riga, comune ai due calcolatori) ─────────
+// A specchio esatto delle funzioni del laboratorio qui sopra, ma sul lato blu:
+// l'asse non e' un'anagrafica (il laboratorio concorrente) ma il PDF di
+// provenienza delle righe di analizzatori_mylav, dove vivono le "clip" Mylav
+// (decisione presa nel piano 2026-09-22-listini-per-pdf.md: le clip Mylav
+// restano in analizzatori_mylav, non si mescolano con la tabella clip).
+// Stessa regola, stessa ragione: nessuno stato tenuto da nessuna parte.
+// catalogoPerListinoMylav ricalcola dal testo della riga a ogni chiamata, cosi'
+// due righe con due listini diversi non possono mai "vedersi" a vicenda le
+// voci, nemmeno per un istante.
+
+// I listini disponibili, dedotti dal catalogo stesso (non da un elenco di file
+// a parte): un file senza righe non serve qui. Il gruppo senza provenienza
+// (fileOrigine null) resta selezionabile con l'etichetta gia' usata dalla
+// pagina Gestione macchinari interni, cosi' le righe importate prima di
+// questa colonna restano raggiungibili.
+function listiniMylavDisponibili() {
+  const mappa = new Map(); // fileOrigine (string|null) -> etichetta mostrata
+  (S.analizzatoriCatalogo || []).forEach(a => {
+    if (!mappa.has(a.fileOrigine)) {
+      mappa.set(a.fileOrigine, a.fileOrigine == null ? t('analizzatori.senzaFile') : a.fileOrigine);
+    }
+  });
+  return [...mappa.entries()].map(([fileOrigine, etichetta]) => ({ fileOrigine, etichetta }));
+}
+
+// Risolve il testo scritto nella colonna a un listino vero. Stessa regola di
+// trovaLaboratorio: esatto prima, poi tollerante ma solo se e' l'unico — un
+// listino sbagliato e' peggio di nessun listino, perche' farebbe proporre le
+// voci di un PDF diverso da quello scritto.
+function trovaListinoMylav(testo) {
+  const elenco = listiniMylavDisponibili();
+  const n = String(testo || '').trim();
+  if (!n || !elenco.length) return null;
+  const esatto = elenco.find(l => l.etichetta.trim().toLowerCase() === n.toLowerCase());
+  if (esatto) return esatto;
+  if (!window.Ricerca) return null;
+  const vicini = elenco.filter(l => Ricerca.corrisponde(l.etichetta, n));
+  return vicini.length === 1 ? vicini[0] : null;
+}
+
+// Il catalogo DI UNA RIGA: solo le voci del listino scritto in quella riga.
+// Deliberatamente non e' uno stato salvato da nessuna parte: si ricalcola ogni
+// volta dal testo del listino passato dal chiamante (stessa trappola gia'
+// evitata da catalogoPerLaboratorio, ripetuta qui perche' chi tocca questa
+// colonna non ha visto quella).
+function catalogoPerListinoMylav(nomeListino) {
+  const l = trovaListinoMylav(nomeListino);
+  if (!l) return [];
+  return (S.analizzatoriCatalogo || []).filter(a => a.fileOrigine === l.fileOrigine);
+}
+
+// Cerca in UN catalogo (gia' filtrato dal chiamante) il nome digitato. Stessa
+// forma di trovaClip: esatto prima, poi tollerante ma solo se e' l'unico.
+function trovaAnalizzatore(nome, catalogo) {
+  const cat = catalogo || [];
+  const n = String(nome || '').trim();
+  if (!n || !cat.length) return null;
+  const esatto = cat.find(a => (a.nome || '').trim().toLowerCase() === n.toLowerCase());
+  if (esatto) return esatto;
+  if (!window.Ricerca) return null;
+  const vicini = cat.filter(a => Ricerca.corrisponde(a.nome, n));
+  return vicini.length === 1 ? vicini[0] : null;
+}
+
+// Costo per unita' di una voce di analizzatori_mylav: stessa formula di
+// calcolaRigaClip/costoClip (prezzo di confezione diviso i pezzi, scontato).
+// Senza pezzi non si inventa un numero: resta null, non il prezzo dell'intera
+// confezione (stessa regola gia' in vigore per il costo per clip mostrato in
+// Gestione macchinari interni).
+function costoAnalizzatore(a) {
+  const pezzi = parseFloat(a && a.pezzi) || 0;
+  const prezzo = parseFloat(a && a.prezzo) || 0;
+  const sconto = parseFloat(a && a.sconto) || 0;
+  return pezzi > 0 ? parseFloat((prezzo / pezzi * (1 - sconto / 100)).toFixed(2)) : null;
+}
+
 async function suLaboratorioCambiatoClip(tr) {
   const labInp = tr.querySelector('[data-col="laboratorio"]');
   if (!labInp) return;
@@ -4135,6 +4350,85 @@ async function suLaboratorioCambiatoClip(tr) {
   }
   aggiornaSuggerimentiClipRiga(tr);
   await compilaDaClip(tr);
+}
+
+// Aggiorna la tendina nativa del profilo Mylav (#mylav-esami-list, un solo
+// nodo condiviso da tutte le righe) al catalogo DELLA RIGA passata, e il
+// placeholder del campo profilo in base a se un listino e' risolto. Specchio
+// esatto di aggiornaSuggerimentiClipRiga, stessa ragione: e' un aggiornamento
+// visivo, la risposta vera (aggiornaListinoLavClip/trovaAnalizzatore) legge il
+// listino dalla riga stessa a ogni chiamata.
+function aggiornaSuggerimentiMylavRiga(tr) {
+  const listInp = tr.querySelector('[data-col="listino_mylav"]');
+  const nomeInp = tr.querySelector('[data-col="profilo_mylav"]');
+  if (!nomeInp) return;
+  const listino = listInp ? listInp.value : '';
+  const haListino = !!trovaListinoMylav(listino);
+  nomeInp.placeholder = haListino ? t('clip.placeholderProfilo') : t('clip.placeholderProfiloSenzaListino');
+  nomeInp.classList.toggle('roi-clip-in-attesa-listino', !haListino);
+  const dl = el('mylav-esami-list');
+  if (dl) dl.innerHTML = catalogoPerListinoMylav(listino).map(a => `<option value="${escHtml(a.nome)}">`).join('');
+}
+
+// Cambiato il listino Mylav: quello che era stato riempito da solo in
+// listino_lav per il listino precedente si azzera (regola comune alle altre
+// cascate), e con lui anche il nome del profilo se non esiste nel listino
+// nuovo — stessa eccezione di suLaboratorioCambiatoClip, per la stessa
+// ragione: lasciarlo mostrerebbe la voce di un listino sotto il nome di un
+// altro. prezzo_scontato_lav (il prezzo di piano) non si tocca qui: e' un
+// asse indipendente, guidato dal piano selezionato in testata, non dal
+// listino di questa riga.
+async function suListinoMylavCambiatoClip(tr) {
+  const listInp = tr.querySelector('[data-col="listino_mylav"]');
+  if (!listInp) return;
+  const listino = listInp.value.trim();
+  const prec = listInp.dataset.lastListinoMylav || '';
+  if (listino === prec) return;
+  listInp.dataset.lastListinoMylav = listino;
+
+  const nomeInp = tr.querySelector('[data-col="profilo_mylav"]');
+  if (nomeInp) {
+    const nomeAttuale = nomeInp.value.trim();
+    if (nomeAttuale && !trovaAnalizzatore(nomeAttuale, catalogoPerListinoMylav(listino))) {
+      nomeInp.value = '';
+    }
+  }
+  const llInp = tr.querySelector('[data-col="listino_lav"]');
+  if (llInp && llInp.dataset.auto === '1') { llInp.value = ''; llInp.dataset.auto = '0'; }
+
+  aggiornaSuggerimentiMylavRiga(tr);
+  await aggiornaListinoLavClip(tr);
+  aggiornaRigaDOMClip(tr);
+}
+
+// Riempie listino_lav della riga (calcolatore clip): se il listino Mylav
+// scritto e' risolto e contiene il profilo, il valore viene dal costo per
+// unita' di quella voce (stessa formula della clip: prezzo di confezione
+// diviso i pezzi, scontato). Altrimenti — nessun listino scritto, o il
+// profilo non e' in quello scelto — resta il vecchio percorso via gli esami
+// di riferimento: e' quello che gia' faceva prima di questa colonna, e questa
+// colonna lasciata vuota non deve cambiarlo.
+async function aggiornaListinoLavClip(tr) {
+  const profInp = tr.querySelector('[data-col="profilo_mylav"]');
+  const llInp   = tr.querySelector('[data-col="listino_lav"]');
+  const listInp = tr.querySelector('[data-col="listino_mylav"]');
+  if (!profInp || !llInp) return;
+  const profilo = profInp.value.trim();
+  if (!profilo || !campoFillabile(llInp)) return;
+
+  const analizzatore = trovaAnalizzatore(profilo, catalogoPerListinoMylav(listInp ? listInp.value : ''));
+  if (analizzatore) {
+    const costo = costoAnalizzatore(analizzatore);
+    if (costo != null) { llInp.value = costo; llInp.dataset.auto = '1'; }
+    return;
+  }
+
+  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(profilo)}`, { headers: authHeaders() })
+    .then(r => r.json()).catch(() => ({}));
+  if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
+    llInp.value = baseResp.prezzo_base;
+    llInp.dataset.auto = '1';
+  }
 }
 
 // Cascata dal profilo Mylav: stessa logica del calcolatore esami (prezzo base,
@@ -4160,12 +4454,10 @@ async function aggiornaPrezziAutomaticiClip(tr, force = false) {
 
   if (!profilo) { aggiornaRigaDOMClip(tr); return; }
 
-  const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(profilo)}`, { headers: authHeaders() })
-    .then(r => r.json()).catch(() => ({}));
-  if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
-    llInp.value = baseResp.prezzo_base;
-    llInp.dataset.auto = '1';
-  }
+  // Il riempimento di listino_lav e' delegato: se un listino Mylav e' scelto
+  // per questa riga e la contiene, il valore viene da li'; altrimenti e'
+  // esattamente il vecchio fetch a /api/esami-riferimento/prezzo-base.
+  await aggiornaListinoLavClip(tr);
 
   if (S.clip.pianoId) {
     const requestedPianoId = S.clip.pianoId;
@@ -4201,6 +4493,7 @@ async function aggiornaPrezziAutomaticiClip(tr, force = false) {
 async function suCampoUscitoClip(tr, col) {
   if (col === 'laboratorio') await suLaboratorioCambiatoClip(tr);
   else if (col === 'clip_nome') await compilaDaClip(tr);
+  else if (col === 'listino_mylav') await suListinoMylavCambiatoClip(tr);
   else if (col === 'profilo_mylav') await aggiornaPrezziAutomaticiClip(tr);
 }
 
@@ -4270,17 +4563,24 @@ const motoreClip = window.Calcolatore.crea({
     wrap.querySelectorAll('[data-col="laboratorio"]').forEach(inp => {
       inp.dataset.lastLaboratorio = (inp.value || '').trim();
     });
+    wrap.querySelectorAll('[data-col="listino_mylav"]').forEach(inp => {
+      inp.dataset.lastListinoMylav = (inp.value || '').trim();
+    });
     // Il segnaposto della colonna clip lo calcola gia' giusto costruisciRiga
     // (segnaposto e' una funzione di r), ma la classe roi-clip-in-attesa-lab
     // e la tendina no: sono un tocco visivo in piu' che il motore comune non
     // conosce, va applicato qui dopo il disegno.
-    wrap.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaSuggerimentiClipRiga(tr));
-    // La tendina nativa della clip (#clip-list) e' un solo nodo condiviso da
-    // tutte le righe: si aggiorna al catalogo DELLA RIGA quando quel campo
-    // riceve il focus, cosi' mostra sempre le clip del laboratorio scritto
-    // li' e mai quello di un'altra riga.
+    wrap.querySelectorAll('tr[data-idx]').forEach(tr => {
+      aggiornaSuggerimentiClipRiga(tr);
+      aggiornaSuggerimentiMylavRiga(tr);
+    });
+    // La tendina nativa della clip (#clip-list) e quella del profilo Mylav
+    // (#mylav-esami-list) sono un solo nodo condiviso da tutte le righe: si
+    // aggiornano al catalogo DELLA RIGA quando quel campo riceve il focus,
+    // cosi' mostrano sempre le voci del laboratorio/listino scritto li' e mai
+    // quello di un'altra riga.
     //
-    // I due ascoltatori si registrano UNA volta sola sul contenitore.
+    // I quattro ascoltatori si registrano UNA volta sola sul contenitore.
     // dopoInizializzaEventi rigira a ogni riga aggiunta o tolta, ma il
     // contenitore e' sempre lo stesso nodo (cambia solo il suo innerHTML):
     // senza questa guardia ogni aggiunta di riga ne impilerebbe un altro paio,
@@ -4289,16 +4589,25 @@ const motoreClip = window.Calcolatore.crea({
     if (wrap.dataset.ascoltatoriClip !== '1') {
       wrap.dataset.ascoltatoriClip = '1';
       wrap.addEventListener('focusin', e => {
-        if (!e.target.matches('[data-col="clip_nome"]')) return;
-        const tr = e.target.closest('tr');
-        if (tr) aggiornaSuggerimentiClipRiga(tr);
+        if (e.target.matches('[data-col="clip_nome"]')) {
+          const tr = e.target.closest('tr');
+          if (tr) aggiornaSuggerimentiClipRiga(tr);
+        } else if (e.target.matches('[data-col="profilo_mylav"]')) {
+          const tr = e.target.closest('tr');
+          if (tr) aggiornaSuggerimentiMylavRiga(tr);
+        }
       });
-      // Mentre si scrive il laboratorio, tendina e placeholder seguono a ogni
-      // tasto: non serve aspettare il blur per vedere l'elenco corretto.
+      // Mentre si scrive il laboratorio/il listino, tendina e placeholder
+      // seguono a ogni tasto: non serve aspettare il blur per vedere l'elenco
+      // corretto.
       wrap.addEventListener('input', e => {
-        if (!e.target.matches('[data-col="laboratorio"]')) return;
-        const tr = e.target.closest('tr');
-        if (tr) aggiornaSuggerimentiClipRiga(tr);
+        if (e.target.matches('[data-col="laboratorio"]')) {
+          const tr = e.target.closest('tr');
+          if (tr) aggiornaSuggerimentiClipRiga(tr);
+        } else if (e.target.matches('[data-col="listino_mylav"]')) {
+          const tr = e.target.closest('tr');
+          if (tr) aggiornaSuggerimentiMylavRiga(tr);
+        }
       });
     }
   },
@@ -4371,19 +4680,23 @@ function selezionaPianoClip(id) {
 
 function buildClipSectionHtml() {
   const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
-  const mylavOpts = (S.esamiMylavNomi || []).map(n => `<option value="${escHtml(n)}">`).join('');
-  // 'clip-list' non ha piu' un contenuto fisso da tutto il catalogo: e' un
-  // solo nodo condiviso che aggiornaSuggerimentiClipRiga riscrive al volo col
-  // catalogo della riga a fuoco, cosi' propone solo le clip del laboratorio
-  // di QUELLA riga. Vuoto qui, viene popolato subito dopo il disegno (vedi
-  // dopoInizializzaEventi) e a ogni focus/battitura successivi.
+  // 'clip-list' e 'mylav-esami-list' non hanno piu' un contenuto fisso: sono
+  // due nodi condivisi che aggiornaSuggerimentiClipRiga/aggiornaSuggerimentiMylavRiga
+  // riscrivono al volo col catalogo della riga a fuoco, cosi' propongono solo
+  // le voci del laboratorio/listino di QUELLA riga. Vuoti qui, popolati subito
+  // dopo il disegno (vedi dopoInizializzaEventi) e a ogni focus/battitura
+  // successivi.
   const labClipOpts = laboratoriConClip().map(l => `<option value="${escHtml(l.nome)}">`).join('');
+  // 'clip-listino-mylav-list' invece e' fisso come 'clip-lab-list': l'elenco
+  // dei listini disponibili non dipende dalla riga, solo il loro contenuto si'.
+  const listinoMylavOpts = listiniMylavDisponibili().map(l => `<option value="${escHtml(l.etichetta)}">`).join('');
 
   return `
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
-    <datalist id="mylav-esami-list">${mylavOpts}</datalist>
+    <datalist id="mylav-esami-list"></datalist>
     <datalist id="clip-list"></datalist>
     <datalist id="clip-lab-list">${labClipOpts}</datalist>
+    <datalist id="clip-listino-mylav-list">${listinoMylavOpts}</datalist>
     <div class="roi-toolbar">
       <div></div>
       <div class="roi-toolbar-controls">
@@ -4428,9 +4741,10 @@ function rimuoviTuttoClip() {
 async function renderCalcolatoreClip() {
   try { S.clip.catalogo = await api('/api/clip'); }
   catch (_) { S.clip.catalogo = []; }
-  // Nomi del catalogo Mylav per l'autocomplete del profilo, in cache come nel
-  // dettaglio concorrente.
-  if (!S.esamiMylavNomi) S.esamiMylavNomi = await api('/api/esami-riferimento/nomi').catch(() => []);
+  // Catalogo analizzatori_mylav per la colonna Listino Mylav: tutte le righe
+  // dell'account (nessun fileOrigine in query = tutte, vedi GET /api/analizzatori
+  // in server.js), in cache perche' condiviso con l'altro calcolatore.
+  if (!S.analizzatoriCatalogo) S.analizzatoriCatalogo = await api('/api/analizzatori').catch(() => []);
 
   setMain(`
     <div class="page-header">
