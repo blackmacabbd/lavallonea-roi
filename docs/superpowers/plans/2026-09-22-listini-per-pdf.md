@@ -447,6 +447,367 @@ git commit -m "feat: si sceglie il listino Mylav da usare, in tutti e due i calc
 
 ---
 
+
+---
+
+### Task 5: Una voce puo' stare in due listini
+
+**Files:**
+- Modify: `lib/analizzatori.js`, `lib/analizzatori.test.js`, `lib/clip.js`, `lib/clip.test.js`, `public/app.js`, `public/i18n.js`
+
+**Interfaces:**
+- L'unicita' di `analizzatori_mylav` passa da `(user_id, nome)` a
+  `(user_id, nome, file_origine)`.
+- L'unicita' di `clip` passa da `(user_id, concorrente_id, nome)` a
+  `(user_id, concorrente_id, nome, file_origine)`.
+- `COLONNE_CLIP` guadagna `listino_conc`, subito dopo `laboratorio`.
+
+**Il difetto, e perche' esiste.** Quando `analizzatori_mylav` e' nata, la
+provenienza dal PDF non esisteva ancora: «un nome, una riga» sembrava giusto.
+Oggi non lo e' piu'. Importando il listino 2026 e poi il 2027, la riga omonima
+del secondo **sovrascrive** quella del primo, e il primo perde quella voce senza
+dirlo. La colonna appena aggiunta serve a confrontare due listini: il difetto le
+toglie meta' del senso. Lo stesso vale per le clip fra due PDF dello stesso
+laboratorio.
+
+**La conseguenza, che va risolta nella stessa fetta.** Quando due clip dello
+stesso laboratorio hanno lo stesso nome, scrivere solo il laboratorio non basta
+piu' a sceglierne una. La regola in vigore — riempire solo se la corrispondenza
+e' unica — farebbe la cosa prudente e non riempirebbe niente, ma lascerebbe
+l'operatore senza spiegazione. Serve una colonna **«Listino conc.»** accanto a
+quella del laboratorio, facoltativa: vuota vuol dire «tutti i listini di quel
+laboratorio», e in caso di ambiguita' il campo resta vuoto e lo dice.
+
+- [ ] **Step 1: Scrivere i test**
+
+In `lib/analizzatori.test.js`:
+
+```javascript
+test('la stessa voce puo stare in due listini diversi', () => {
+  const db = dbProva();
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 448.50,
+    fileOrigine: 'mylav-2026.pdf' });
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 500,
+    fileOrigine: 'mylav-2027.pdf' });
+  const righe = an.listaAnalizzatori(db, 1);
+  assert.equal(righe.length, 2, 'le due righe convivono');
+  assert.equal(righe.find(r => r.fileOrigine === 'mylav-2026.pdf').prezzo, 448.50,
+    'il listino vecchio conserva il suo prezzo');
+  assert.equal(righe.find(r => r.fileOrigine === 'mylav-2027.pdf').prezzo, 500);
+  db.close();
+});
+
+test('reimportare lo STESSO listino aggiorna invece di duplicare', () => {
+  const db = dbProva();
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 448.50,
+    fileOrigine: 'mylav-2026.pdf' });
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 460,
+    fileOrigine: 'mylav-2026.pdf' });
+  const righe = an.listaAnalizzatori(db, 1);
+  assert.equal(righe.length, 1);
+  assert.equal(righe[0].prezzo, 460);
+  db.close();
+});
+
+// Le righe entrate prima che si tenesse traccia del file hanno file_origine
+// nullo, e in SQLite due NULL sono DISTINTI dentro un UNIQUE: senza indice
+// parziale nascerebbero doppioni proprio li' dove non c'e' un PDF a
+// distinguerli.
+test('senza provenienza lo stesso nome resta una riga sola', () => {
+  const db = dbProva();
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 448.50 });
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 460 });
+  const righe = an.listaAnalizzatori(db, 1);
+  assert.equal(righe.length, 1, 'niente doppioni nel gruppo senza provenienza');
+  assert.equal(righe[0].prezzo, 460);
+  db.close();
+});
+
+test('la migrazione non perde righe ne cambia gli id', () => {
+  const db = new DatabaseSync(':memory:');
+  // La tabella com'e' adesso, con l'unicita' vecchia.
+  db.exec(`
+    CREATE TABLE analizzatori_mylav (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id     INTEGER NOT NULL,
+      nome        TEXT NOT NULL,
+      prezzo      REAL, noleggio REAL, note TEXT,
+      data_import DATETIME DEFAULT CURRENT_TIMESTAMP,
+      file_origine TEXT, pezzi INTEGER, sconto REAL,
+      UNIQUE(user_id, nome)
+    );
+  `);
+  const r = db.prepare('INSERT INTO analizzatori_mylav (user_id, nome, prezzo) VALUES (?, ?, ?)')
+    .run(1, 'Chem 17', 448.50);
+  an.ensureSchema(db);
+  const righe = db.prepare('SELECT id, nome, prezzo FROM analizzatori_mylav').all();
+  assert.equal(righe.length, 1);
+  assert.equal(righe[0].id, Number(r.lastInsertRowid), 'gli id non cambiano');
+  assert.equal(righe[0].prezzo, 448.50);
+  // E ora la voce omonima di un altro listino ci sta.
+  an.upsertAnalizzatore(db, { userId: 1, nome: 'Chem 17', prezzo: 500,
+    fileOrigine: 'altro.pdf' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS c FROM analizzatori_mylav').get().c, 2);
+  db.close();
+});
+```
+
+In `lib/clip.test.js` gli stessi quattro, con `upsertClip` e un
+`concorrenteId` fisso, piu' uno che prova che due laboratori **diversi**
+continuano a non pestarsi i piedi.
+
+- [ ] **Step 2: Eseguire i test per vederli fallire**
+
+Run: `node --test lib/analizzatori.test.js lib/clip.test.js`
+Expected: FAIL — il secondo listino sovrascrive il primo invece di affiancarsi.
+
+- [ ] **Step 3: La migrazione**
+
+Stessa forma gia' usata due volte in questo progetto (`lib/clip.js` per
+`concorrente_id`, `lib/concorrenti.js` per l'unicita' per account). Il
+riconoscimento dello schema vecchio si fa sul testo in `sqlite_master`, e la
+ricostruzione gira **solo** se serve.
+
+```javascript
+  const sql = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='analizzatori_mylav'`).get();
+  const daRicostruire = sql && /UNIQUE\s*\(\s*user_id\s*,\s*nome\s*\)/i.test(sql.sql);
+  if (daRicostruire) {
+    // In node:sqlite le chiavi esterne sono ATTIVE di default, a differenza
+    // della riga di comando sqlite3. PRAGMA foreign_keys non e' transazionale
+    // e dentro una transazione non fa niente: va spento PRIMA del BEGIN e
+    // riacceso in un finally, altrimenti un errore lascerebbe la sessione
+    // senza controllo delle chiavi esterne.
+    const fkEraAttivo = db.prepare(`PRAGMA foreign_keys`).get().foreign_keys === 1;
+    if (fkEraAttivo) db.exec('PRAGMA foreign_keys = OFF');
+    db.exec('BEGIN');
+    try {
+      db.exec(`
+        CREATE TABLE analizzatori_nuova (
+          id          INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id     INTEGER NOT NULL,
+          nome        TEXT NOT NULL,
+          prezzo      REAL,
+          noleggio    REAL,
+          note        TEXT,
+          data_import DATETIME DEFAULT CURRENT_TIMESTAMP,
+          file_origine TEXT,
+          pezzi       INTEGER,
+          sconto      REAL
+        );
+        INSERT INTO analizzatori_nuova
+          (id, user_id, nome, prezzo, noleggio, note, data_import, file_origine, pezzi, sconto)
+          SELECT id, user_id, nome, prezzo, noleggio, note, data_import, file_origine, pezzi, sconto
+          FROM analizzatori_mylav;
+        DROP TABLE analizzatori_mylav;
+        ALTER TABLE analizzatori_nuova RENAME TO analizzatori_mylav;
+      `);
+      db.exec('COMMIT');
+    } catch (err) {
+      db.exec('ROLLBACK');
+      throw err;
+    } finally {
+      if (fkEraAttivo) db.exec('PRAGMA foreign_keys = ON');
+    }
+  }
+```
+
+Gli `id` si portano dietro espliciti: rigenerarli scollegherebbe le righe da
+qualunque cosa vi punti, e comunque cambierebbe sotto i piedi all'operatore la
+riga che sta modificando.
+
+L'unicita' nuova sta in **due indici parziali**, per la ragione gia' incontrata
+tre volte in questo progetto: **in SQLite due NULL sono distinti dentro un
+UNIQUE**, quindi `UNIQUE(user_id, nome, file_origine)` non impedirebbe due
+righe omonime nel gruppo senza provenienza, che e' proprio dove non c'e' un PDF
+a distinguerle.
+
+```javascript
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS analiz_per_listino
+      ON analizzatori_mylav(user_id, nome, file_origine) WHERE file_origine IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS analiz_senza_listino
+      ON analizzatori_mylav(user_id, nome) WHERE file_origine IS NULL;
+  `);
+```
+
+Gli indici si creano **dopo** l'eventuale ricostruzione: il `DROP TABLE` porta
+via quelli della tabella vecchia.
+
+L'`ON CONFLICT` dell'upsert deve nominare le colonne **e** il `WHERE`
+dell'indice giusto, altrimenti non scatta: servono due rami, uno per il caso con
+provenienza e uno per quello senza. E' la stessa struttura che `lib/clip.js` ha
+gia' per i suoi due indici parziali: **guardarla e imitarla, non reinventarla.**
+
+Per `clip` vale tutto uguale, con `concorrente_id` in piu' nella chiave. Quella
+tabella ha gia' due indici parziali sul laboratorio: ora ne servono quattro,
+perche' le combinazioni di «con o senza laboratorio» e «con o senza PDF» sono
+quattro. Se quattro rami dell'`ON CONFLICT` diventano illeggibili, dirlo nel
+rapporto invece di scrivere qualcosa di ingegnoso: la leggibilita' qui vale piu'
+della concisione, perche' e' il punto in cui si perdono dati.
+
+- [ ] **Step 4: Eseguire i test**
+
+Run: `npm test`
+Expected: PASS, 247 test piu' i nuovi.
+
+- [ ] **Step 5: La colonna «Listino conc.»**
+
+In `COLONNE_CLIP`, subito dopo `laboratorio`:
+
+```javascript
+{ col: 'listino_conc', intestazione: 'clip.tabella.listinoConc', tipo: 'testo',
+  larghezza: 140, gruppo: 'concorrenza', elenco: 'clip-listino-conc-list',
+  segnaposto: () => t('clip.placeholderListinoConc') }
+```
+
+Facoltativa: vuota vuol dire «tutti i listini di quel laboratorio». I
+suggerimenti sono i PDF **di quel laboratorio**, non tutti.
+
+Il filtro del catalogo della riga diventa laboratorio **e** listino. Come per il
+laboratorio, **non si tiene da nessuna parte**: si ricalcola dal testo di quella
+riga a ogni chiamata. Due righe possono confrontare due listini diversi nello
+stesso calcolo, ed e' il caso normale.
+
+Quando restano due clip omonime e nessun listino e' scritto, il campo **non si
+riempie** e lo dice con `clip.ambiguoScegliListino` («Due listini hanno questa
+clip: scegli il listino»), invece di scegliere a caso o restare muto.
+
+La colonna persiste per riga in `righe_calcolo_clip` (`addColIfMissing`), come
+`laboratorio` e `listino_mylav`.
+
+- [ ] **Step 6: Verificare**
+
+```bash
+node --check server.js && node --check public/app.js && npm test
+```
+
+Copia di sicurezza prima di far girare la migrazione sul database vero:
+
+```bash
+cp db/database.sqlite db/database.sqlite.bak-pre-listino-nella-chiave
+```
+
+Riavviare, poi:
+
+```bash
+node -e "
+const {DatabaseSync}=require('node:sqlite');
+const db=new DatabaseSync('db/database.sqlite',{readOnly:true});
+for (const t of ['clip','analizzatori_mylav']) {
+  console.log(t, db.prepare('SELECT COUNT(*) c FROM '+t).get().c);
+  for (const r of db.prepare(\"SELECT name,sql FROM sqlite_master WHERE type='index' AND tbl_name='\"+t+\"'\").all()) console.log('  ', r.name);
+}
+console.log('clip orfane:', db.prepare('SELECT COUNT(*) c FROM clip WHERE concorrente_id IS NOT NULL AND concorrente_id NOT IN (SELECT id FROM concorrenti)').get().c);
+db.close();"
+```
+
+Attese: **1280 e 1280**, gli indici parziali al loro posto, zero orfane.
+
+Poi la prova che conta, con un account usa e getta: due listini Mylav con una
+voce omonima a prezzo diverso, due righe nel calcolatore, ciascuna col suo
+listino, che si riempiono coi propri valori. E due PDF dello stesso laboratorio
+con una clip omonima: scrivendo solo il laboratorio il campo resta vuoto e lo
+dice; scritto anche il listino, si riempie.
+
+**Rimuovere l'account di prova e tutto cio' che ha creato**, e mostrare i
+conteggi prima e dopo. **Mai scrivere nell'account `user_id` 9.**
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add lib/ public/ server.js
+git commit -m "fix: una voce puo stare in due listini, e si sceglie quale"
+```
+
+---
+
+### Task 6: Il listino scelto si ritrova riaprendo il calcolo esami
+
+**Files:**
+- Modify: `server.js`, `public/app.js`
+
+**Interfaces:**
+- `dati_foglio` guadagna `listino_mylav TEXT` con `addColIfMissing`.
+
+**Portata.** Nel calcolatore macchinari il listino scelto si salva gia' per riga.
+Nel calcolatore esami no: e' un aiuto di sessione, e riaprendo un calcolo il
+campo e' vuoto. I numeri salvati restano giusti — il listino serviva a
+sceglierli, non a calcolarli — ma ritrovare il campo vuoto fa sembrare perso un
+lavoro che perso non e'.
+
+**Avvertenza.** `dati_foglio` e' la tabella piu' usata dell'applicazione: la
+tocca il calcolatore esami, che e' la schermata principale. L'aggiunta e'
+additiva e non tocca una riga esistente, ma **ogni percorso che scrive o legge
+quella tabella va riguardato**, non solo quello nuovo.
+
+- [ ] **Step 1: La colonna**
+
+```javascript
+addColIfMissing('dati_foglio', 'listino_mylav', 'TEXT');
+```
+
+Le righe esistenti restano a `null`, che vuol dire «nessun listino scelto»: e'
+esattamente cio' che erano.
+
+- [ ] **Step 2: Salvataggio e rilettura**
+
+La `INSERT` del calcolatore esami porta anche `listino_mylav`, e la rilettura lo
+rimette sulla riga. Cercare **tutte** le `INSERT INTO dati_foglio` e tutte le
+`SELECT` che ricostruiscono una riga: se una sola resta indietro, il campo
+sparisce per quel percorso e sembrera' un difetto intermittente, che e' il tipo
+peggiore da cercare.
+
+- [ ] **Step 3: Verificare**
+
+```bash
+node --check server.js && node --check public/app.js && npm test
+```
+
+Con un account usa e getta: un calcolo esami con due righe e due listini
+diversi, salvato e riaperto. Il listino dev'esserci su ogni riga.
+
+Poi la prova che nulla si e' rotto attorno: un calcolo esami **senza** toccare la
+colonna nuova, salvato e riaperto, deve comportarsi **esattamente come prima** —
+stessi numeri, stessi totali, stesso PDF generato.
+
+**Rimuovere l'account di prova e tutto cio' che ha creato**, coi conteggi prima e
+dopo.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add server.js public/app.js
+git commit -m "feat: il listino Mylav scelto resta salvato anche nel calcolatore esami"
+```
+
+---
+
+## Self-review delle fette 5 e 6
+
+| Richiesta | Fetta |
+|---|---|
+| Due listini possono avere la stessa voce (Mylav) | 5 |
+| Due listini possono avere la stessa voce (concorrenti) | 5 |
+| Scegliere il listino sul lato concorrenza quando serve | 5 |
+| Il listino scelto si salva nel calcolatore esami | 6 |
+
+**Punti annotati:**
+
+- Due NULL sono **distinti** dentro un UNIQUE in SQLite: senza indice parziale,
+  il gruppo senza provenienza si riempirebbe di doppioni proprio dove non c'e'
+  un PDF a distinguerli. E' la quarta volta che questa regola decide la forma di
+  una migrazione in questo progetto.
+- `ON CONFLICT` deve nominare le colonne **e** il `WHERE` dell'indice parziale,
+  altrimenti non scatta e l'inserimento fallisce invece di aggiornare. Sulla
+  tabella `clip` i casi diventano quattro: meglio quattro rami leggibili che uno
+  ingegnoso.
+- Gli `id` si portano dietro espliciti nella ricostruzione. Rigenerarli
+  cambierebbe sotto i piedi la riga che l'operatore sta modificando.
+- Il filtro del catalogo si ricalcola per riga e non si tiene: e' la regola gia'
+  imparata con la colonna del laboratorio, e la ragione e' la stessa.
+- `dati_foglio` e' la tabella della schermata principale. L'aggiunta e' additiva,
+  ma una `INSERT` dimenticata fra le tante darebbe un difetto che sembra
+  intermittente.
 ## Self-review
 
 | Richiesta del committente | Fetta |
