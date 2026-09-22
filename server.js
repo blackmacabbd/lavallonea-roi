@@ -1580,7 +1580,7 @@ app.get('/api/clip', requireAuth, (req, res) => {
 
 app.post('/api/clip', requireAuth, express.json(), (req, res) => {
   try {
-    const { nome, prezzoConfezione, pezzi, sconto, fonte, concorrenteId } = req.body || {};
+    const { nome, prezzoConfezione, pezzi, sconto, fonte, concorrenteId, fileOrigine } = req.body || {};
     const nomeTrim = String(nome == null ? '' : nome).trim();
 
     // L'inserimento manuale (dalla scheda di un laboratorio, o dalla conferma
@@ -1592,15 +1592,21 @@ app.post('/api/clip', requireAuth, express.json(), (req, res) => {
       const proprio = db.prepare(`SELECT 1 FROM concorrenti WHERE id = ? AND user_id = ?`).get(concorrenteOk, req.user.id);
       if (!proprio) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     }
+    const fileOrigineOk = fileOrigine == null || fileOrigine === '' ? null : String(fileOrigine);
 
     // L'inserimento manuale non deve sovrascrivere in silenzio una clip
     // esistente con lo stesso nome: quello e' il comportamento dell'import
     // (upsertClip), qui l'operatore va avvisato invece di perdere il prezzo
     // gia' salvato. Il controllo guarda solo le clip dello STESSO laboratorio
-    // (o dello stesso gruppo senza laboratorio): un nome gia' usato altrove
-    // non collide, perche' sono indici univoci diversi.
+    // E dello STESSO file di provenienza (o dello stesso gruppo "senza"
+    // l'uno o l'altro): da task 5 la chiave unica e' a quattro colonne, e un
+    // controllo fermo alle prime tre rifiuterebbe a mano cio' che l'import
+    // permette gia' — due PDF diversi con lo stesso nome nello stesso
+    // laboratorio. Un nome gia' usato in un laboratorio o un file diversi non
+    // collide, perche' sono indici univoci diversi.
     const esiste = nomeTrim
-      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND concorrente_id IS ?`).get(req.user.id, nomeTrim, concorrenteOk)
+      ? db.prepare(`SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND concorrente_id IS ? AND file_origine IS ?`)
+          .get(req.user.id, nomeTrim, concorrenteOk, fileOrigineOk)
       : null;
     if (esiste) {
       return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome', codice: 'CLIP_DUPLICATA' });
@@ -1609,7 +1615,7 @@ app.post('/api/clip', requireAuth, express.json(), (req, res) => {
     const pezziOk = (pezzi == null || pezzi === '') ? clipLib.leggiPezzi(nomeTrim) : Number(pezzi);
     const { id } = clipLib.upsertClip(db, {
       userId: req.user.id, concorrenteId: concorrenteOk, nome: nomeTrim, prezzoConfezione, pezzi: pezziOk,
-      sconto, fonte: fonte || 'manuale'
+      sconto, fonte: fonte || 'manuale', fileOrigine: fileOrigineOk
     });
     res.status(201).json({ id });
   } catch (err) {
@@ -1682,9 +1688,14 @@ app.put('/api/clip/:id/laboratorio', requireAuth, express.json(), (req, res) => 
       const proprio = db.prepare(`SELECT 1 FROM concorrenti WHERE id = ? AND user_id = ?`).get(concorrenteOk, req.user.id);
       if (!proprio) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
     }
+    // file_origine IS ? con riga.file_origine (non cambia da questa rotta):
+    // la chiave unica e' a quattro colonne da task 5, fermarsi a
+    // (user_id, nome, concorrente_id) rifiuterebbe uno spostamento che la
+    // riassegnazione al laboratorio giusto renderebbe legittimo — due PDF
+    // diversi possono avere una clip omonima nello stesso laboratorio.
     const collisione = db.prepare(
-      `SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND id != ? AND concorrente_id IS ?`
-    ).get(req.user.id, riga.nome, riga.id, concorrenteOk);
+      `SELECT 1 FROM clip WHERE user_id = ? AND nome = ? AND id != ? AND concorrente_id IS ? AND file_origine IS ?`
+    ).get(req.user.id, riga.nome, riga.id, concorrenteOk, riga.file_origine);
     if (collisione) {
       return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome in quel laboratorio', codice: 'CLIP_DUPLICATA' });
     }
@@ -1737,6 +1748,15 @@ app.post('/api/clip/recupera', requireAuth, (req, res) => {
     const trovate = [];
     for (const r of righe) {
       if (!clipLib.sembraClip(r.nome)) continue;
+      // Volutamente senza file_origine nel WHERE: esami_concorrente (da cui
+      // arriva r) non lo tiene, quindi qui non si puo' sapere da quale PDF
+      // verrebbe la clip recuperata. giaInCatalogo resta percio' un
+      // avvertimento a grana grossa ("un laboratorio con questo nome c'e'
+      // gia', in un qualche file"), non il controllo esatto a quattro colonne
+      // che vale altrove (POST /api/clip, PUT .../laboratorio): non scrive
+      // nulla (vedi il commento sopra la rotta), quindi non puo' creare i
+      // doppioni che la chiave nuova previene, solo suggerire con un flag in
+      // meno di precisione di quanta ne avrebbe se il file fosse noto.
       const giaInCatalogo = !!db.prepare(
         `SELECT 1 FROM clip WHERE user_id = ? AND concorrente_id = ? AND nome = ?`
       ).get(req.user.id, r.concorrente_id, r.nome);
@@ -1804,12 +1824,22 @@ app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
   try {
     const { nome, prezzo, noleggio, note, pezzi, sconto, fileOrigine } = req.body || {};
     const nomeTrim = String(nome == null ? '' : nome).trim();
+    // ANALIZ_SENZA_FILE non e' un nome di file: e' il valore convenzionale con
+    // cui si chiede il gruppo delle righe senza provenienza (vedi il
+    // commento piu' sotto). Va normalizzato PRIMA del controllo duplicati,
+    // non solo prima della scrittura: altrimenti il controllo confronterebbe
+    // quel valore di trasporto con file_origine reali, che non lo sono mai.
+    const fileOrigineOk = fileOrigine === ANALIZ_SENZA_FILE ? null : (fileOrigine == null || fileOrigine === '' ? null : String(fileOrigine));
 
     // Come per le clip: l'inserimento manuale non deve sovrascrivere in
     // silenzio un analizzatore gia' in catalogo con lo stesso nome. Quel
     // comportamento (upsert silenzioso) resta dell'import, non della scheda.
+    // Da task 5 la chiave unica e' (user_id, nome, file_origine): fermarsi a
+    // (user_id, nome) rifiuterebbe a mano un secondo listino con una voce
+    // omonima, che l'import permette gia'.
     const esiste = nomeTrim
-      ? db.prepare(`SELECT 1 FROM analizzatori_mylav WHERE user_id = ? AND nome = ?`).get(req.user.id, nomeTrim)
+      ? db.prepare(`SELECT 1 FROM analizzatori_mylav WHERE user_id = ? AND nome = ? AND file_origine IS ?`)
+          .get(req.user.id, nomeTrim, fileOrigineOk)
       : null;
     if (esiste) {
       return res.status(409).json({ error: 'Esiste gia\' un analizzatore con questo nome', codice: 'ANALIZZATORE_DUPLICATO' });
@@ -1820,8 +1850,8 @@ app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
     // vedrebbero le righe senza provenienza, e quella riga resterebbe
     // irraggiungibile dall'interfaccia. Dall'import non puo' arrivare (i nomi
     // finiscono in .pdf), ma da una chiamata diretta si': qui si normalizza a
-    // null, che e' cio' che quel valore significa comunque.
-    const fileOrigineOk = fileOrigine === ANALIZ_SENZA_FILE ? null : fileOrigine;
+    // null, che e' cio' che quel valore significa comunque (fileOrigineOk
+    // calcolato sopra, prima del controllo duplicati).
     const { id } = analizzatoriLib.upsertAnalizzatore(db, {
       userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note, pezzi, sconto, fileOrigine: fileOrigineOk
     });

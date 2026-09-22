@@ -426,6 +426,7 @@
       'clip.tabella.clip': 'Clip',
       'clip.tabella.gruppoClip': 'Clip',
       'clip.tabella.laboratorio': 'Laboratorio',
+      'clip.tabella.listinoConc': 'Listino conc.',
       'clip.tabella.prezzoConf': 'Prezzo conf.',
       'clip.tabella.pezzi': 'Pezzi',
       'clip.tabella.costoClip': 'Costo/clip',
@@ -435,6 +436,7 @@
       'clip.placeholderClip': 'Clip…',
       'clip.placeholderClipSenzaLaboratorio': 'Scrivi prima il laboratorio…',
       'clip.placeholderLaboratorio': 'Laboratorio…',
+      'clip.placeholderListinoConc': 'Listino…',
       'clip.placeholderProfilo': 'Profilo Mylav…',
       'clip.placeholderProfiloSenzaListino': 'Scrivi prima il listino Mylav…',
       'clip.aggiungiRiga': '+ Aggiungi riga',
@@ -446,6 +448,8 @@
       'clip.righeSenzaProfiloMylav.uno': 'Una riga ha solo la clip e non verrà salvata: senza il profilo Mylav non c’è confronto. Salvare lo stesso?',
       'clip.avvisoClipConviene': '⚠ Con questi valori la clip costa meno di Mylav',
       'clip.pianoNonPiuDisponibile': 'Il piano usato in questo calcolo non è più disponibile: riaperto senza piano selezionato.',
+      'clip.ambiguoScegliListino': 'Due listini hanno questa clip: scegli il listino',
+      'clip.senzaFile': 'Importate prima che si tenesse traccia del file',
 
       // ── Gestione macchinari esterni: catalogo clip per laboratorio ──
       'macchinari.tabella.laboratorio': 'Laboratorio',
@@ -983,6 +987,7 @@
       'clip.tabella.clip': 'Clip',
       'clip.tabella.gruppoClip': 'Clip',
       'clip.tabella.laboratorio': 'Laboratory',
+      'clip.tabella.listinoConc': 'Price list',
       'clip.tabella.prezzoConf': 'Pack price',
       'clip.tabella.pezzi': 'Pieces',
       'clip.tabella.costoClip': 'Cost/clip',
@@ -992,6 +997,7 @@
       'clip.placeholderClip': 'Clip…',
       'clip.placeholderClipSenzaLaboratorio': 'Write the laboratory first…',
       'clip.placeholderLaboratorio': 'Laboratory…',
+      'clip.placeholderListinoConc': 'Price list…',
       'clip.placeholderProfilo': 'Mylav profile…',
       'clip.placeholderProfiloSenzaListino': 'Write the Mylav list first…',
       'clip.aggiungiRiga': '+ Add row',
@@ -1003,6 +1009,8 @@
       'clip.righeSenzaProfiloMylav.uno': 'One row has only the clip and will not be saved: without the Mylav profile there is nothing to compare. Save anyway?',
       'clip.avvisoClipConviene': '⚠ Here the clip costs less than Mylav',
       'clip.pianoNonPiuDisponibile': 'The plan used in this calculation is no longer available: reopened without a plan selected.',
+      'clip.ambiguoScegliListino': 'Two price lists have this clip: choose which one',
+      'clip.senzaFile': 'Imported before the file was tracked',
 
       // ── Gestione macchinari esterni: catalogo clip per laboratorio ──
       'macchinari.tabella.laboratorio': 'Laboratory',
@@ -1540,6 +1548,7 @@
       'clip.tabella.clip': 'Clip',
       'clip.tabella.gruppoClip': 'Clip',
       'clip.tabella.laboratorio': 'Laboratoire',
+      'clip.tabella.listinoConc': 'Liste de prix',
       'clip.tabella.prezzoConf': 'Prix conditionnement',
       'clip.tabella.pezzi': 'Pièces',
       'clip.tabella.costoClip': 'Coût/clip',
@@ -1549,6 +1558,7 @@
       'clip.placeholderClip': 'Clip…',
       'clip.placeholderClipSenzaLaboratorio': "Écrivez d'abord le laboratoire…",
       'clip.placeholderLaboratorio': 'Laboratoire…',
+      'clip.placeholderListinoConc': 'Liste de prix…',
       'clip.placeholderProfilo': 'Profil Mylav…',
       'clip.placeholderProfiloSenzaListino': "Écrivez d'abord la liste Mylav…",
       'clip.aggiungiRiga': '+ Ajouter une ligne',
@@ -1560,6 +1570,8 @@
       'clip.righeSenzaProfiloMylav.uno': "Une ligne n'a que la clip et ne sera pas enregistrée : sans le profil Mylav, il n'y a pas de comparaison. Enregistrer quand même ?",
       'clip.avvisoClipConviene': '⚠ Ici, la clip coûte moins cher que Mylav',
       'clip.pianoNonPiuDisponibile': "Le plan utilisé dans ce calcul n'est plus disponible : rouvert sans plan sélectionné.",
+      'clip.ambiguoScegliListino': 'Deux listes de prix ont cette clip : choisissez laquelle',
+      'clip.senzaFile': "Importées avant que le fichier ne soit suivi",
 
       // ── Gestione macchinari esterni: catalogo clip per laboratorio ──
       'macchinari.tabella.laboratorio': 'Laboratoire',
@@ -2097,6 +2109,7 @@
       'clip.tabella.clip': 'Clip',
       'clip.tabella.gruppoClip': 'Clip',
       'clip.tabella.laboratorio': 'Laboratorio',
+      'clip.tabella.listinoConc': 'Lista de precios',
       'clip.tabella.prezzoConf': 'Precio envase',
       'clip.tabella.pezzi': 'Piezas',
       'clip.tabella.costoClip': 'Costo/clip',
@@ -2106,6 +2119,7 @@
       'clip.placeholderClip': 'Clip…',
       'clip.placeholderClipSenzaLaboratorio': 'Escribe primero el laboratorio…',
       'clip.placeholderLaboratorio': 'Laboratorio…',
+      'clip.placeholderListinoConc': 'Lista de precios…',
       'clip.placeholderProfilo': 'Perfil Mylav…',
       'clip.placeholderProfiloSenzaListino': 'Escribe primero la lista Mylav…',
       'clip.aggiungiRiga': '+ Añadir fila',
@@ -2117,6 +2131,8 @@
       'clip.righeSenzaProfiloMylav.uno': 'Una fila solo tiene el clip y no se guardará: sin el perfil Mylav no hay comparación. ¿Guardar de todas formas?',
       'clip.avvisoClipConviene': '⚠ Aquí el clip cuesta menos que Mylav',
       'clip.pianoNonPiuDisponibile': 'El plan usado en este cálculo ya no está disponible: reabierto sin plan seleccionado.',
+      'clip.ambiguoScegliListino': 'Dos listas de precios tienen este clip: elige cuál',
+      'clip.senzaFile': 'Importadas antes de que se registrara el archivo',
 
       // ── Gestione macchinari esterni: catalogo clip per laboratorio ──
       'macchinari.tabella.laboratorio': 'Laboratorio',
