@@ -60,6 +60,12 @@ function roiRigaVuota() {
 function clipRigaVuota() {
   return {
     laboratorio: '',
+    // listino_conc: a specchio di listino_mylav ma sul lato rosso — quale PDF
+    // del LABORATORIO scelto guida i suggerimenti/il prezzo di QUESTA riga.
+    // Facoltativa: vuota vuol dire "tutti i listini di quel laboratorio"
+    // (task 5, serve da quando due PDF dello stesso laboratorio possono avere
+    // una clip omonima).
+    listino_conc: '',
     clip_nome: '', n_clip: 1, prezzo_confezione: '', pezzi: '', sconto_clip: '',
     // listino_mylav: a specchio di laboratorio ma sul lato blu — quale PDF di
     // analizzatori_mylav guida i suggerimenti e il prezzo di QUESTA riga.
@@ -1501,6 +1507,10 @@ async function apriCalcoloClipDaCronologia(id) {
     // laboratori diversi nello stesso calcolo, quindi si rimette su OGNI riga
     // il suo, non solo sulla prima.
     laboratorio: r.laboratorio || '',
+    // listino_conc e' per riga come laboratorio e listino_mylav, per la
+    // stessa ragione: due righe possono confrontare due listini del
+    // concorrente diversi nello stesso calcolo.
+    listino_conc: r.listino_conc || '',
     clip_nome: r.clip_nome || '',
     n_clip: r.n_clip || 1,
     prezzo_confezione: r.prezzo_confezione ?? '',
@@ -4101,6 +4111,18 @@ const COLONNE_CLIP = [
   // aggiornaSuggerimentiClipRiga.
   { col: 'laboratorio',       intestazione: 'clip.tabella.laboratorio', tipo: 'testo',    larghezza: 150, gruppo: 'concorrenza', elenco: 'clip-lab-list',
     segnaposto: () => t('clip.placeholderLaboratorio') },
+  // «Listino conc.» (task 5): quale PDF di QUEL laboratorio guida i
+  // suggerimenti della clip subito dopo. Facoltativa — vuota vuol dire "tutti
+  // i listini di quel laboratorio" — perche' da quando due PDF dello stesso
+  // laboratorio possono avere una clip omonima, il solo laboratorio non basta
+  // sempre a sceglierne una (vedi trovaClip/compilaDaClip: in ambiguita' il
+  // campo clip resta vuoto e lo dice, invece di indovinare). L'elenco
+  // 'clip-listino-conc-list' e' per riga (i PDF DI QUEL laboratorio), a
+  // differenza di 'clip-lab-list' che e' fisso: vedi
+  // aggiornaSuggerimentiListinoConcRiga.
+  { col: 'listino_conc', intestazione: 'clip.tabella.listinoConc', tipo: 'testo',
+    larghezza: 140, gruppo: 'concorrenza', elenco: 'clip-listino-conc-list',
+    segnaposto: () => t('clip.placeholderListinoConc') },
   { col: 'clip_nome',         intestazione: 'clip.tabella.clip',       tipo: 'testo',     larghezza: 200, larghezzaCampo: 190, gruppo: 'concorrenza', elenco: 'clip-list',
     // Senza un laboratorio risolto il campo lo chiede invece di proporre
     // tutto il catalogo (vedi aggiornaSegnapostoClipRiga per l'aggiornamento
@@ -4142,15 +4164,24 @@ const COLONNE_CLIP = [
 // clip sbagliata e' peggio che non riempire.
 // Il catalogo non ha piu' un default implicito su S.clip.catalogo: con dieci
 // listini in un unico account, "tutte le clip" non e' mai la risposta giusta,
-// solo "le clip del laboratorio di questa riga" lo e' (vedi
-// catalogoPerLaboratorio). Un chiamante che non passa un catalogo ottiene
-// sempre null, mai un suggerimento pescato dal laboratorio sbagliato.
+// solo "le clip del laboratorio (ed eventualmente del listino) di questa
+// riga" lo e' (vedi catalogoPerLaboratorioEListino). Un chiamante che non
+// passa un catalogo ottiene sempre null, mai un suggerimento pescato dal
+// laboratorio sbagliato.
+// La corrispondenza esatta va contata, non solo cercata: da task 5 in poi due
+// clip dello stesso laboratorio possono avere lo stesso nome (una per
+// listino), e scegliere la prima trovata sarebbe la stessa scommessa in
+// silenzio che questo task toglie dal database. Se l'esatto e' ambiguo si
+// torna null, come per un nome che non c'e' — sta al chiamante (compilaDaClip)
+// distinguere le due cose per avvisare l'operatore invece di lasciarlo senza
+// spiegazione.
 function trovaClip(nome, catalogo) {
   const cat = catalogo || [];
   const n = String(nome || '').trim();
   if (!n || !cat.length) return null;
-  const esatto = cat.find(c => (c.nome || '').trim().toLowerCase() === n.toLowerCase());
-  if (esatto) return esatto;
+  const esatti = cat.filter(c => (c.nome || '').trim().toLowerCase() === n.toLowerCase());
+  if (esatti.length === 1) return esatti[0];
+  if (esatti.length > 1) return null;
   if (!window.Ricerca) return null;
   const vicini = cat.filter(c => Ricerca.corrisponde(c.nome, n));
   return vicini.length === 1 ? vicini[0] : null;
@@ -4183,19 +4214,66 @@ function trovaLaboratorio(nome) {
   return vicini.length === 1 ? vicini[0] : null;
 }
 
-// Il catalogo DI UNA RIGA: solo le clip del laboratorio scritto in quella
-// riga. Deliberatamente non e' uno stato salvato da nessuna parte (ne' sul
-// motore ne' sulla riga): si ricalcola ogni volta dal testo del laboratorio
-// passato dal chiamante. Due righe con due laboratori diversi non possono mai
-// "vedersi" a vicenda le clip nemmeno per un istante, perche' non esiste una
-// variabile condivisa che potrebbe restare quella sbagliata — e' il mix in
-// forma peggiore, perche' sembra corretto, ed e' esattamente cio' che una
-// variabile unica del calcolatore avrebbe prodotto con due righe compilate in
-// rapida successione.
-function catalogoPerLaboratorio(nomeLaboratorio) {
+// Il catalogo di UN laboratorio, senza filtro di listino: base comune a
+// catalogoPerLaboratorioEListino e a chi deve conoscere TUTTI i listini di
+// quel laboratorio (le sue suggerimenti di «Listino conc.», vedi
+// listiniConcDisponibili). Deliberatamente non e' uno stato salvato da
+// nessuna parte: si ricalcola dal testo del laboratorio passato dal
+// chiamante, stessa ragione di catalogoPerLaboratorioEListino qui sotto.
+function catalogoDelLaboratorio(nomeLaboratorio) {
   const lab = trovaLaboratorio(nomeLaboratorio);
   if (!lab) return [];
   return (S.clip.catalogo || []).filter(c => c.concorrenteId === lab.id);
+}
+
+// I listini (PDF di provenienza) DI UN laboratorio, dedotti dal suo catalogo:
+// a specchio di listiniMylavDisponibili, ma ristretto al laboratorio della
+// riga invece che globale — i suggerimenti di «Listino conc.» sono i PDF di
+// QUEL laboratorio, non tutti quelli in archivio.
+function listiniConcDisponibili(catalogoLab) {
+  const mappa = new Map(); // fileOrigine (string|null) -> etichetta mostrata
+  (catalogoLab || []).forEach(c => {
+    if (!mappa.has(c.fileOrigine)) {
+      mappa.set(c.fileOrigine, c.fileOrigine == null ? t('analizzatori.senzaFile') : c.fileOrigine);
+    }
+  });
+  return [...mappa.entries()].map(([fileOrigine, etichetta]) => ({ fileOrigine, etichetta }));
+}
+
+// Risolve il testo scritto nella colonna «Listino conc.» a un listino vero
+// DI QUEL laboratorio. Stessa regola di trovaLaboratorio/trovaListinoMylav:
+// esatto prima, poi tollerante ma solo se e' l'unico.
+function trovaListinoConcorrente(catalogoLab, testo) {
+  const elenco = listiniConcDisponibili(catalogoLab);
+  const n = String(testo || '').trim();
+  if (!n || !elenco.length) return null;
+  const esatto = elenco.find(l => l.etichetta.trim().toLowerCase() === n.toLowerCase());
+  if (esatto) return esatto;
+  if (!window.Ricerca) return null;
+  const vicini = elenco.filter(l => Ricerca.corrisponde(l.etichetta, n));
+  return vicini.length === 1 ? vicini[0] : null;
+}
+
+// Il catalogo DI UNA RIGA: le clip del laboratorio scritto in quella riga, e
+// se e' scritto anche un listino («Listino conc.», facoltativo) solo quelle
+// di quel PDF. Deliberatamente non e' uno stato salvato da nessuna parte (ne'
+// sul motore ne' sulla riga): si ricalcola ogni volta dal testo della riga
+// passato dal chiamante. Due righe con due laboratori (o due listini dello
+// stesso laboratorio) diversi non possono mai "vedersi" a vicenda le clip
+// nemmeno per un istante, perche' non esiste una variabile condivisa che
+// potrebbe restare quella sbagliata — e' il mix in forma peggiore, perche'
+// sembra corretto, ed e' esattamente cio' che una variabile unica del
+// calcolatore avrebbe prodotto con due righe compilate in rapida successione.
+// Un listino scritto ma non risolto (typo, o un PDF di un altro laboratorio)
+// torna [], mai il catalogo intero non filtrato: un suggerimento sbagliato
+// e' peggio di nessun suggerimento.
+function catalogoPerLaboratorioEListino(nomeLaboratorio, nomeListino) {
+  const catLab = catalogoDelLaboratorio(nomeLaboratorio);
+  const nomeListinoOk = String(nomeListino || '').trim();
+  if (!nomeListinoOk) return catLab;
+  const listino = trovaListinoConcorrente(catLab, nomeListinoOk);
+  if (!listino) return [];
+  return catLab.filter(c => c.fileOrigine === listino.fileOrigine);
 }
 
 // Cascata dal nome della clip: prezzo di confezione, pezzi e sconto abituale
@@ -4217,32 +4295,64 @@ async function compilaDaClip(tr) {
 
   if (nome) {
     const labInp = tr.querySelector('[data-col="laboratorio"]');
-    const c = trovaClip(nome, catalogoPerLaboratorio(labInp ? labInp.value : ''));
+    const listInp = tr.querySelector('[data-col="listino_conc"]');
+    const laboratorio = labInp ? labInp.value : '';
+    const listino = listInp ? listInp.value : '';
+    const catalogo = catalogoPerLaboratorioEListino(laboratorio, listino);
+    const c = trovaClip(nome, catalogo);
     if (c) {
       if (pcInp && c.prezzoConfezione != null && campoFillabile(pcInp)) { pcInp.value = c.prezzoConfezione; pcInp.dataset.auto = '1'; }
       if (pzInp && c.pezzi != null && campoFillabile(pzInp)) { pzInp.value = c.pezzi; pzInp.dataset.auto = '1'; }
       if (scInp && c.sconto != null && campoFillabile(scInp)) { scInp.value = c.sconto; scInp.dataset.auto = '1'; }
+    } else if (!listino.trim() &&
+               catalogo.filter(x => (x.nome || '').trim().toLowerCase() === nome.toLowerCase()).length > 1) {
+      // Due listini dello stesso laboratorio hanno una clip con questo nome, e
+      // nessun listino e' scritto per scegliere: la regola in vigore
+      // (riempire solo se la corrispondenza e' unica) fa gia' la cosa
+      // prudente e non riempie niente, ma senza dirlo l'operatore non saprebbe
+      // perche'. clipMsg (non un throw: non e' un errore, e' un'ambiguita' da
+      // risolvere) lo dice esplicitamente.
+      clipMsg(t('clip.ambiguoScegliListino'), 'error');
     }
   }
   aggiornaRigaDOMClip(tr);
 }
 
 // Aggiorna la tendina nativa della clip (#clip-list, un solo nodo condiviso
-// da tutte le righe) al catalogo DELLA RIGA passata, e il placeholder del
-// campo clip in base a se un laboratorio e' risolto. E' un aggiornamento
-// visivo: la risposta vera (compilaDaClip/trovaClip) legge il laboratorio
-// dalla riga stessa a ogni chiamata, quindi resta corretta anche se la
-// tendina fosse rimasta quella di un'altra riga per un istante.
+// da tutte le righe) al catalogo DELLA RIGA passata (laboratorio + listino), e
+// il placeholder del campo clip in base a se un laboratorio e' risolto. E' un
+// aggiornamento visivo: la risposta vera (compilaDaClip/trovaClip) legge
+// laboratorio e listino dalla riga stessa a ogni chiamata, quindi resta
+// corretta anche se la tendina fosse rimasta quella di un'altra riga per un
+// istante.
 function aggiornaSuggerimentiClipRiga(tr) {
   const labInp = tr.querySelector('[data-col="laboratorio"]');
+  const listInp = tr.querySelector('[data-col="listino_conc"]');
   const nomeInp = tr.querySelector('[data-col="clip_nome"]');
   if (!nomeInp) return;
   const laboratorio = labInp ? labInp.value : '';
+  const listino = listInp ? listInp.value : '';
   const haLab = !!trovaLaboratorio(laboratorio);
   nomeInp.placeholder = haLab ? t('clip.placeholderClip') : t('clip.placeholderClipSenzaLaboratorio');
   nomeInp.classList.toggle('roi-clip-in-attesa-lab', !haLab);
   const dl = el('clip-list');
-  if (dl) dl.innerHTML = catalogoPerLaboratorio(laboratorio).map(c => `<option value="${escHtml(c.nome)}">`).join('');
+  if (dl) dl.innerHTML = catalogoPerLaboratorioEListino(laboratorio, listino).map(c => `<option value="${escHtml(c.nome)}">`).join('');
+}
+
+// Aggiorna la tendina nativa del listino del concorrente (#clip-listino-conc-list)
+// al catalogo DEL LABORATORIO scritto in quella riga (non anche il listino:
+// e' la tendina che PROPONE i listini, filtrarla per il listino gia' scritto
+// sarebbe circolare). Specchio di aggiornaSuggerimentiMylavRiga sul lato
+// rosso: e' un aggiornamento visivo, la risposta vera
+// (catalogoPerLaboratorioEListino) legge laboratorio e listino dalla riga
+// stessa a ogni chiamata.
+function aggiornaSuggerimentiListinoConcRiga(tr) {
+  const labInp = tr.querySelector('[data-col="laboratorio"]');
+  const listInp = tr.querySelector('[data-col="listino_conc"]');
+  if (!listInp) return;
+  const catLab = catalogoDelLaboratorio(labInp ? labInp.value : '');
+  const dl = el('clip-listino-conc-list');
+  if (dl) dl.innerHTML = listiniConcDisponibili(catLab).map(l => `<option value="${escHtml(l.etichetta)}">`).join('');
 }
 
 // Cambiato il laboratorio: quello che era stato riempito da solo nella clip

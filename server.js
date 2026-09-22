@@ -188,6 +188,11 @@ addColIfMissing('righe_calcolo_clip', 'laboratorio', 'TEXT');
 // stesso calcolo. Additiva: le righe salvate prima restano con listino NULL,
 // e continuano a comportarsi come facevano prima di questa colonna.
 addColIfMissing('righe_calcolo_clip', 'listino_mylav', 'TEXT');
+// listino_conc (task 5): a specchio di laboratorio ma per scegliere QUALE
+// listino di quel laboratorio, ora che due PDF dello stesso laboratorio
+// possono avere una clip omonima. Facoltativa: vuota vuol dire "tutti i
+// listini di quel laboratorio". Additiva come le due sopra.
+addColIfMissing('righe_calcolo_clip', 'listino_conc', 'TEXT');
 
 // ── Rimozione del catalogo analizzatori ─────────────
 // I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
@@ -2222,10 +2227,10 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
 
       const ins = db.prepare(`
         INSERT INTO righe_calcolo_clip
-          (calcolo_id, laboratorio, clip_nome, n_clip, prezzo_confezione, pezzi, sconto_clip,
+          (calcolo_id, laboratorio, listino_conc, clip_nome, n_clip, prezzo_confezione, pezzi, sconto_clip,
            costo_clip, totale_clip, listino_mylav, profilo_mylav, n_mylav, listino_lav,
            prezzo_scontato_lav, totale_mylav, risparmio)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const r of righe) {
@@ -2253,7 +2258,7 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
         const risparmio = totaleClip == null ? null : totaleClip - totaleMylav;
 
         ins.run(
-          calcoloId, r.laboratorio || null, r.clip_nome || null, nClip, prezzoConf || null, pezzi || null, sconto || null,
+          calcoloId, r.laboratorio || null, r.listino_conc || null, r.clip_nome || null, nClip, prezzoConf || null, pezzi || null, sconto || null,
           costoClip, totaleClip, r.listino_mylav || null, r.profilo_mylav || null, nMyl, listinoLav || null,
           prezzoPiano || null, totaleMylav, risparmio
         );
