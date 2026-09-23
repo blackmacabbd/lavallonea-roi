@@ -696,7 +696,13 @@ function modificaNelCalcolatore() {
       // calcolo (colonna dati_foglio.listino_mylav). Una riga salvata prima di
       // questa colonna ha d.listino_mylav a NULL, quindi torna vuota come si
       // comportava gia'.
-      listino_mylav: d.listino_mylav || ''
+      listino_mylav: d.listino_mylav || '',
+      // Preesistenti a questo task ma dimenticate qui: /api/calcolo/salva le
+      // scrive (server.js) e GET /api/file/:id/dati le legge (SELECT *), solo
+      // questa mappa le buttava via, svuotando l'esame concorrente e la sua
+      // quantita' indipendente ogni volta che si riapriva un calcolo salvato.
+      esame_concorrente: d.esame_concorrente || '',
+      n_concorrenza: d.n_concorrenza || ''
     };
   });
   if (!S.roi.righe.length) S.roi.righe = [roiRigaVuota()];
