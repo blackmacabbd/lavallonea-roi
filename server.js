@@ -1510,8 +1510,17 @@ app.post('/api/concorrenti/import/conferma', requireAuth, express.json({ limit: 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// soloConEsami=1: usato dal lato esami (Gestione esami esterni, calcolatore
+// esami) per non proporre un laboratorio nato da un import di clip e senza
+// nessun esame — sceglierlo li' puo' solo produrre zeri. Senza il parametro
+// l'elenco resta completo, come lo legge la pagina macchinari: un laboratorio
+// resta una riga sola (nessuna colonna in piu', nessuna anagrafica doppia),
+// e' solo l'elenco a filtrare in base a cio' che quel laboratorio ha davvero.
 app.get('/api/concorrenti', requireAuth, (req, res) => {
-  try { res.json(concorrenti.listaConcorrenti(db, req.user.id)); }
+  try {
+    const soloConEsami = req.query.soloConEsami === '1';
+    res.json(concorrenti.listaConcorrenti(db, req.user.id, { soloConEsami }));
+  }
   catch (err) { res.status(500).json({ error: err.message }); }
 });
 

@@ -153,7 +153,12 @@ async function loadPiani() {
 }
 
 async function loadConcorrenti() {
-  S.concorrenti = await api('/api/concorrenti');
+  // soloConEsami=1: S.concorrenti alimenta il lato esami (selettore del
+  // Calcolatore ROI, Gestione esami esterni tramite renderConcorrentiAdmin),
+  // mai la pagina macchinari (che tiene il proprio elenco completo in
+  // S.macch.concorrenti, vedi renderMacchinariEsterni): un laboratorio senza
+  // esami sceglibile qui produrrebbe solo zeri.
+  S.concorrenti = await api('/api/concorrenti?soloConEsami=1');
   // Se c'e' un solo concorrente, selezionalo di default nel Calcolatore ROI
   // (cosi le mappature si applicano subito senza doverlo scegliere a mano).
   if (S.roi.concorrenteId == null && S.concorrenti.length === 1) {
@@ -1967,7 +1972,10 @@ async function importaPianiJson(inputEl) {
 
 async function renderConcorrentiAdmin() {
   let elenco;
-  try { elenco = await api('/api/concorrenti'); }
+  // soloConEsami=1: questa e' la pagina "esami esterni", non deve proporre un
+  // laboratorio nato da un import di clip e ancora senza nessun esame (vedi
+  // loadConcorrenti).
+  try { elenco = await api('/api/concorrenti?soloConEsami=1'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
       <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
@@ -2316,7 +2324,12 @@ async function renderMacchinariEsterni() {
       <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
     return;
   }
-  S.concorrenti = concorrenti;
+  // Elenco completo apposta (nessun soloConEsami qui): questa pagina deve
+  // vedere ogni laboratorio, compreso uno senza nessun esame. Resta dentro
+  // S.macch, non nel campo globale S.concorrenti (quello e' filtrato per il
+  // lato esami, vedi loadConcorrenti): scriverci sopra farebbe ricomparire un
+  // laboratorio senza esami nel selettore del Calcolatore ROI alla prima
+  // visita di questa pagina.
   S.macch = { concorrenti, clip, filtro: '' };
 
   setMain(`
@@ -2516,7 +2529,9 @@ async function renderMacchinariDettaglio(concorrenteId) {
 
   const clipDelGruppo = tutteLeClip.filter(c =>
     concorrenteId == null ? c.concorrenteId == null : c.concorrenteId === concorrenteId);
-  const lab = concorrenteId == null ? null : (S.concorrenti || []).find(c => c.id === concorrenteId);
+  // S.macch.concorrenti, non S.concorrenti: qui serve l'elenco completo dei
+  // laboratori (anche uno senza esami), che questa pagina tiene per conto suo.
+  const lab = concorrenteId == null ? null : ((S.macch && S.macch.concorrenti) || []).find(c => c.id === concorrenteId);
 
   S.macchDett = { concorrenteId, nomeLab: lab ? lab.nome : null, clip: clipDelGruppo, filtro: '' };
 
@@ -2568,7 +2583,7 @@ function renderMacchinariDettaglioBody() {
     ${senzaLab ? `<td>
         <select class="roi-input" data-assegna-select style="width:170px">
           <option value="">${t('macchinari.selezionaLaboratorio')}</option>
-          ${(S.concorrenti || []).map(l => `<option value="${l.id}">${escHtml(l.nome)}</option>`).join('')}
+          ${((S.macch && S.macch.concorrenti) || []).map(l => `<option value="${l.id}">${escHtml(l.nome)}</option>`).join('')}
         </select>
       </td>` : ''}
     <td style="display:flex;gap:6px">
