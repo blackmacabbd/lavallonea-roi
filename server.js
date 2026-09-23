@@ -233,6 +233,15 @@ addColIfMissing('prezzi_esami_custom', 'user_id', 'INTEGER');
 addColIfMissing('dati_foglio', 'esame_concorrente', 'TEXT');
 addColIfMissing('dati_foglio', 'n_concorrenza', 'INTEGER');
 
+// listino_mylav (task 6): quale PDF di analizzatori_mylav ha guidato i
+// suggerimenti/il prezzo di QUESTA riga nel calcolatore esami — a specchio
+// della stessa colonna in righe_calcolo_clip (calcolatore macchinari). Il
+// campo sceglie i numeri, non li calcola: i valori salvati restano giusti
+// anche per le righe con listino_mylav NULL. Additiva: le righe salvate
+// prima di questa colonna restano a NULL, che vuol dire esattamente "nessun
+// listino scelto", cioe' come si comportavano gia'.
+addColIfMissing('dati_foglio', 'listino_mylav', 'TEXT');
+
 // Backfill: gli account creati prima del catalogo per-utente non hanno ancora la
 // loro copia. copiaCatalogoPerUtente e' idempotente, quindi girare a ogni boot e'
 // sicuro e recupera anche eventuali copie fallite.
@@ -2210,8 +2219,8 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
           (file_id, foglio, esame, n_esami, esame_concorrente, n_concorrenza,
            listino_concorrenza, totale_concorrenza, prezzo_scontato_concorrenza,
            listino_lav, totale_listino_lav, prezzo_scontato_lav, totale_scontato_lav,
-           risparmio_dottore, sconto_concorrenza, sconto_lav, piano_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           risparmio_dottore, sconto_concorrenza, sconto_lav, piano_id, listino_mylav)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const r of righe) {
@@ -2229,7 +2238,7 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
         const tPLav    = pLav * n;
         ins.run(fileId, foglio, r.esame, n, r.esame_concorrente || null, nConc,
           lConc, tConc, pConc, lLav, tLLav, pLav, tPLav,
-          pConc - tPLav, tConc - pConc, tLLav - tPLav, piano_id || null);
+          pConc - tPLav, tConc - pConc, tLLav - tPLav, piano_id || null, r.listino_mylav || null);
       }
       db.exec('COMMIT');
       res.json({ success: true, file_id: fileId, struttura_id: strRow.id, struttura: strutturaNome, fogli: [foglio] });

@@ -46,8 +46,10 @@ function roiRigaVuota() {
   return {
     esame_concorrente: '', n_concorrenza: '',
     // listino_mylav: quale PDF di analizzatori_mylav guida i suggerimenti/il
-    // prezzo del lato Mylav per QUESTA riga (colonna "Listino Mylav", non
-    // salvata: vedi la nota nel calcolatore).
+    // prezzo del lato Mylav per QUESTA riga (colonna "Listino Mylav"). Task 6:
+    // si salva in dati_foglio.listino_mylav e torna riaprendo il calcolo
+    // (vedi modificaNelCalcolatore) — sceglie i numeri, non li calcola, quindi
+    // non tocca ne' i totali ne' il PDF generato.
     listino_mylav: '',
     esame: '', n_esami: 1,
     listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: ''
@@ -677,7 +679,12 @@ function modificaNelCalcolatore() {
       listino_concorrenza: d.listino_concorrenza || '',
       sconto_concorrenza: scRaw > 0 ? scRaw : '',
       listino_lav: d.listino_lav || '',
-      prezzo_scontato_lav: d.prezzo_scontato_lav || ''
+      prezzo_scontato_lav: d.prezzo_scontato_lav || '',
+      // Task 6: il listino Mylav scelto per la riga si ritrova riaprendo il
+      // calcolo (colonna dati_foglio.listino_mylav). Una riga salvata prima di
+      // questa colonna ha d.listino_mylav a NULL, quindi torna vuota come si
+      // comportava gia'.
+      listino_mylav: d.listino_mylav || ''
     };
   });
   if (!S.roi.righe.length) S.roi.righe = [roiRigaVuota()];
