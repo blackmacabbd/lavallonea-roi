@@ -4501,7 +4501,7 @@ async function suListinoConcCambiatoClip(tr) {
     // Stessa forza-ricalcolo di suLaboratorioCambiatoClip: il listino e'
     // cambiato, quindi il catalogo di riferimento e' cambiato, anche se il
     // testo del nome clip e' rimasto lo stesso.
-    nomeInp.dataset.lastClipNome = ' ';
+    nomeInp.dataset.lastClipNome = '\u0000';
   }
   aggiornaSuggerimentiClipRiga(tr);
   await compilaDaClip(tr);
