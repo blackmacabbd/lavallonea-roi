@@ -1073,13 +1073,30 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 /* Calcolatore clip: prezzo di confezione, pezzi e costo per clip sono il
    passaggio verso il numero che conta, non la decisione — restano piu'
    tenui delle altre colonne. "Costo/clip" resta comunque leggibile (l'occhio
-   deve cadere li' e sul totale), quindi meno tenue degli altri due. */
+   deve cadere li' e sul totale), quindi meno tenue degli altri due.
+   pezzi_mylav (task 4) e' lo specchio blu di pezzi: stessa tenuita'. */
 #clip-table-wrap input[data-col="prezzo_confezione"],
-#clip-table-wrap input[data-col="pezzi"] {
+#clip-table-wrap input[data-col="pezzi"],
+#clip-table-wrap input[data-col="pezzi_mylav"] {
   color: #b3b8c2;
 }
 #clip-table-wrap td.roi-calc[data-col="costo_clip"] {
   color: #8a93a1;
+}
+
+/* Il segnaposto numerico di "Listino Myl" ("0.00") restava nel grigio di
+   default del browser: leggibile su bianco, quasi invisibile sul lieve
+   fondo blu del gruppo mylav (rgba(15,118,188,0.06) — vedi SFONDO_GRUPPO in
+   calcolatore.js). Rilievo del cliente. --ink-soft e' gia' in palette (testo
+   secondario altrove): piu' scuro del grigio di default ma ancora
+   chiaramente piu' chiaro di un valore vero (che resta var(--ink) pieno,
+   colore di default di .roi-input) — un segnaposto resta un segnaposto.
+   Specchiato sul lato rosso (prezzo_confezione, stessa posizione: il prezzo
+   grezzo prima della divisione) perche' i due blocchi restino bilanciati. */
+#clip-table-wrap input[data-col="listino_lav"]::placeholder,
+#clip-table-wrap input[data-col="prezzo_confezione"]::placeholder {
+  color: var(--ink-soft);
+  opacity: 1;
 }
 
 /* Il campo clip "chiede" il listino conc. invece di proporre tutto il
