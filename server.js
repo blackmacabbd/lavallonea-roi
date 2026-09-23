@@ -2323,8 +2323,38 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
           prezzoPiano || null, totaleMylav, risparmio
         );
       }
+
+      // Le clip scritte a mano che il listino scelto non ha ancora ci entrano
+      // adesso, una volta per listino: dentro la stessa transazione delle
+      // righe, cosi' o si salva tutto o non si salva niente. Solo le mancanti
+      // (vedi aggiungiClipMancanti): una clip gia' in listino non si tocca.
+      // Le righe si raggruppano per listino perche' due righe dello stesso
+      // calcolo possono confrontare due listini diversi.
+      //
+      // '__nessun_file__' e' il sentinella con cui il client salva il gruppo
+      // "senza provenienza" (LISTINO_SENZA_FILE_SALVATO in public/app.js): non
+      // e' un listino, e' l'assenza di listino, quindi qui vale come vuoto. Se
+      // ne cambia il valore la' va cambiato anche qui.
+      const NESSUN_LISTINO = '__nessun_file__';
+      const perListino = new Map();
+      for (const r of righe) {
+        const f = String(r.listino_conc == null ? '' : r.listino_conc).trim();
+        if (!f || f === NESSUN_LISTINO) continue;
+        if (!perListino.has(f)) perListino.set(f, []);
+        perListino.get(f).push({
+          nome: r.clip_nome, prezzoConfezione: r.prezzo_confezione,
+          pezzi: r.pezzi, sconto: r.sconto_clip
+        });
+      }
+      let clipAggiunte = 0;
+      for (const [file, righeListino] of perListino) {
+        clipAggiunte += clipLib.aggiungiClipMancanti(db, {
+          userId: req.user.id, fileOrigine: file, righe: righeListino
+        }).aggiunte;
+      }
+
       db.exec('COMMIT');
-      res.json({ success: true, calcolo_id: calcoloId });
+      res.json({ success: true, calcolo_id: calcoloId, clipAggiunte });
     } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
   } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
 });
