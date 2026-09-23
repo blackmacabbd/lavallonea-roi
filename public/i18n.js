@@ -2316,6 +2316,18 @@
     return !!((DIZIONARIO[corrente] && DIZIONARIO[corrente][chiave] != null) || DIZIONARIO.it[chiave] != null);
   }
 
+  // Il testo di una chiave in TUTTE le lingue (senza doppioni): serve a chi
+  // deve riconoscere un valore gia' tradotto e salvato prima che esistesse un
+  // sentinella indipendente dalla lingua (es. "senza provenienza" nelle
+  // colonne Listino conc./Listino Mylav del calcolatore, vedi public/app.js),
+  // per non lasciarlo indecifrabile quando lo si riapre con l'interfaccia in
+  // un'altra lingua rispetto a quando fu salvato.
+  function tTutteLingue(chiave) {
+    const insieme = new Set();
+    LINGUE.forEach(l => { if (DIZIONARIO[l] && DIZIONARIO[l][chiave] != null) insieme.add(DIZIONARIO[l][chiave]); });
+    return [...insieme];
+  }
+
   // Il server manda un codice accanto al testo italiano: si mostra la traduzione
   // del codice quando la conosciamo, altrimenti il testo cosi' come arriva.
   //
@@ -2388,7 +2400,7 @@
     chiudiMenuLingua();
   });
 
-  window.I18n = { LINGUE, NOMI, t, esiste, messaggioErrore, lingua: () => corrente, impostaLingua, selettoreHtml };
+  window.I18n = { LINGUE, NOMI, t, esiste, tTutteLingue, messaggioErrore, lingua: () => corrente, impostaLingua, selettoreHtml };
   window.t = t;
   window.apriMenuLingua = apriMenuLingua;
   window.sceglieLingua = sceglieLingua;

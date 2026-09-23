@@ -695,8 +695,11 @@ function modificaNelCalcolatore() {
       // Task 6: il listino Mylav scelto per la riga si ritrova riaprendo il
       // calcolo (colonna dati_foglio.listino_mylav). Una riga salvata prima di
       // questa colonna ha d.listino_mylav a NULL, quindi torna vuota come si
-      // comportava gia'.
-      listino_mylav: d.listino_mylav || '',
+      // comportava gia'. listinoDaVisualizzare: il gruppo "senza provenienza"
+      // si salva come sentinella indipendente dalla lingua (vedi
+      // listinoDaSalvare in salvaCalcolo), qui si ritraduce nell'etichetta
+      // della lingua corrente (rilievo 10 della review finale).
+      listino_mylav: listinoDaVisualizzare(d.listino_mylav, 'analizzatori.senzaFile'),
       // Preesistenti a questo task ma dimenticate qui: /api/calcolo/salva le
       // scrive (server.js) e GET /api/file/:id/dati le legge (SELECT *), solo
       // questa mappa le buttava via, svuotando l'esame concorrente e la sua
@@ -1534,8 +1537,11 @@ async function apriCalcoloClipDaCronologia(id) {
     laboratorio: r.laboratorio || '',
     // listino_conc e' per riga come laboratorio e listino_mylav, per la
     // stessa ragione: due righe possono confrontare due listini del
-    // concorrente diversi nello stesso calcolo.
-    listino_conc: r.listino_conc || '',
+    // concorrente diversi nello stesso calcolo. listinoDaVisualizzare: il
+    // gruppo "senza provenienza" si salva come sentinella indipendente dalla
+    // lingua (vedi listinoDaSalvare in salvaCalcoloClip), qui si ritraduce
+    // nell'etichetta della lingua corrente (rilievo 10 della review finale).
+    listino_conc: listinoDaVisualizzare(r.listino_conc, 'clip.senzaFile'),
     clip_nome: r.clip_nome || '',
     n_clip: r.n_clip || 1,
     prezzo_confezione: r.prezzo_confezione ?? '',
@@ -1543,7 +1549,7 @@ async function apriCalcoloClipDaCronologia(id) {
     sconto_clip: r.sconto_clip ?? '',
     // listino_mylav e' per riga come laboratorio, per la stessa ragione: due
     // righe possono pescare da due listini Mylav diversi nello stesso calcolo.
-    listino_mylav: r.listino_mylav || '',
+    listino_mylav: listinoDaVisualizzare(r.listino_mylav, 'analizzatori.senzaFile'),
     profilo_mylav: r.profilo_mylav || '',
     n_mylav: r.n_mylav || 1,
     listino_lav: r.listino_lav ?? '',
@@ -4046,11 +4052,17 @@ async function salvaCalcolo() {
   }
 
   const nomeFile = `Calcolo_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
+  // listino_mylav: si salva il sentinella indipendente dalla lingua, non
+  // l'etichetta "senza provenienza" che l'operatore vede nella tendina — vedi
+  // listinoDaSalvare (rilievo 10 della review finale).
+  const righeDaSalvare = righe.map(r => ({
+    ...r, listino_mylav: listinoDaSalvare(r.listino_mylav, 'analizzatori.senzaFile')
+  }));
   try {
     const resp = await api('/api/calcolo/salva', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ struttura, foglio: 'Platinum', righe, nomeFile, piano_id: S.roi.pianoId })
+      body: JSON.stringify({ struttura, foglio: 'Platinum', righe: righeDaSalvare, nomeFile, piano_id: S.roi.pianoId })
     });
     roiMsg(t('roi.salvatoOk'), 'ok');
     await loadStrutture();
@@ -4268,6 +4280,44 @@ function catalogoDelLaboratorio(nomeLaboratorio) {
   const lab = trovaLaboratorio(nomeLaboratorio);
   if (!lab) return [];
   return (S.clip.catalogo || []).filter(c => c.concorrenteId === lab.id);
+}
+
+// ── Sentinella "senza provenienza" per Listino conc./Listino Mylav ──────
+// Le tendine di queste due colonne (listiniConcDisponibili qui sotto e
+// listiniMylavDisponibili piu' in basso) offrono anche il gruppo senza
+// provenienza, mostrato con un'etichetta TRADOTTA (t('clip.senzaFile') /
+// t('analizzatori.senzaFile')). Quell'etichetta e' cio' che l'operatore vede
+// e sceglie, ma non deve essere cio' che si salva (righe_calcolo_clip.listino_conc/
+// .listino_mylav, dati_foglio.listino_mylav): un testo tradotto persistito,
+// riaperto con l'interfaccia in un'altra lingua, non risolverebbe piu' a
+// nulla (rilievo 10 della review finale). Le due funzioni sotto convertono
+// avanti (salvataggio) e indietro (riapertura) fra l'etichetta e questo
+// sentinella, che non cambia mai.
+const LISTINO_SENZA_FILE_SALVATO = '__nessun_file__';
+
+// Dal campo (quello che l'operatore vede) al valore da salvare: solo
+// l'etichetta esatta della lingua corrente diventa il sentinella. Tutto il
+// resto — un vero nome di file, il vuoto — passa invariato: sono dati
+// dell'operatore, non si toccano mai.
+function listinoDaSalvare(valoreCampo, chiaveEtichetta) {
+  const v = String(valoreCampo == null ? '' : valoreCampo);
+  return v === t(chiaveEtichetta) ? LISTINO_SENZA_FILE_SALVATO : v;
+}
+
+// Dal valore salvato al campo: il sentinella torna l'etichetta della lingua
+// CORRENTE, anche se non e' quella con cui si era salvato — e' il punto di
+// questa correzione. Una riga salvata PRIMA che il sentinella esistesse ha
+// invece l'etichetta tradotta scritta li' per davvero: se e' una delle
+// quattro traduzioni note (in qualunque lingua, non solo quella corrente) si
+// riconosce comunque e si mostra l'etichetta della lingua corrente, cosi' un
+// calcolo vecchio si riapre leggibile anche cambiando lingua. Qualunque altro
+// valore (un vero nome di file, o testo che non corrisponde a nessuna delle
+// due) passa invariato, senza inventare un errore.
+function listinoDaVisualizzare(valoreSalvato, chiaveEtichetta) {
+  if (valoreSalvato === LISTINO_SENZA_FILE_SALVATO) return t(chiaveEtichetta);
+  const v = valoreSalvato || '';
+  if (v && window.I18n && I18n.tTutteLingue(chiaveEtichetta).includes(v)) return t(chiaveEtichetta);
+  return v;
 }
 
 // I listini (PDF di provenienza) DI UN laboratorio, dedotti dal suo catalogo:
@@ -5032,11 +5082,20 @@ async function salvaCalcoloClip() {
   }
 
   const nomeFile = `Calcolo_clip_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
+  // listino_conc/listino_mylav: si salva il sentinella indipendente dalla
+  // lingua per il gruppo "senza provenienza", non l'etichetta tradotta che
+  // l'operatore vede nella tendina — vedi listinoDaSalvare (rilievo 10 della
+  // review finale).
+  const righeDaSalvare = righe.map(r => ({
+    ...r,
+    listino_conc: listinoDaSalvare(r.listino_conc, 'clip.senzaFile'),
+    listino_mylav: listinoDaSalvare(r.listino_mylav, 'analizzatori.senzaFile')
+  }));
   try {
     await api('/api/calcolo-clip/salva', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ struttura: struttura.trim(), righe, nomeFile, piano_id: S.clip.pianoId })
+      body: JSON.stringify({ struttura: struttura.trim(), righe: righeDaSalvare, nomeFile, piano_id: S.clip.pianoId })
     });
     clipMsg(t('clip.salvatoOk'), 'ok');
   } catch (e) {
