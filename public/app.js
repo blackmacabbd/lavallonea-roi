@@ -4147,7 +4147,7 @@ const COLONNE_CLIP = [
   // suggerimenti della clip subito dopo. Facoltativa — vuota vuol dire "tutti
   // i listini di quel laboratorio" — perche' da quando due PDF dello stesso
   // laboratorio possono avere una clip omonima, il solo laboratorio non basta
-  // sempre a sceglierne una (vedi trovaClip/compilaDaClip: in ambiguita' il
+  // sempre a sceglierne una (vedi trovaClipEsito/compilaDaClip: in ambiguita' il
   // campo clip resta vuoto e lo dice, invece di indovinare). L'elenco
   // 'clip-listino-conc-list' e' per riga (i PDF DI QUEL laboratorio), a
   // differenza di 'clip-lab-list' che e' fisso: vedi
@@ -4204,19 +4204,25 @@ const COLONNE_CLIP = [
 // clip dello stesso laboratorio possono avere lo stesso nome (una per
 // listino), e scegliere la prima trovata sarebbe la stessa scommessa in
 // silenzio che questo task toglie dal database. Se l'esatto e' ambiguo si
-// torna null, come per un nome che non c'e' — sta al chiamante (compilaDaClip)
-// distinguere le due cose per avvisare l'operatore invece di lasciarlo senza
-// spiegazione.
-function trovaClip(nome, catalogo) {
+// torna un esito 'ambiguo', mai lo stesso null di un nome che non c'e': i
+// chiamanti (compilaDaClip, suLaboratorioCambiatoClip, suListinoConcCambiatoClip)
+// devono poter distinguere le due cose per avvisare l'operatore invece di
+// lasciarlo senza spiegazione — con un solo null indistinguibile finivano per
+// azzerare in silenzio anche il caso ambiguo, ricreando nell'interfaccia
+// esattamente l'ambiguita' silenziosa che questo blocco doveva togliere dal
+// database.
+function trovaClipEsito(nome, catalogo) {
   const cat = catalogo || [];
   const n = String(nome || '').trim();
-  if (!n || !cat.length) return null;
+  if (!n || !cat.length) return { esito: 'assente', clip: null };
   const esatti = cat.filter(c => (c.nome || '').trim().toLowerCase() === n.toLowerCase());
-  if (esatti.length === 1) return esatti[0];
-  if (esatti.length > 1) return null;
-  if (!window.Ricerca) return null;
+  if (esatti.length === 1) return { esito: 'trovato', clip: esatti[0] };
+  if (esatti.length > 1) return { esito: 'ambiguo', clip: null };
+  if (!window.Ricerca) return { esito: 'assente', clip: null };
   const vicini = cat.filter(c => Ricerca.corrisponde(c.nome, n));
-  return vicini.length === 1 ? vicini[0] : null;
+  if (vicini.length === 1) return { esito: 'trovato', clip: vicini[0] };
+  if (vicini.length > 1) return { esito: 'ambiguo', clip: null };
+  return { esito: 'assente', clip: null };
 }
 
 // I laboratori che hanno almeno una clip in catalogo, dedotti dal catalogo
@@ -4331,19 +4337,17 @@ async function compilaDaClip(tr) {
     const laboratorio = labInp ? labInp.value : '';
     const listino = listInp ? listInp.value : '';
     const catalogo = catalogoPerLaboratorioEListino(laboratorio, listino);
-    const c = trovaClip(nome, catalogo);
+    const { esito, clip: c } = trovaClipEsito(nome, catalogo);
     if (c) {
       if (pcInp && c.prezzoConfezione != null && campoFillabile(pcInp)) { pcInp.value = c.prezzoConfezione; pcInp.dataset.auto = '1'; }
       if (pzInp && c.pezzi != null && campoFillabile(pzInp)) { pzInp.value = c.pezzi; pzInp.dataset.auto = '1'; }
       if (scInp && c.sconto != null && campoFillabile(scInp)) { scInp.value = c.sconto; scInp.dataset.auto = '1'; }
-    } else if (!listino.trim() &&
-               catalogo.filter(x => (x.nome || '').trim().toLowerCase() === nome.toLowerCase()).length > 1) {
-      // Due listini dello stesso laboratorio hanno una clip con questo nome, e
-      // nessun listino e' scritto per scegliere: la regola in vigore
-      // (riempire solo se la corrispondenza e' unica) fa gia' la cosa
-      // prudente e non riempie niente, ma senza dirlo l'operatore non saprebbe
-      // perche'. clipMsg (non un throw: non e' un errore, e' un'ambiguita' da
-      // risolvere) lo dice esplicitamente.
+    } else if (esito === 'ambiguo') {
+      // Piu' di un listino di questo laboratorio (scelto o no) ha una clip con
+      // questo nome: la regola in vigore (riempire solo se la corrispondenza
+      // e' unica) fa gia' la cosa prudente e non riempie niente, ma senza
+      // dirlo l'operatore non saprebbe perche'. clipMsg (non un throw: non e'
+      // un errore, e' un'ambiguita' da risolvere) lo dice esplicitamente.
       clipMsg(t('clip.ambiguoScegliListino'), 'error');
     }
   }
@@ -4353,7 +4357,7 @@ async function compilaDaClip(tr) {
 // Aggiorna la tendina nativa della clip (#clip-list, un solo nodo condiviso
 // da tutte le righe) al catalogo DELLA RIGA passata (laboratorio + listino), e
 // il placeholder del campo clip in base a se un laboratorio e' risolto. E' un
-// aggiornamento visivo: la risposta vera (compilaDaClip/trovaClip) legge
+// aggiornamento visivo: la risposta vera (compilaDaClip/trovaClipEsito) legge
 // laboratorio e listino dalla riga stessa a ogni chiamata, quindi resta
 // corretta anche se la tendina fosse rimasta quella di un'altra riga per un
 // istante.
@@ -4446,8 +4450,8 @@ function catalogoPerListinoMylav(nomeListino) {
 }
 
 // Cerca in UN catalogo (gia' filtrato dal chiamante) il nome digitato. Stessa
-// forma di trovaClip, ma con .find invece di contare gli esatti: qui e'
-// SICURO, non solo per pigrizia. trovaClip conta perche' catalogoDelLaboratorio
+// forma di trovaClipEsito, ma con .find invece di contare gli esatti: qui e'
+// SICURO, non solo per pigrizia. trovaClipEsito conta perche' catalogoDelLaboratorio
 // puo' restare non filtrato per listino (listino_conc vuoto = "tutti i listini
 // di quel laboratorio"), e li' due PDF diversi possono avere una clip
 // omonima. trovaAnalizzatore riceve invece sempre catalogoPerListinoMylav(...),
@@ -4487,11 +4491,42 @@ async function suLaboratorioCambiatoClip(tr) {
   if (laboratorio === prec) return;
   labInp.dataset.lastLaboratorio = laboratorio;
 
+  // Il «Listino conc.» scritto appartiene al laboratorio precedente: se il
+  // laboratorio nuovo non ha un file con questo nome va azzerato subito, come
+  // il nome della clip qui sotto. Senza questo, catalogoPerLaboratorioEListino
+  // (qui e in compilaDaClip) filtrerebbe per un file che il laboratorio nuovo
+  // non possiede, tornando [] in silenzio invece di ricadere su "nessun
+  // listino scelto" (tutti i file del laboratorio nuovo): la riga restava con
+  // un prezzo azzerato e nessuna spiegazione (vedi review finale).
+  const listInp = tr.querySelector('[data-col="listino_conc"]');
+  if (listInp) {
+    const listinoAttuale = listInp.value.trim();
+    if (listinoAttuale && !trovaListinoConcorrente(catalogoDelLaboratorio(laboratorio), listinoAttuale)) {
+      listInp.value = '';
+    }
+    // Stesso azzeramento del sentinella di suListinoConcCambiatoClip: forza a
+    // ricalcolare anche se il testo non e' cambiato (era gia' vuoto, o e'
+    // appena stato azzerato qui sopra).
+    listInp.dataset.lastListinoConc = '\u0000';
+  }
+
+  // Filtrato per laboratorio E listino (catalogoPerLaboratorioEListino, non
+  // catalogoDelLaboratorio non filtrato): un nome che esiste in un ALTRO file
+  // del laboratorio nuovo non deve sopravvivere se il listino (appena riletto
+  // o azzerato sopra) lo esclude — stessa ragione, e stesso catalogo, di
+  // suListinoConcCambiatoClip qui sotto.
   const nomeInp = tr.querySelector('[data-col="clip_nome"]');
   if (nomeInp) {
     const nomeAttuale = nomeInp.value.trim();
-    if (nomeAttuale && !trovaClip(nomeAttuale, catalogoDelLaboratorio(laboratorio))) {
-      nomeInp.value = '';
+    if (nomeAttuale) {
+      const { esito } = trovaClipEsito(nomeAttuale, catalogoPerLaboratorioEListino(laboratorio, listInp ? listInp.value : ''));
+      if (esito === 'assente') {
+        nomeInp.value = '';
+      }
+      // 'ambiguo': il nome scritto dall'operatore resta. Lo segnalera'
+      // compilaDaClip (chiamato subito sotto) con clip.ambiguoScegliListino —
+      // cancellarlo qui in silenzio e' esattamente il difetto che questa
+      // distinzione doveva togliere dall'interfaccia.
     }
     // Forza compilaDaClip a rifare la cascata (azzera cio' che era automatico
     // e ripesca dal nuovo listino) anche se il testo del nome non e'
@@ -4500,6 +4535,7 @@ async function suLaboratorioCambiatoClip(tr) {
     nomeInp.dataset.lastClipNome = '\u0000';
   }
   aggiornaSuggerimentiClipRiga(tr);
+  aggiornaSuggerimentiListinoConcRiga(tr);
   await compilaDaClip(tr);
 }
 
@@ -4527,8 +4563,15 @@ async function suListinoConcCambiatoClip(tr) {
   const nomeInp = tr.querySelector('[data-col="clip_nome"]');
   if (nomeInp) {
     const nomeAttuale = nomeInp.value.trim();
-    if (nomeAttuale && !trovaClip(nomeAttuale, catalogoPerLaboratorioEListino(laboratorio, listino))) {
-      nomeInp.value = '';
+    if (nomeAttuale) {
+      const { esito } = trovaClipEsito(nomeAttuale, catalogoPerLaboratorioEListino(laboratorio, listino));
+      if (esito === 'assente') {
+        nomeInp.value = '';
+      }
+      // 'ambiguo': il nome scritto dall'operatore resta. Lo segnalera'
+      // compilaDaClip (chiamato subito sotto) con clip.ambiguoScegliListino —
+      // cancellarlo qui in silenzio e' esattamente il difetto che questa
+      // distinzione doveva togliere dall'interfaccia.
     }
     // Stessa forza-ricalcolo di suLaboratorioCambiatoClip: il listino e'
     // cambiato, quindi il catalogo di riferimento e' cambiato, anche se il
