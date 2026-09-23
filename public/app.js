@@ -4028,7 +4028,7 @@ async function esportaExcelRoi() {
 // singola analisi si ottiene dividendo per i pezzi. Deciso dal cliente (due
 // volte, sapendo la conseguenza): senza pezzi il calcolatore assume 1, non
 // piu' null — un costo sbagliato di un fattore dodici ma VISIBILE, non un
-// campo vuoto che nasconde il totale (vedi costoAnalizzatore, stessa regola
+// campo vuoto che nasconde il totale (stessa regola anche
 // sul lato Mylav).
 function calcolaRigaClip(r) {
   const pezziGrezzi = parseFloat(r.pezzi) || 0;
@@ -4312,7 +4312,7 @@ async function compilaDaClip(tr) {
       if (pcInp && c.prezzoConfezione != null && campoFillabile(pcInp)) { pcInp.value = c.prezzoConfezione; pcInp.dataset.auto = '1'; }
       // Pezzi mancanti nel catalogo (c.pezzi null): si scrive 1 nel campo del
       // calcolatore, l'assunzione di lavoro decisa dal cliente (vedi
-      // costoAnalizzatore) — MAI nel catalogo stesso (clip.js/analizzatori.js
+      // aggiornaListinoLavClip) — MAI nel catalogo stesso (clip.js/analizzatori.js
       // restano un fatto sconosciuto, non un 1 inventato).
       if (pzInp && campoFillabile(pzInp)) { pzInp.value = c.pezzi != null ? c.pezzi : 1; pzInp.dataset.auto = '1'; }
       if (scInp && c.sconto != null && campoFillabile(scInp)) { scInp.value = c.sconto; scInp.dataset.auto = '1'; }
@@ -4423,29 +4423,6 @@ function trovaAnalizzatore(nome, catalogo) {
   return vicini.length === 1 ? vicini[0] : null;
 }
 
-// Costo per unita' di una voce di analizzatori_mylav: stessa formula di
-// calcolaRigaClip/costoClip (prezzo di confezione diviso i pezzi, scontato).
-// Deciso dal cliente (due volte, dopo essere stato avvisato della
-// conseguenza: su una confezione da dodici il costo per unita' verrebbe
-// dodici volte troppo alto, pur restando un numero valido): QUI, nel
-// calcolatore, senza pezzi si assume 1 — il costo e' l'intera confezione,
-// mai piu' null. E' lui il motivo per cui "Listino Myl" restava vuoto e i
-// totali a zero con un listino Mylav le cui 1280 righe hanno tutte pezzi
-// NULL (il difetto segnalato dal cliente): trovaAnalizzatore trovava la
-// voce, questa funzione tornava null, e il chiamante (aggiornaListinoLavClip)
-// non scriveva nulla nel campo.
-// Il catalogo (costoPerClipCatalogo, Gestione macchinari interni/esterni)
-// resta com'era e NON usa questa funzione: li' un pezzi mancante e' un fatto
-// che non si conosce ancora, si mostra vuoto (mai 1, mai 0) — l'1 qui sotto
-// e' un'assunzione di lavoro che appartiene al calcolo, non un dato da
-// scrivere nel database.
-function costoAnalizzatore(a) {
-  const pezziGrezzi = parseFloat(a && a.pezzi) || 0;
-  const prezzo = parseFloat(a && a.prezzo) || 0;
-  const sconto = parseFloat(a && a.sconto) || 0;
-  const pezzi = pezziGrezzi > 0 ? pezziGrezzi : 1;
-  return parseFloat((prezzo / pezzi * (1 - sconto / 100)).toFixed(2));
-}
 
 // Cambiato il «Listino conc.»: a specchio esatto di suListinoMylavCambiatoClip
 // (piu' sotto), stessa ragione — il nome della clip si azzera se non esiste
@@ -4556,23 +4533,28 @@ async function aggiornaListinoLavClip(tr) {
   const profilo = profInp.value.trim();
   if (!profilo || !campoFillabile(llInp)) return;
 
-  // pezzi_mylav (task 4, colonna Pezzi lato blu): costoAnalizzatore ha gia'
-  // diviso il prezzo di confezione per i pezzi del catalogo (assumendo 1
-  // quando mancano), quindi il valore che finisce in listino_lav e' gia' per
-  // singola unita' — il divisore che resta per calcolaRigaClip e' 1. La
-  // colonna resta comunque scrivibile a mano, per chi vuole dividere
-  // ulteriormente un prezzo digitato (una confezione, non gia' un singolo
-  // esame).
-  const riempiPezziMylav = () => {
-    if (pzInp && campoFillabile(pzInp)) { pzInp.value = 1; pzInp.dataset.auto = '1'; }
+  // I due lati si riempiono allo STESSO modo, che e' il senso della colonna:
+  // «Listino Myl» riceve il prezzo della CONFEZIONE (gia' netto dell'eventuale
+  // sconto di catalogo, che qui non ha una colonna sua) e «Pezzi» il numero di
+  // pezzi del catalogo — la divisione la fa calcolaRigaClip, esattamente come
+  // prezzo_confezione/pezzi/costo_clip sul lato rosso. Mettere in listino_lav
+  // un costo gia' diviso e 1 nei pezzi darebbe lo stesso totale, ma la colonna
+  // Pezzi mostrerebbe sempre 1 e non direbbe mai niente.
+  const riempiPezziMylav = n => {
+    if (pzInp && campoFillabile(pzInp)) { pzInp.value = n; pzInp.dataset.auto = '1'; }
   };
 
   const analizzatore = trovaAnalizzatore(profilo, catalogoPerListinoMylav(listInp ? listInp.value : ''));
   if (analizzatore) {
-    const costo = costoAnalizzatore(analizzatore);
-    if (costo != null) {
-      llInp.value = costo; llInp.dataset.auto = '1';
-      riempiPezziMylav();
+    const prezzo = parseFloat(analizzatore.prezzo);
+    if (Number.isFinite(prezzo) && prezzo >= 0) {
+      const sconto = parseFloat(analizzatore.sconto) || 0;
+      llInp.value = parseFloat((prezzo * (1 - sconto / 100)).toFixed(2));
+      llInp.dataset.auto = '1';
+      // Pezzi mancanti = 1, la regola decisa dal cliente: il costo resta il
+      // prezzo intero della confezione, sbagliato ma visibile, invece di un
+      // campo vuoto che nasconde il totale.
+      riempiPezziMylav(parseFloat(analizzatore.pezzi) > 0 ? parseFloat(analizzatore.pezzi) : 1);
       return;
     }
     // Un analizzatore trovato ma senza un costo utilizzabile NON deve piu'
@@ -4580,16 +4562,18 @@ async function aggiornaListinoLavClip(tr) {
     // lasciava il campo vuoto e i totali a zero anche quando l'analizzatore
     // esisteva, invece di tentare il vecchio percorso via gli esami di
     // riferimento (fix (b), rilievo del cliente). Dopo la regola "pezzi
-    // mancanti = 1" costoAnalizzatore non torna piu' null di norma: questo
-    // ramo resta per copertura, non per il caso comune.
+    // mancanti = 1" un prezzo utilizzabile c'e' quasi sempre: questo ramo
+    // resta per copertura, non per il caso comune.
   }
 
   const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(profilo)}`, { headers: authHeaders() })
     .then(r => r.json()).catch(() => ({}));
   if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
+    // Il prezzo di riferimento e' gia' di una singola analisi, non di una
+    // confezione: qui i pezzi sono 1 per davvero, non per ipotesi.
     llInp.value = baseResp.prezzo_base;
     llInp.dataset.auto = '1';
-    riempiPezziMylav();
+    riempiPezziMylav(1);
   }
 }
 
