@@ -45,12 +45,6 @@ function roiRigaVuota() {
   // I due campi nuovi sono il lato concorrenza.
   return {
     esame_concorrente: '', n_concorrenza: '',
-    // listino_mylav: quale PDF di analizzatori_mylav guida i suggerimenti/il
-    // prezzo del lato Mylav per QUESTA riga (colonna "Listino Mylav"). Task 6:
-    // si salva in dati_foglio.listino_mylav e torna riaprendo il calcolo
-    // (vedi modificaNelCalcolatore) — sceglie i numeri, non li calcola, quindi
-    // non tocca ne' i totali ne' il PDF generato.
-    listino_mylav: '',
     esame: '', n_esami: 1,
     listino_concorrenza: '', sconto_concorrenza: '', listino_lav: '', prezzo_scontato_lav: ''
   };
@@ -692,14 +686,11 @@ function modificaNelCalcolatore() {
       sconto_concorrenza: scRaw > 0 ? scRaw : '',
       listino_lav: d.listino_lav || '',
       prezzo_scontato_lav: d.prezzo_scontato_lav || '',
-      // Task 6: il listino Mylav scelto per la riga si ritrova riaprendo il
-      // calcolo (colonna dati_foglio.listino_mylav). Una riga salvata prima di
-      // questa colonna ha d.listino_mylav a NULL, quindi torna vuota come si
-      // comportava gia'. listinoDaVisualizzare: il gruppo "senza provenienza"
-      // si salva come sentinella indipendente dalla lingua (vedi
-      // listinoDaSalvare in salvaCalcolo), qui si ritraduce nell'etichetta
-      // della lingua corrente (rilievo 10 della review finale).
-      listino_mylav: listinoDaVisualizzare(d.listino_mylav, 'analizzatori.senzaFile'),
+      // La colonna dati_foglio.listino_mylav resta in archivio ma qui non si
+      // rilegge piu': il calcolatore esami non ha piu' quella colonna, perche'
+      // il lato Mylav lo sceglie il selettore del piano sopra la tabella. I
+      // valori gia' salvati restano dove sono, non si cancella niente.
+      //
       // Preesistenti a questo task ma dimenticate qui: /api/calcolo/salva le
       // scrive (server.js) e GET /api/file/:id/dati le legge (SELECT *), solo
       // questa mappa le buttava via, svuotando l'esame concorrente e la sua
@@ -3163,17 +3154,12 @@ const colonneRoiEsami = [
     intestazione: 'roi.tabella.totConc', totale: 'tot_conc' },
   { col: 'prezzo_conc', tipo: 'calcolato', larghezza: 95, gruppo: 'concorrenza',
     intestazione: 'comune.scontatoConc', totale: 'tot_prezzo_conc' },
-  // A specchio della stessa colonna nel calcolatore clip: quale PDF di
-  // analizzatori_mylav guida i suggerimenti/il prezzo di listino di questa
-  // riga. Lasciata vuota, 'esame' si comporta esattamente come prima di
-  // questa colonna (vedi aggiornaListinoLavRoi): l'elenco 'roi-esame-listino-list'
-  // e' un datalist in piu' per 'esame', non un sostituto della tendina
-  // custom gia' esistente (colonnaAutocomplete piu' sotto).
-  { col: 'listino_mylav', tipo: 'testo', larghezza: 150, gruppo: 'mylav',
-    intestazione: 'comune.listinoMylav', elenco: 'roi-listino-mylav-list',
-    segnaposto: () => t('comune.placeholderListinoMylav') },
+  // Qui NON c'e' la colonna del listino Mylav che ha il calcolatore macchinari:
+  // in questa schermata il lato Mylav lo sceglie gia' il piano di scontistica,
+  // col selettore sopra la tabella. Una seconda scelta accanto sarebbe una
+  // domanda in piu' per un'informazione gia' data.
   { col: 'esame', tipo: 'testo', larghezza: 170, larghezzaCampo: 160, gruppo: 'mylav',
-    intestazione: 'roi.tabella.esameMyl', posizioneRelativa: true, elenco: 'roi-esame-listino-list',
+    intestazione: 'roi.tabella.esameMyl', posizioneRelativa: true,
     segnaposto: () => t('roi.placeholderEsame'),
     extra: (r, i) => `<button class="roi-lega-btn" data-idx="${i}" onclick="salvaAbbinamentoRiga(${i})" title="${escHtml(t('roi.legaTooltip'))}" style="display:none">🔗</button>` },
   { col: 'n_esami', tipo: 'numero', larghezza: 60, larghezzaCampo: 50, gruppo: 'mylav',
@@ -3216,8 +3202,6 @@ async function suCampoUscitoRoiEsami(tr, col) {
         inp.title = t('roi.tooltip.prezzoCustomSalvatoOra');
       }
     }
-  } else if (col === 'listino_mylav') {
-    await suListinoMylavCambiatoRoi(tr);
   }
 }
 
@@ -3261,26 +3245,6 @@ const motoreEsami = window.Calcolatore.crea({
     wrap.querySelectorAll('[data-col="esame"]').forEach(inp => {
       inp.dataset.lastEsame = (inp.value || '').trim();
     });
-    wrap.querySelectorAll('[data-col="listino_mylav"]').forEach(inp => {
-      inp.dataset.lastListinoMylav = (inp.value || '').trim();
-    });
-    // La tendina #roi-esame-listino-list (un solo nodo condiviso) si aggiorna
-    // al catalogo DELLA RIGA: stesso meccanismo del calcolatore clip, vedi
-    // aggiornaSuggerimentiMylavRigaRoi.
-    wrap.querySelectorAll('tr[data-idx]').forEach(tr => aggiornaSuggerimentiMylavRigaRoi(tr));
-    if (wrap.dataset.ascoltatoriListinoMylav !== '1') {
-      wrap.dataset.ascoltatoriListinoMylav = '1';
-      wrap.addEventListener('focusin', e => {
-        if (!e.target.matches('[data-col="esame"]')) return;
-        const tr = e.target.closest('tr');
-        if (tr) aggiornaSuggerimentiMylavRigaRoi(tr);
-      });
-      wrap.addEventListener('input', e => {
-        if (!e.target.matches('[data-col="listino_mylav"]')) return;
-        const tr = e.target.closest('tr');
-        if (tr) aggiornaSuggerimentiMylavRigaRoi(tr);
-      });
-    }
   },
   tipoRiga: 'Platinum',
   etichettaTotaleRiga: 'roi.tabella.totale',
@@ -3291,17 +3255,9 @@ const motoreEsami = window.Calcolatore.crea({
 function buildRoiSectionHtml() {
   const struttureOpts = S.strutture.map(s => `<option value="${escHtml(s.nome)}">`).join('');
 
-  // 'roi-listino-mylav-list' e' fisso (i PDF disponibili non dipendono dalla
-  // riga); 'roi-esame-listino-list' invece e' vuoto qui e si riscrive al volo
-  // col catalogo DELLA RIGA (vedi aggiornaSuggerimentiMylavRigaRoi), come
-  // 'mylav-esami-list' nel calcolatore clip.
-  const listinoMylavOpts = listiniMylavDisponibili().map(l => `<option value="${escHtml(l.etichetta)}">`).join('');
-
   return `
     <datalist id="roi-strutture-list">${struttureOpts}</datalist>
     <datalist id="roi-esami-conc-list">${(S.roi.esamiConc || []).map(e => `<option value="${escHtml(e.nome_originale)}">`).join('')}</datalist>
-    <datalist id="roi-listino-mylav-list">${listinoMylavOpts}</datalist>
-    <datalist id="roi-esame-listino-list"></datalist>
     <div class="roi-toolbar">
       <div>
         <div class="roi-toolbar-title">${t('roi.toolbarTitolo')}</div>
@@ -3764,40 +3720,16 @@ function campoFillabile(inp) {
   return !parseFloat(inp.value) || inp.dataset.auto === '1';
 }
 
-// Aggiorna la tendina nativa dell'esame Mylav (#roi-esame-listino-list, un
-// solo nodo condiviso da tutte le righe) al catalogo DELLA RIGA passata.
-// A differenza del calcolatore clip il placeholder di 'esame' non cambia mai:
-// senza listino scelto il campo si comporta esattamente come prima di questa
-// colonna (ricerca ampia via /api/esami/autocomplete, colonnaAutocomplete piu'
-// sotto), la tendina in piu' e' solo un aiuto quando un listino c'e'.
-function aggiornaSuggerimentiMylavRigaRoi(tr) {
-  const listInp = tr.querySelector('[data-col="listino_mylav"]');
-  const nomeInp = tr.querySelector('[data-col="esame"]');
-  if (!nomeInp) return;
-  const listino = listInp ? listInp.value : '';
-  const dl = el('roi-esame-listino-list');
-  if (dl) dl.innerHTML = catalogoPerListinoMylav(listino).map(a => `<option value="${escHtml(a.nome)}">`).join('');
-}
-
-// Riempie listino_lav della riga (calcolatore esami): stessa logica di
-// aggiornaListinoLavClip (vedi piu' sotto, sezione clip) applicata a 'esame'
-// invece che a 'profilo_mylav'. Nessun listino scritto, o l'esame non e' nel
-// listino scelto -> resta il vecchio fetch a /api/esami-riferimento/prezzo-base,
-// bit per bit identico a prima di questa colonna.
+// Riempie listino_lav della riga (calcolatore esami) col prezzo base
+// dell'esame. Qui il lato Mylav non ha una colonna di listino da cui pescare:
+// il piano lo sceglie il selettore sopra la tabella, e il prezzo di listino
+// viene dagli esami di riferimento come ha sempre fatto.
 async function aggiornaListinoLavRoi(tr) {
   const esameInp = tr.querySelector('[data-col="esame"]');
   const llInp    = tr.querySelector('[data-col="listino_lav"]');
-  const listInp  = tr.querySelector('[data-col="listino_mylav"]');
   if (!esameInp || !llInp) return;
   const esame = esameInp.value.trim();
   if (!esame || !campoFillabile(llInp)) return;
-
-  const analizzatore = trovaAnalizzatore(esame, catalogoPerListinoMylav(listInp ? listInp.value : ''));
-  if (analizzatore) {
-    const costo = costoAnalizzatore(analizzatore);
-    if (costo != null) { llInp.value = costo; llInp.dataset.auto = '1'; }
-    return;
-  }
 
   const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(esame)}`, { headers: authHeaders() })
     .then(r => r.json()).catch(() => ({}));
@@ -3805,30 +3737,6 @@ async function aggiornaListinoLavRoi(tr) {
     llInp.value = baseResp.prezzo_base;
     llInp.dataset.auto = '1';
   }
-}
-
-// Cambiato il listino Mylav della riga: rilancia la cascata del prezzo di
-// listino (che decide da sola, riga per riga, se pescare da li' o dal vecchio
-// percorso). A differenza del calcolatore clip il nome 'esame' non si azzera
-// mai se non e' nel listino scelto: 'esame' resta valido anche per esami che
-// non sono affatto nel catalogo macchinari (e' li' che vive gia' oggi, negli
-// esami di riferimento), e azzerarlo qui cancellerebbe righe corrette senza
-// alcun motivo — l'eccezione che suLaboratorioCambiatoClip si concede non vale
-// qui, perche' 'esame' non e' mai stato esclusivamente un nome di catalogo.
-async function suListinoMylavCambiatoRoi(tr) {
-  const listInp = tr.querySelector('[data-col="listino_mylav"]');
-  if (!listInp) return;
-  const listino = listInp.value.trim();
-  const prec = listInp.dataset.lastListinoMylav || '';
-  if (listino === prec) return;
-  listInp.dataset.lastListinoMylav = listino;
-
-  const llInp = tr.querySelector('[data-col="listino_lav"]');
-  if (llInp && llInp.dataset.auto === '1') { llInp.value = ''; llInp.dataset.auto = '0'; }
-
-  aggiornaSuggerimentiMylavRigaRoi(tr);
-  await aggiornaListinoLavRoi(tr);
-  aggiornaRigaDOM(tr);
 }
 
 async function aggiornaPrezziAutomatici(tr, force = false) {
@@ -4052,12 +3960,7 @@ async function salvaCalcolo() {
   }
 
   const nomeFile = `Calcolo_${new Date().toLocaleDateString('it-IT').replace(/\//g, '-')}`;
-  // listino_mylav: si salva il sentinella indipendente dalla lingua, non
-  // l'etichetta "senza provenienza" che l'operatore vede nella tendina — vedi
-  // listinoDaSalvare (rilievo 10 della review finale).
-  const righeDaSalvare = righe.map(r => ({
-    ...r, listino_mylav: listinoDaSalvare(r.listino_mylav, 'analizzatori.senzaFile')
-  }));
+  const righeDaSalvare = righe;
   try {
     const resp = await api('/api/calcolo/salva', {
       method: 'POST',
@@ -4159,8 +4062,16 @@ const COLONNE_CLIP = [
   // hanno almeno una clip in catalogo, vedi laboratoriConClip()), a
   // differenza di 'clip-list' che invece cambia riga per riga: vedi
   // aggiornaSuggerimentiClipRiga.
-  { col: 'laboratorio',       intestazione: 'clip.tabella.laboratorio', tipo: 'testo',    larghezza: 150, gruppo: 'concorrenza', elenco: 'clip-lab-list',
-    segnaposto: () => t('clip.placeholderLaboratorio') },
+  //
+  // ATTENZIONE alle intestazioni, scelte dal committente e volutamente
+  // incrociate rispetto ai nomi interni: questa colonna contiene il NOME DEL
+  // LABORATORIO ma si intitola «Listino conc.», perche' per lui il listino del
+  // concorrente e' il laboratorio stesso. La colonna qui sotto contiene il nome
+  // del PDF e si intitola «Laboratorio». I nomi interni (laboratorio,
+  // listino_conc) restano quelli, altrimenti andrebbero rinominati anche in
+  // archivio e nelle rotte per un cambio di sole etichette.
+  { col: 'laboratorio',       intestazione: 'clip.tabella.listinoConc', tipo: 'testo',    larghezza: 150, gruppo: 'concorrenza', elenco: 'clip-lab-list',
+    segnaposto: () => t('clip.placeholderListinoConc') },
   // «Listino conc.» (task 5): quale PDF di QUEL laboratorio guida i
   // suggerimenti della clip subito dopo. Facoltativa — vuota vuol dire "tutti
   // i listini di quel laboratorio" — perche' da quando due PDF dello stesso
@@ -4170,9 +4081,9 @@ const COLONNE_CLIP = [
   // 'clip-listino-conc-list' e' per riga (i PDF DI QUEL laboratorio), a
   // differenza di 'clip-lab-list' che e' fisso: vedi
   // aggiornaSuggerimentiListinoConcRiga.
-  { col: 'listino_conc', intestazione: 'clip.tabella.listinoConc', tipo: 'testo',
+  { col: 'listino_conc', intestazione: 'clip.tabella.laboratorio', tipo: 'testo',
     larghezza: 140, gruppo: 'concorrenza', elenco: 'clip-listino-conc-list',
-    segnaposto: () => t('clip.placeholderListinoConc') },
+    segnaposto: () => t('clip.placeholderLaboratorio') },
   { col: 'clip_nome',         intestazione: 'clip.tabella.clip',       tipo: 'testo',     larghezza: 200, larghezzaCampo: 190, gruppo: 'concorrenza', elenco: 'clip-list',
     // Senza un laboratorio risolto il campo lo chiede invece di proporre
     // tutto il catalogo (vedi aggiornaSegnapostoClipRiga per l'aggiornamento
