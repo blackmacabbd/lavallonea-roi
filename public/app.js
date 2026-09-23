@@ -221,8 +221,12 @@ function buildSidebar() {
         }
         const foglio = f.fogli && f.fogli.length ? f.fogli[0] : '';
         const attiva = (window._currentFileId === f.id) ? 'active' : '';
+        // foglio e' il nome di un foglio del file Excel caricato: dato
+        // dell'operatore, non un letterale nostro. Attraversa due parser (HTML
+        // poi JS): jsAttr(), non un apice a mano, e' l'unico modo che regge un
+        // apostrofo (o peggio) nel nome (vedi la nota su jsAttr piu' sotto).
         const onclick = foglio
-          ? `navigate('foglio', { fileId: ${f.id}, foglio: '${foglio}', strutturaId: ${s.id} })`
+          ? `navigate('foglio', { fileId: ${f.id}, foglio: ${jsAttr(foglio)}, strutturaId: ${s.id} })`
           : `navigate('dashboard')`;
         htmlStrutture += `
           <div class="struttura-group">
@@ -236,8 +240,11 @@ function buildSidebar() {
     } else {
       const primoFoglio = s.fogli && s.fogli.length ? s.fogli[0] : null;
       const attiva = (window._currentStrutturaId === s.id) ? 'active' : '';
+      // Stesso motivo del ramo sopra: primoFoglio e' il nome di un foglio
+      // scelto dall'operatore, jsAttr() e' l'unico modo sicuro di metterlo in
+      // un onclick inline.
       const onclick = primoFoglio
-        ? `navigateToStruttura(${s.id}, '${primoFoglio}')`
+        ? `navigateToStruttura(${s.id}, ${jsAttr(primoFoglio)})`
         : `navigate('dashboard')`;
       htmlStrutture += `
         <div class="struttura-group">
