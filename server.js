@@ -1920,13 +1920,16 @@ app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
 
 // Elimina un intero listino (tutti gli analizzatori di un PDF) in un colpo
 // solo. Stessa forma di DELETE /api/clip/gruppo: il file nel corpo, non
-// nell'indirizzo. ANALIZ_SENZA_FILE puo' arrivare qui per lo stesso motivo per
-// cui POST /api/analizzatori lo normalizza: non e' un nome di file, e' il
-// Qui il nome viaggia nel corpo, e un corpo JSON sa portare null: la sentinella
-// ANALIZ_SENZA_FILE NON si usa e non si traduce. Tradurla qui aprirebbe l'unico
-// caso in cui il numero mostrato nella conferma e il numero davvero cancellato
-// possono divergere, e questa e' un'operazione irreversibile. Il lato clip fa
-// gia' cosi'; le due cancellazioni si comportano allo stesso modo.
+// nell'indirizzo. ANALIZ_SENZA_FILE (la sentinella con cui GET/POST
+// /api/analizzatori chiedono il gruppo senza provenienza in una query string
+// o in un nome, vedi sopra, perche' un URL non puo' portare null) qui non
+// serve e non si traduce: il nome viaggia nel corpo, e un corpo JSON sa
+// portare null direttamente. fileOrigine null (o assente dal corpo) chiede
+// gia' il gruppo senza provenienza, che si elimina come gli altri — tradurre
+// un valore che non arriva mai qui rischierebbe solo di far divergere il
+// numero mostrato nella conferma da quello davvero cancellato, in
+// un'operazione irreversibile. Il lato clip fa gia' cosi'; le due
+// cancellazioni si comportano allo stesso modo.
 // Va dichiarata prima di DELETE /api/analizzatori/:id, altrimenti 'gruppo'
 // verrebbe letto come un id (stessa cautela di /api/import-pdf/audit sopra).
 app.delete('/api/analizzatori/gruppo', requireAuth, express.json(), (req, res) => {
