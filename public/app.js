@@ -68,7 +68,11 @@ function clipRigaVuota() {
     // listino_mylav: a specchio di laboratorio ma sul lato blu — quale PDF di
     // analizzatori_mylav guida i suggerimenti e il prezzo di QUESTA riga.
     listino_mylav: '',
-    profilo_mylav: '', n_mylav: 1, listino_lav: '', prezzo_scontato_lav: ''
+    // pezzi_mylav: a specchio di 'pezzi' sul lato rosso (task 4) — vuota
+    // vuol dire "non ancora scelta", il calcolatore assume 1 alla formula
+    // (calcolaRigaClip), il campo mostrato resta vuoto finche' nessuno lo
+    // riempie (dalla cascata di listino_lav o a mano).
+    profilo_mylav: '', n_mylav: 1, listino_lav: '', prezzo_scontato_lav: '', pezzi_mylav: ''
   };
 }
 
@@ -1546,6 +1550,10 @@ async function apriCalcoloClipDaCronologia(id) {
     listino_mylav: listinoDaVisualizzare(r.listino_mylav, 'analizzatori.senzaFile'),
     profilo_mylav: r.profilo_mylav || '',
     n_mylav: r.n_mylav || 1,
+    // pezzi_mylav (task 4): NULL sulle righe salvate prima di questa colonna
+    // -> '' -> calcolaRigaClip assume 1, esattamente il comportamento di
+    // prima che la colonna esistesse (nessuna divisione in piu').
+    pezzi_mylav: r.pezzi_mylav ?? '',
     listino_lav: r.listino_lav ?? '',
     prezzo_scontato_lav: r.prezzo_scontato_lav ?? ''
   }));
@@ -4017,25 +4025,36 @@ async function esportaExcelRoi() {
 // calcolatore esami, con colonne, id e stato propri.
 
 // Il listino del fornitore da' il prezzo della confezione: il costo di una
-// singola analisi si ottiene dividendo per i pezzi. Senza pezzi non si inventa
-// un numero, si lascia vuoto: un costo sbagliato di un fattore dodici in una
-// trattativa e' peggio di un costo mancante.
+// singola analisi si ottiene dividendo per i pezzi. Deciso dal cliente (due
+// volte, sapendo la conseguenza): senza pezzi il calcolatore assume 1, non
+// piu' null — un costo sbagliato di un fattore dodici ma VISIBILE, non un
+// campo vuoto che nasconde il totale (vedi costoAnalizzatore, stessa regola
+// sul lato Mylav).
 function calcolaRigaClip(r) {
-  const pezzi = parseFloat(r.pezzi) || 0;
+  const pezziGrezzi = parseFloat(r.pezzi) || 0;
   const prezzoConf = parseFloat(r.prezzo_confezione) || 0;
   const sconto = parseFloat(r.sconto_clip) || 0;
-  const costoClip = pezzi > 0
-    ? parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2))
-    : null;
+  const pezzi = pezziGrezzi > 0 ? pezziGrezzi : 1;
+  const costoClip = parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2));
   const nClip = parseFloat(r.n_clip) || 1;
-  const totaleClip = costoClip == null ? null : costoClip * nClip;
+  const totaleClip = costoClip * nClip;
 
   const nMyl = parseFloat(r.n_mylav) || 1;
   const listinoLav = parseFloat(r.listino_lav) || 0;
   const prezzoPiano = parseFloat(r.prezzo_scontato_lav) || 0;
+  // pezzi_mylav (task 4): a specchio esatto di pezzi/costo_clip qui sopra —
+  // stessa regola "mancante = 1", stessa divisione, cosi' i due totali
+  // restano comparabili a singola unita'. ATTENZIONE: questa stessa formula
+  // e' duplicata in server.js (POST /api/calcolo-clip/salva, che ricalcola
+  // invece di fidarsi del browser): una modifica qui va rifatta identica
+  // anche li', altrimenti i numeri salvati non combaciano con quelli visti
+  // dall'operatore.
+  const pezziMylGrezzi = parseFloat(r.pezzi_mylav) || 0;
+  const pezziMyl = pezziMylGrezzi > 0 ? pezziMylGrezzi : 1;
   // Senza piano il veterinario paga il listino: usarlo evita un falso
   // risparmio positivo quando il piano non e' stato scelto.
-  const totaleMylav = (prezzoPiano > 0 ? prezzoPiano : listinoLav) * nMyl;
+  const prezzoMylavUnitario = (prezzoPiano > 0 ? prezzoPiano : listinoLav) / pezziMyl;
+  const totaleMylav = prezzoMylavUnitario * nMyl;
 
   // Il segno qui e' l'INVERSO del calcolatore esami: la' il positivo era il
   // risparmio scegliendo Mylav rispetto al concorrente (prezzoConc - mylavCost).
@@ -4043,7 +4062,7 @@ function calcolaRigaClip(r) {
   // positivo vuol dire che la clip costa PIU' di Mylav, cioe' conviene Mylav.
   // Per chi legge il senso resta lo stesso, positivo e blu = conviene Mylav,
   // solo l'operazione che ci arriva e' scambiata.
-  const risparmio = totaleClip == null ? null : totaleClip - totaleMylav;
+  const risparmio = totaleClip - totaleMylav;
 
   // Le chiavi restituite sono snake_case per combaciare con `col.col` delle
   // colonne 'calcolato' (il motore comune legge valori[col.col]): stessa
@@ -4111,6 +4130,14 @@ const COLONNE_CLIP = [
     // vivo mentre si scrive il listino).
     segnaposto: r => trovaListinoMylav(r.listino_mylav) ? t('clip.placeholderProfilo') : t('clip.placeholderProfiloSenzaListino') },
   { col: 'n_mylav',           intestazione: 'roi.tabella.n',           tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'mylav', fallbackSuZero: 1, segnaposto: '1' },
+  // pezzi_mylav (task 4): a specchio esatto di 'pezzi' sul lato rosso, stessa
+  // posizione relativa (fra il prezzo grezzo e la colonna successiva) e
+  // stessa tenuita' visiva — l'occhio deve cadere su Totale Mylav, non sul
+  // percorso che ci arriva. Riempita dalla stessa cascata di listino_lav
+  // (aggiornaListinoLavClip), sempre 1 quando l'origine non ha un pezzi
+  // proprio (rule 1a) o quando il valore arriva gia' diviso per unita' (il
+  // costo del catalogo analizzatori). Scrivibile a mano: vedi calcolaRigaClip.
+  { col: 'pezzi_mylav',       intestazione: 'clip.tabella.pezziMylav', tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'mylav', tenue: true },
   { col: 'listino_lav',       intestazione: 'roi.tabella.listinoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_listino_lav', segnaposto: '0.00' },
   { col: 'prezzo_scontato_lav', intestazione: 'roi.tabella.pianoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_prezzo_scontato_lav', segnaposto: '0.00' },
   { col: 'totale_mylav',      intestazione: 'clip.tabella.totaleMylav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav', totale: 'tot_totale_mylav' },
@@ -4283,7 +4310,11 @@ async function compilaDaClip(tr) {
     const { esito, clip: c } = trovaClipEsito(nome, catalogo);
     if (c) {
       if (pcInp && c.prezzoConfezione != null && campoFillabile(pcInp)) { pcInp.value = c.prezzoConfezione; pcInp.dataset.auto = '1'; }
-      if (pzInp && c.pezzi != null && campoFillabile(pzInp)) { pzInp.value = c.pezzi; pzInp.dataset.auto = '1'; }
+      // Pezzi mancanti nel catalogo (c.pezzi null): si scrive 1 nel campo del
+      // calcolatore, l'assunzione di lavoro decisa dal cliente (vedi
+      // costoAnalizzatore) — MAI nel catalogo stesso (clip.js/analizzatori.js
+      // restano un fatto sconosciuto, non un 1 inventato).
+      if (pzInp && campoFillabile(pzInp)) { pzInp.value = c.pezzi != null ? c.pezzi : 1; pzInp.dataset.auto = '1'; }
       if (scInp && c.sconto != null && campoFillabile(scInp)) { scInp.value = c.sconto; scInp.dataset.auto = '1'; }
     } else if (esito === 'ambiguo') {
       // Due laboratori diversi possono avere per caso un file_origine col
@@ -4394,14 +4425,26 @@ function trovaAnalizzatore(nome, catalogo) {
 
 // Costo per unita' di una voce di analizzatori_mylav: stessa formula di
 // calcolaRigaClip/costoClip (prezzo di confezione diviso i pezzi, scontato).
-// Senza pezzi non si inventa un numero: resta null, non il prezzo dell'intera
-// confezione (stessa regola gia' in vigore per il costo per clip mostrato in
-// Gestione macchinari interni).
+// Deciso dal cliente (due volte, dopo essere stato avvisato della
+// conseguenza: su una confezione da dodici il costo per unita' verrebbe
+// dodici volte troppo alto, pur restando un numero valido): QUI, nel
+// calcolatore, senza pezzi si assume 1 — il costo e' l'intera confezione,
+// mai piu' null. E' lui il motivo per cui "Listino Myl" restava vuoto e i
+// totali a zero con un listino Mylav le cui 1280 righe hanno tutte pezzi
+// NULL (il difetto segnalato dal cliente): trovaAnalizzatore trovava la
+// voce, questa funzione tornava null, e il chiamante (aggiornaListinoLavClip)
+// non scriveva nulla nel campo.
+// Il catalogo (costoPerClipCatalogo, Gestione macchinari interni/esterni)
+// resta com'era e NON usa questa funzione: li' un pezzi mancante e' un fatto
+// che non si conosce ancora, si mostra vuoto (mai 1, mai 0) — l'1 qui sotto
+// e' un'assunzione di lavoro che appartiene al calcolo, non un dato da
+// scrivere nel database.
 function costoAnalizzatore(a) {
-  const pezzi = parseFloat(a && a.pezzi) || 0;
+  const pezziGrezzi = parseFloat(a && a.pezzi) || 0;
   const prezzo = parseFloat(a && a.prezzo) || 0;
   const sconto = parseFloat(a && a.sconto) || 0;
-  return pezzi > 0 ? parseFloat((prezzo / pezzi * (1 - sconto / 100)).toFixed(2)) : null;
+  const pezzi = pezziGrezzi > 0 ? pezziGrezzi : 1;
+  return parseFloat((prezzo / pezzi * (1 - sconto / 100)).toFixed(2));
 }
 
 // Cambiato il «Listino conc.»: a specchio esatto di suListinoMylavCambiatoClip
@@ -4487,6 +4530,10 @@ async function suListinoMylavCambiatoClip(tr) {
   }
   const llInp = tr.querySelector('[data-col="listino_lav"]');
   if (llInp && llInp.dataset.auto === '1') { llInp.value = ''; llInp.dataset.auto = '0'; }
+  // pezzi_mylav segue la stessa sorte di listino_lav: e' stato riempito dalla
+  // stessa cascata, per lo stesso listino appena cambiato (vedi task 4).
+  const pzInp = tr.querySelector('[data-col="pezzi_mylav"]');
+  if (pzInp && pzInp.dataset.auto === '1') { pzInp.value = ''; pzInp.dataset.auto = '0'; }
 
   aggiornaSuggerimentiMylavRiga(tr);
   await aggiornaListinoLavClip(tr);
@@ -4503,16 +4550,38 @@ async function suListinoMylavCambiatoClip(tr) {
 async function aggiornaListinoLavClip(tr) {
   const profInp = tr.querySelector('[data-col="profilo_mylav"]');
   const llInp   = tr.querySelector('[data-col="listino_lav"]');
+  const pzInp   = tr.querySelector('[data-col="pezzi_mylav"]');
   const listInp = tr.querySelector('[data-col="listino_mylav"]');
   if (!profInp || !llInp) return;
   const profilo = profInp.value.trim();
   if (!profilo || !campoFillabile(llInp)) return;
 
+  // pezzi_mylav (task 4, colonna Pezzi lato blu): costoAnalizzatore ha gia'
+  // diviso il prezzo di confezione per i pezzi del catalogo (assumendo 1
+  // quando mancano), quindi il valore che finisce in listino_lav e' gia' per
+  // singola unita' — il divisore che resta per calcolaRigaClip e' 1. La
+  // colonna resta comunque scrivibile a mano, per chi vuole dividere
+  // ulteriormente un prezzo digitato (una confezione, non gia' un singolo
+  // esame).
+  const riempiPezziMylav = () => {
+    if (pzInp && campoFillabile(pzInp)) { pzInp.value = 1; pzInp.dataset.auto = '1'; }
+  };
+
   const analizzatore = trovaAnalizzatore(profilo, catalogoPerListinoMylav(listInp ? listInp.value : ''));
   if (analizzatore) {
     const costo = costoAnalizzatore(analizzatore);
-    if (costo != null) { llInp.value = costo; llInp.dataset.auto = '1'; }
-    return;
+    if (costo != null) {
+      llInp.value = costo; llInp.dataset.auto = '1';
+      riempiPezziMylav();
+      return;
+    }
+    // Un analizzatore trovato ma senza un costo utilizzabile NON deve piu'
+    // fermarsi qui: prima di questa correzione un return incondizionato
+    // lasciava il campo vuoto e i totali a zero anche quando l'analizzatore
+    // esisteva, invece di tentare il vecchio percorso via gli esami di
+    // riferimento (fix (b), rilievo del cliente). Dopo la regola "pezzi
+    // mancanti = 1" costoAnalizzatore non torna piu' null di norma: questo
+    // ramo resta per copertura, non per il caso comune.
   }
 
   const baseResp = await fetch(`/api/esami-riferimento/prezzo-base?nome=${encodeURIComponent(profilo)}`, { headers: authHeaders() })
@@ -4520,6 +4589,7 @@ async function aggiornaListinoLavClip(tr) {
   if (baseResp.prezzo_base != null && campoFillabile(llInp)) {
     llInp.value = baseResp.prezzo_base;
     llInp.dataset.auto = '1';
+    riempiPezziMylav();
   }
 }
 
@@ -4536,7 +4606,7 @@ async function aggiornaPrezziAutomaticiClip(tr, force = false) {
 
   const prevProfilo = profInp.dataset.lastProfilo || '';
   if (profilo !== prevProfilo) {
-    ['listino_lav', 'prezzo_scontato_lav'].forEach(col => {
+    ['listino_lav', 'prezzo_scontato_lav', 'pezzi_mylav'].forEach(col => {
       const inp = tr.querySelector(`[data-col="${col}"]`);
       if (inp && inp.dataset.auto === '1') { inp.value = ''; inp.dataset.auto = '0'; inp.title = ''; inp.classList.remove('roi-prezzo-nuovo'); }
     });

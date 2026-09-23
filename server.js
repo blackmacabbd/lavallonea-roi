@@ -193,6 +193,13 @@ addColIfMissing('righe_calcolo_clip', 'listino_mylav', 'TEXT');
 // possono avere una clip omonima. Facoltativa: vuota vuol dire "tutti i
 // listini di quel laboratorio". Additiva come le due sopra.
 addColIfMissing('righe_calcolo_clip', 'listino_conc', 'TEXT');
+// pezzi_mylav (task 4): a specchio di 'pezzi' lato concorrenza — quanti pezzi
+// dividono il prezzo Mylav di questa riga, cosi' i due totali restano
+// comparabili a singola unita'. Additiva come le altre: le righe salvate
+// prima restano con pezzi_mylav NULL, e la formula (vedi piu' sotto in
+// POST /api/calcolo-clip/salva) tratta NULL come 1, cioe' esattamente il
+// comportamento di prima che la colonna esistesse.
+addColIfMissing('righe_calcolo_clip', 'pezzi_mylav', 'INTEGER');
 
 // ── Rimozione del catalogo analizzatori ─────────────
 // I macchinari confrontavano il prezzo di acquisto degli analizzatori, che non
@@ -2288,38 +2295,43 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
       const ins = db.prepare(`
         INSERT INTO righe_calcolo_clip
           (calcolo_id, laboratorio, listino_conc, clip_nome, n_clip, prezzo_confezione, pezzi, sconto_clip,
-           costo_clip, totale_clip, listino_mylav, profilo_mylav, n_mylav, listino_lav,
+           costo_clip, totale_clip, listino_mylav, profilo_mylav, n_mylav, pezzi_mylav, listino_lav,
            prezzo_scontato_lav, totale_mylav, risparmio)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const r of righe) {
-        // Stessa formula del calcolatore (public/app.js, calcolaRigaClip): il
-        // prezzo di listino e' della confezione, il costo di una clip si
-        // ottiene dividendo per i pezzi. Senza pezzi non si inventa un
-        // numero: resta null, non zero e non il prezzo di confezione intero.
-        const pezzi     = parseFloat(r.pezzi) || 0;
+        // Stessa formula del calcolatore (public/app.js, calcolaRigaClip —
+        // le due DEVONO restare identiche, vedi il commento li'): il prezzo
+        // di listino e' della confezione, il costo di una clip si ottiene
+        // dividendo per i pezzi. Deciso dal cliente (due volte, sapendo la
+        // conseguenza): senza pezzi si assume 1, non piu' null — un costo
+        // sbagliato di un fattore dodici ma visibile, mai un campo silenzioso.
+        const pezziGrezzi = parseFloat(r.pezzi) || 0;
         const prezzoConf = parseFloat(r.prezzo_confezione) || 0;
         const sconto    = parseFloat(r.sconto_clip) || 0;
-        const costoClip = pezzi > 0
-          ? parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2))
-          : null;
+        const pezzi     = pezziGrezzi > 0 ? pezziGrezzi : 1;
+        const costoClip = parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2));
         const nClip     = parseFloat(r.n_clip) || 1;
-        const totaleClip = costoClip == null ? null : costoClip * nClip;
+        const totaleClip = costoClip * nClip;
 
         const nMyl        = parseFloat(r.n_mylav) || 1;
         const listinoLav  = parseFloat(r.listino_lav) || 0;
         const prezzoPiano = parseFloat(r.prezzo_scontato_lav) || 0;
-        const totaleMylav = (prezzoPiano > 0 ? prezzoPiano : listinoLav) * nMyl;
+        // pezzi_mylav (task 4): a specchio esatto di pezzi/costo_clip qui
+        // sopra — stessa regola "mancante = 1", stessa divisione.
+        const pezziMylGrezzi = parseFloat(r.pezzi_mylav) || 0;
+        const pezziMyl = pezziMylGrezzi > 0 ? pezziMylGrezzi : 1;
+        const totaleMylav = (prezzoPiano > 0 ? prezzoPiano : listinoLav) / pezziMyl * nMyl;
 
         // Segno invertito rispetto al calcolatore esami: qui positivo vuol
         // dire che la clip costa piu' di Mylav, cioe' conviene Mylav (stesso
         // senso per chi legge: positivo = conviene Mylav).
-        const risparmio = totaleClip == null ? null : totaleClip - totaleMylav;
+        const risparmio = totaleClip - totaleMylav;
 
         ins.run(
-          calcoloId, r.laboratorio || null, r.listino_conc || null, r.clip_nome || null, nClip, prezzoConf || null, pezzi || null, sconto || null,
-          costoClip, totaleClip, r.listino_mylav || null, r.profilo_mylav || null, nMyl, listinoLav || null,
+          calcoloId, r.laboratorio || null, r.listino_conc || null, r.clip_nome || null, nClip, prezzoConf || null, pezziGrezzi || null, sconto || null,
+          costoClip, totaleClip, r.listino_mylav || null, r.profilo_mylav || null, nMyl, pezziMylGrezzi || null, listinoLav || null,
           prezzoPiano || null, totaleMylav, risparmio
         );
       }
