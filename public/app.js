@@ -1972,10 +1972,13 @@ async function importaPianiJson(inputEl) {
 
 async function renderConcorrentiAdmin() {
   let elenco;
-  // soloConEsami=1: questa e' la pagina "esami esterni", non deve proporre un
-  // laboratorio nato da un import di clip e ancora senza nessun esame (vedi
-  // loadConcorrenti).
-  try { elenco = await api('/api/concorrenti?soloConEsami=1'); }
+  // Elenco completo apposta (nessun soloConEsami qui): questa e' la pagina di
+  // gestione, l'unico posto con il pulsante elimina (eliminaConcorrenteUI non
+  // ha altro punto di chiamata). Un laboratorio nato da un import di clip e
+  // ancora senza nessun esame deve restare visibile qui, altrimenti non lo si
+  // puo' piu' eliminare. Il filtro soloConEsami=1 resta solo in
+  // loadConcorrenti, che alimenta il selettore del calcolatore esami.
+  try { elenco = await api('/api/concorrenti'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
       <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
@@ -2000,7 +2003,7 @@ async function renderConcorrentiAdmin() {
             <thead><tr><th>${t('concorrenti.tabella.nome')}</th><th>${t('concorrenti.tabella.dataImport')}</th><th>${t('concorrenti.tabella.esami')}</th><th>${t('concorrenti.tabella.mappati')}</th><th></th></tr></thead>
             <tbody>
               ${elenco.map(c => `<tr>
-                <td>${escHtml(c.nome)}</td>
+                <td>${escHtml(c.nome)}${c.n_esami === 0 ? ` <span class="badge badge-gray">${t('concorrenti.soloMacchinari')}</span>` : ''}</td>
                 <td class="td-muted">${fmtDate(c.data_import)}</td>
                 <td class="td-muted">${c.n_esami}</td>
                 <td class="td-muted">${c.n_mappati} / ${c.n_esami}</td>
