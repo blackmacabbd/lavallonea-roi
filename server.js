@@ -2181,9 +2181,18 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
     let clipImportate = bozza.entita === 'clip' ? valide.length : 0;
     for (const r of (bozza.entita === 'concorrente' ? valide : [])) {
       if (!r.clip) continue;
+      // fileOrigine: bozza.nomeFile, come nel ramo 'clip' sopra. Senza,
+      // upsertClip prende la chiave "laboratorio noto, nessun file" (vedi
+      // lib/clip.js): un secondo import di un altro listino esami dello stesso
+      // laboratorio con la spunta clip sulla stessa riga ci sarebbe finito
+      // sopra, sovrascrivendo il prezzo della confezione del primo listino —
+      // esattamente il difetto che questo blocco doveva togliere dal
+      // database. Fa anche si' che queste clip finiscano nel gruppo del loro
+      // PDF invece che in "senza provenienza", eliminabili come unita' con
+      // esso invece di restarci per sempre.
       clipLib.upsertClip(db, {
         userId: req.user.id, concorrenteId: risultato.concorrenteId, nome: r.nome, prezzoConfezione: r.prezzo,
-        pezzi: clipLib.leggiPezzi(r.nome), sconto: null, fonte: 'concorrente'
+        pezzi: clipLib.leggiPezzi(r.nome), sconto: null, fonte: 'concorrente', fileOrigine: bozza.nomeFile
       });
       clipImportate++;
     }
