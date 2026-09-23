@@ -1082,11 +1082,11 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   color: #8a93a1;
 }
 
-/* Il campo clip "chiede" il laboratorio invece di proporre tutto il
+/* Il campo clip "chiede" il listino conc. invece di proporre tutto il
    catalogo quando la riga non ne ha ancora uno risolto (vedi
    aggiornaSuggerimentiClipRiga in app.js): il segnaposto in corsivo e' il
    segnale visivo che lo distingue dallo stato normale. */
-#clip-table-wrap input[data-col="clip_nome"].roi-clip-in-attesa-lab::placeholder {
+#clip-table-wrap input[data-col="clip_nome"].roi-clip-in-attesa-listino::placeholder {
   font-style: italic;
 }
 
