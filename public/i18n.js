@@ -469,6 +469,14 @@
       'macchinari.listiniTitolo': 'Listini PDF importati',
       'macchinari.eliminaListinoBtn': 'Elimina questo listino',
       'macchinari.confermaEliminaListino': 'Eliminare "{nome}"? Se ne vanno tutte le sue righe ({n}). L\'operazione non è reversibile.',
+      'macchinari.importaListinoExcel': '📥 Importa listino Excel',
+      'macchinari.labelColonnaNome': 'Colonna nome',
+      'macchinari.labelColonnaPezzi': 'Colonna pezzi',
+      'macchinari.nessunaColonnaPezzi': '— nessuna colonna pezzi —',
+      'macchinari.righeDaImportare.uno': '{n} riga verrà importata',
+      'macchinari.righeDaImportare.molti': '{n} righe verranno importate',
+      'macchinari.importEsito': 'Import completato — scritte: {importate}, scartate: {scartate}.',
+      'macchinari.importDoppioni': 'Righe col nome gia presente nello stesso file, tenute una volta sola: {n}.',
 
       // ── Gestione macchinari interni — il catalogo analizzatori Mylav ──
       'analizzatori.tabella.nome': 'Analizzatore',
@@ -1011,6 +1019,14 @@
       'macchinari.listiniTitolo': 'Imported PDF price lists',
       'macchinari.eliminaListinoBtn': 'Delete this list',
       'macchinari.confermaEliminaListino': 'Delete "{nome}"? All its rows will be removed ({n}). This action cannot be undone.',
+      'macchinari.importaListinoExcel': '📥 Import Excel price list',
+      'macchinari.labelColonnaNome': 'Name column',
+      'macchinari.labelColonnaPezzi': 'Pieces column',
+      'macchinari.nessunaColonnaPezzi': '— no pieces column —',
+      'macchinari.righeDaImportare.uno': '{n} row will be imported',
+      'macchinari.righeDaImportare.molti': '{n} rows will be imported',
+      'macchinari.importEsito': 'Import completed — written: {importate}, skipped: {scartate}.',
+      'macchinari.importDoppioni': 'Rows repeating a name already in the same file, kept only once: {n}.',
 
       // ── Internal equipment management — the Mylav analyser catalogue ──
       'analizzatori.tabella.nome': 'Analyser',
@@ -1553,6 +1569,14 @@
       'macchinari.listiniTitolo': 'Tarifs PDF importés',
       'macchinari.eliminaListinoBtn': 'Supprimer ce tarif',
       'macchinari.confermaEliminaListino': 'Supprimer "{nome}" ? Toutes ses lignes seront supprimées ({n}). Cette action est irréversible.',
+      'macchinari.importaListinoExcel': '📥 Importer un tarif Excel',
+      'macchinari.labelColonnaNome': 'Colonne nom',
+      'macchinari.labelColonnaPezzi': 'Colonne pièces',
+      'macchinari.nessunaColonnaPezzi': '— aucune colonne de pièces —',
+      'macchinari.righeDaImportare.uno': '{n} ligne sera importée',
+      'macchinari.righeDaImportare.molti': '{n} lignes seront importées',
+      'macchinari.importEsito': 'Import terminé — enregistrées : {importate}, ignorées : {scartate}.',
+      'macchinari.importDoppioni': 'Lignes au nom déjà présent dans le même fichier, gardées une seule fois : {n}.',
 
       // ── Gestion des équipements internes — le catalogue des analyseurs Mylav ──
       'analizzatori.tabella.nome': 'Analyseur',
@@ -2095,6 +2119,14 @@
       'macchinari.listiniTitolo': 'Tarifas PDF importadas',
       'macchinari.eliminaListinoBtn': 'Eliminar esta tarifa',
       'macchinari.confermaEliminaListino': '¿Eliminar "{nome}"? Se eliminarán todas sus filas ({n}). Esta acción no se puede deshacer.',
+      'macchinari.importaListinoExcel': '📥 Importar tarifa Excel',
+      'macchinari.labelColonnaNome': 'Columna nombre',
+      'macchinari.labelColonnaPezzi': 'Columna piezas',
+      'macchinari.nessunaColonnaPezzi': '— sin columna de piezas —',
+      'macchinari.righeDaImportare.uno': '{n} fila se importará',
+      'macchinari.righeDaImportare.molti': '{n} filas se importarán',
+      'macchinari.importEsito': 'Importación completada — escritas: {importate}, descartadas: {scartate}.',
+      'macchinari.importDoppioni': 'Filas con un nombre ya presente en el mismo archivo, conservadas una sola vez: {n}.',
 
       // ── Gestión de equipos internos — el catálogo de analizadores Mylav ──
       'analizzatori.tabella.nome': 'Analizador',

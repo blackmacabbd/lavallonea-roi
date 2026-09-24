@@ -2219,11 +2219,14 @@ async function renderMacchinariEsterni() {
         <div class="page-subtitle" id="macch-sottotitolo"></div>
       </div>
       <div class="page-actions">
+        <label class="btn-outline" for="macch-import-excel-input">${t('macchinari.importaListinoExcel')}</label>
+        <input type="file" id="macch-import-excel-input" accept=".xlsx,.xls" style="display:none" onchange="avviaImportClipExcel(this)">
         <button class="btn-outline" onclick="importaPdfMacchinari()">${t('comune.importaListinoPdf')}</button>
       </div>
     </div>
     <div class="page-body">
       <div class="td-muted" style="margin-bottom:12px;font-size:13px">${t('macchinari.importPdfNota')}</div>
+      <div id="macch-import-excel-wrap"></div>
       <input class="roi-input dett-search" id="macch-search" placeholder="${escHtml(t('macchinari.cercaLaboratorioPlaceholder'))}"
              oninput="filtraMacchinariLab(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
       <div class="table-card" id="macch-lista-wrap"></div>
@@ -2393,6 +2396,164 @@ function importaPdfMacchinari() {
     entita: 'clip',
     alFine: async () => { await renderMacchinariEsterni(); }
   });
+}
+
+// ── Import Excel (listini che il lettore PDF generico non sa leggere) ──
+// Mirror di avviaImportConcorrente/renderImportConcorrenteForm/
+// confermaImportConcorrente (Gestione esami esterni, piu' sopra): stessa
+// forma "analizza -> revisione colonne -> conferma", con due differenze:
+// una colonna pezzi in piu' (opzionale) e il laboratorio scelto qui, come nel
+// ramo 'clip' dell'import PDF, mai letto dal file.
+async function avviaImportClipExcel(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append('file', file);
+
+  let parsed;
+  try {
+    const resp = await fetch('/api/clip/import', { method: 'POST', headers: authHeaders(), body: formData });
+    if (!resp.ok) {
+      const dati = await resp.json().catch(() => ({}));
+      throw new Error(I18n.messaggioErrore(dati, t('errore.rispostaServer', { stato: resp.status })));
+    }
+    parsed = await resp.json();
+  } catch (e) {
+    alert(`${t('concorrenti.erroreLetturaFile')}: ${e.message}`);
+    inputEl.value = '';
+    return;
+  }
+  inputEl.value = '';
+
+  if (!parsed.headers.length || !parsed.rows.length) {
+    alert(t('concorrenti.headerNonTrovato'));
+    return;
+  }
+
+  window._importClipExcel = { rows: parsed.rows, nomeFile: parsed.nomeFile };
+  renderImportClipExcelForm(parsed);
+}
+
+function renderImportClipExcelForm(parsed) {
+  const wrap = el('macch-import-excel-wrap');
+  if (!wrap) return;
+  const opts = parsed.headers.map((h, i) => `<option value="${i}">[${i}] ${escHtml(h || t('concorrenti.colonnaVuota'))}</option>`).join('');
+  const optsConPezzi = `<option value="-1">${t('macchinari.nessunaColonnaPezzi')}</option>` + opts;
+
+  const anteprima = parsed.rows.slice(0, 5).map(r =>
+    `<tr>${parsed.headers.map((_, i) => `<td>${escHtml(r[i])}</td>`).join('')}</tr>`
+  ).join('');
+
+  const titoloChiave = parsed.rows.length === 1 ? 'concorrenti.confermaColonneTitolo.uno' : 'concorrenti.confermaColonneTitolo.molti';
+
+  wrap.innerHTML = `
+    <div class="section-card">
+      <div class="section-card-title">${t(titoloChiave, { n: parsed.rows.length })}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px">
+        <label>${t('importPdf.labelNomeLaboratorio')}<br>
+          <input class="roi-input" id="import-clip-nome-lab" placeholder="${escHtml(t('concorrenti.placeholderNomeEsempio'))}" style="width:200px">
+        </label>
+        <label>${t('macchinari.labelColonnaNome')}<br>
+          <select class="roi-input" id="import-clip-col-nome" style="width:200px">${opts}</select>
+        </label>
+        <label>${t('concorrenti.labelColonnaPrezzo')}<br>
+          <select class="roi-input" id="import-clip-col-prezzo" style="width:200px">${opts}</select>
+        </label>
+        <label>${t('macchinari.labelColonnaPezzi')}<br>
+          <select class="roi-input" id="import-clip-col-pezzi" style="width:200px">${optsConPezzi}</select>
+        </label>
+      </div>
+      <div class="table-scroll" style="margin-bottom:12px">
+        <table><thead><tr>${parsed.headers.map(h => `<th>${escHtml(h)}</th>`).join('')}</tr></thead>
+        <tbody>${anteprima}</tbody></table>
+      </div>
+      <div class="td-muted" id="import-clip-conteggio" style="margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-primary" onclick="confermaImportClipExcel()">${t('concorrenti.confermaImportBtn')}</button>
+        <button class="btn-ghost" onclick="annullaImportClipExcel()">${t('comune.annulla')}</button>
+      </div>
+    </div>
+  `;
+  const selNome = el('import-clip-col-nome');
+  const selPrezzo = el('import-clip-col-prezzo');
+  const selPezzi = el('import-clip-col-pezzi');
+  if (selNome && parsed.colNome >= 0) selNome.value = String(parsed.colNome);
+  if (selPrezzo && parsed.colPrezzo >= 0) selPrezzo.value = String(parsed.colPrezzo);
+  if (selPezzi) selPezzi.value = String(parsed.colPezzi != null ? parsed.colPezzi : -1);
+
+  // "Quante righe verranno importate" e' l'unica anteprima che l'operatore
+  // ha di cio' che il server scartera' per nome o prezzo mancante/non
+  // valido: si ricalcola ad ogni cambio delle due colonne che decidono la
+  // validita' di una riga (la colonna pezzi non scarta mai nessuna riga).
+  const aggiorna = () => aggiornaConteggioImportClip();
+  if (selNome) selNome.addEventListener('change', aggiorna);
+  if (selPrezzo) selPrezzo.addEventListener('change', aggiorna);
+  aggiornaConteggioImportClip();
+}
+
+// Stessa regola, identica, di leggiImporto in server.js: il conteggio qui sotto
+// deve dire esattamente quante righe il server accettera'. Se si cambia una
+// delle due va cambiata anche l'altra. "3.297,54" -> 3297.54, "€ 140,00" ->
+// 140, una cella gia' numerica passa com'e'.
+function leggiImporto(v) {
+  if (v == null) return null;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+  let s = String(v).replace(/[^\d.,-]/g, '');
+  if (!s) return null;
+  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+  const n = parseFloat(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+function aggiornaConteggioImportClip() {
+  const contatore = el('import-clip-conteggio');
+  const st = window._importClipExcel;
+  if (!contatore || !st) return;
+  const colNome = Number(el('import-clip-col-nome')?.value);
+  const colPrezzo = Number(el('import-clip-col-prezzo')?.value);
+  const valide = st.rows.filter(r => {
+    const nome = String(r[colNome] == null ? '' : r[colNome]).trim();
+    if (!nome) return false;
+    const n = leggiImporto(r[colPrezzo]);
+    return n != null && n >= 0;
+  });
+  const chiave = valide.length === 1 ? 'macchinari.righeDaImportare.uno' : 'macchinari.righeDaImportare.molti';
+  contatore.textContent = t(chiave, { n: valide.length });
+}
+
+function annullaImportClipExcel() {
+  window._importClipExcel = null;
+  const wrap = el('macch-import-excel-wrap');
+  if (wrap) wrap.innerHTML = '';
+}
+
+async function confermaImportClipExcel() {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
+  const st = window._importClipExcel;
+  const nomeLaboratorio = el('import-clip-nome-lab')?.value.trim();
+  const colNome = Number(el('import-clip-col-nome')?.value);
+  const colPrezzo = Number(el('import-clip-col-prezzo')?.value);
+  const colPezzi = Number(el('import-clip-col-pezzi')?.value);
+  const rows = (st && st.rows) || [];
+
+  if (!nomeLaboratorio) return alert(t('importPdf.alertNomeLaboratorio'));
+  if (!rows.length) return alert(t('concorrenti.nessunaRigaImportare'));
+
+  try {
+    const risposta = await api('/api/clip/import/conferma', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nomeLaboratorio, nomeFile: st.nomeFile, colNome, colPrezzo, colPezzi, rows })
+    });
+    window._importClipExcel = null;
+    await renderMacchinariEsterni();
+    // I doppioni (stesso nome due volte nello stesso file) si dicono solo se ci
+    // sono: senza questa riga il numero di clip scritte non tornerebbe con le
+    // righe del file, e l'operatore non saprebbe perche'.
+    const esito = t('macchinari.importEsito', { importate: risposta.importate, scartate: risposta.scartate });
+    alert(risposta.doppioni > 0 ? `${esito}\n${t('macchinari.importDoppioni', { n: risposta.doppioni })}` : esito);
+  } catch (e) {
+    alert(`${t('comune.erroreImport')}: ${e.message}`);
+  }
 }
 
 // concorrenteId puo' essere null: e' il gruppo "laboratorio non indicato". Il
@@ -4813,7 +4974,13 @@ async function cambiaPasswordUI() {
     });
     alert(t('auth.cambiaPasswordFatto', { codice: resp.recoveryCode }));
   } catch (e) {
-    alert(messaggioErrore(e, t('auth.cambiaPasswordErrore')));
+    // api() ha gia' tradotto l'errore del server (per esempio "La password
+    // deve contenere almeno un numero") e lo mette nel messaggio: si mostra
+    // quello. Prima qui si chiamava messaggioErrore senza il prefisso I18n,
+    // che non e' una funzione globale: il ramo di errore si rompeva in
+    // silenzio e, con una password troppo debole, l'operatore non vedeva
+    // nessun avviso e poteva credere di averla cambiata.
+    alert(e.message || t('auth.cambiaPasswordErrore'));
   }
 }
 

@@ -13,6 +13,7 @@ const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
 const clipLib = require('./lib/clip');
 const analizzatoriLib = require('./lib/analizzatori');
+const { leggiImporto, leggiPezziCella } = require('./lib/importi');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -343,18 +344,31 @@ function findCol(headers, ...terms) {
  * Parsing generico di un listino concorrente: trova la prima riga con almeno
  * 2 celle non vuote come header, poi rileva per keyword le colonne
  * nome esame / prezzo / sconto (sconto puo' mancare del tutto).
+ *
+ * opts.conPezzi (usato solo dall'import Excel dei macchinari, vedi
+ * /api/clip/import): in piu' rileva anche una colonna pezzi, con termini che
+ * non possono collidere con quelli gia' usati sopra ('test' e' gia' preso da
+ * colEsame). Senza l'opzione la funzione ritorna esattamente come prima:
+ * l'import Excel degli esami concorrente non deve accorgersi di questa
+ * aggiunta.
  */
-function parseConcorrenteExcel(filePath) {
+function parseConcorrenteExcel(filePath, opts = {}) {
+  const vuoto = () => {
+    const r = { headers: [], rows: [], colEsame: -1, colPrezzo: -1, colSconto: -1 };
+    if (opts.conPezzi) r.colPezzi = -1;
+    return r;
+  };
+
   const wb = XLSX.readFile(filePath);
   const sheet = wb.Sheets[wb.SheetNames[0]];
   const allRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-  if (allRows.length < 2) return { headers: [], rows: [], colEsame: -1, colPrezzo: -1, colSconto: -1 };
+  if (allRows.length < 2) return vuoto();
 
   let hRow = -1;
   for (let i = 0; i < Math.min(8, allRows.length); i++) {
     if (allRows[i].filter(c => String(c).trim() !== '').length >= 2) { hRow = i; break; }
   }
-  if (hRow === -1) return { headers: [], rows: [], colEsame: -1, colPrezzo: -1, colSconto: -1 };
+  if (hRow === -1) return vuoto();
 
   const headers = allRows[hRow].map(h => String(h || ''));
   const colEsame  = findCol(headers, 'esame', 'test', 'nome', 'descrizione');
@@ -362,7 +376,11 @@ function parseConcorrenteExcel(filePath) {
   const colSconto = findCol(headers, 'sconto', 'discount', '%');
 
   const rows = allRows.slice(hRow + 1).filter(r => r.some(c => String(c).trim() !== ''));
-  return { headers, rows, colEsame, colPrezzo, colSconto };
+  const risultato = { headers, rows, colEsame, colPrezzo, colSconto };
+  if (opts.conPezzi) {
+    risultato.colPezzi = findCol(headers, 'pezzi', 'pz');
+  }
+  return risultato;
 }
 
 function calcolaTotali(dati) {
@@ -1515,6 +1533,59 @@ app.post('/api/clip/riconosci', requireAuth, express.json({ limit: '2mb' }), (re
     }));
     res.json({ risultati });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── Import Excel di un listino macchinari ───────────────────────────────
+// Mirror di /api/concorrenti/import e /api/concorrenti/import/conferma (vedi
+// sopra): stesso parser generico (parseConcorrenteExcel/findCol), stessa
+// forma "analizza -> revisione colonne -> conferma". La differenza e' che qui
+// serve anche una colonna pezzi (opts.conPezzi), che l'import esami non deve
+// vedere, e la conferma scrive clip (con laboratorio e file di provenienza)
+// invece di righe di un listino esami.
+app.post('/api/clip/import', requireAuth, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Nessun file' });
+  try {
+    const parsed = parseConcorrenteExcel(req.file.path, { conPezzi: true });
+    // Il nome del file va al client cosi' com'e' arrivato: torna alla
+    // conferma invariato per diventare file_origine, la stessa provenienza
+    // che l'import PDF salva con bozza.nomeFile.
+    const nomeFile = req.file.originalname;
+    fs.unlinkSync(req.file.path);
+    res.json({
+      headers: parsed.headers, rows: parsed.rows, nomeFile,
+      colNome: parsed.colEsame, colPrezzo: parsed.colPrezzo, colPezzi: parsed.colPezzi
+    });
+  } catch (e) {
+    try { fs.unlinkSync(req.file.path); } catch (_) {}
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/clip/import/conferma', requireAuth, express.json({ limit: '5mb' }), (req, res) => {
+  try {
+    const { nomeLaboratorio, nomeFile, colNome, colPrezzo, colPezzi, rows } = req.body || {};
+    if (colNome == null || colPrezzo == null || !Array.isArray(rows)) {
+      return res.status(400).json({ error: 'Dati mancanti (colNome, colPrezzo, rows)' });
+    }
+    // colPezzi e' opzionale: -1 (o assente) vuol dire "nessuna colonna pezzi",
+    // stessa convenzione di colSconto nell'import esami qui sopra.
+    const haColPezzi = colPezzi != null && colPezzi !== '' && Number(colPezzi) >= 0;
+    // Gli importi si leggono come li scrive un listino italiano (vedi
+    // lib/importi.js): "3.297,54" e' 3297,54 e "€ 140,00" e' 140. La regola
+    // precedente sostituiva solo la prima virgola e ne faceva 3,297, mille
+    // volte meno.
+    const righe = rows.map(r => ({
+      nome: r[colNome],
+      prezzoConfezione: leggiImporto(r[colPrezzo]),
+      pezzi: haColPezzi ? leggiPezziCella(r[Number(colPezzi)]) : null
+    }));
+    const result = clipLib.importaListinoExcel(db, {
+      userId: req.user.id, nomeLaboratorio, fileOrigine: nomeFile, righe
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
+  }
 });
 
 // ── Catalogo macchinari interni (analizzatori che Mylav vende o noleggia) ──
