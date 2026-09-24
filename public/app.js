@@ -175,6 +175,20 @@ function buildSidebar() {
   if (!nav) return;
 
   let html = `
+    <div class="nav-divider" style="margin-top:8px">${t('sidebar.divGestione')}</div>
+    <div class="nav-item nav-item-interni ${isActive('piani')}" onclick="navigate('piani')">
+      <span class="nav-icon">💰</span> ${t('menu.piani')}
+    </div>
+    <div class="nav-item nav-item-esterni ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
+      <span class="nav-icon">🏷️</span> ${t('menu.concorrenti')}
+    </div>
+    <div class="nav-item nav-item-interni ${isActive('macchinari-interni')}" onclick="navigate('macchinari-interni')">
+      <span class="nav-icon">🔬</span> ${t('menu.macchinariInterni')}
+    </div>
+    <div class="nav-item nav-item-esterni ${isActive('macchinari-esterni')}" onclick="navigate('macchinari-esterni')">
+      <span class="nav-icon">🧰</span> ${t('menu.macchinariEsterni')}
+    </div>
+
     <div class="nav-divider">${t('sidebar.divCalcolatori')}</div>
     <div class="nav-item nav-item-primario ${isActive('dashboard')}" onclick="navigate('dashboard')">
       <span class="nav-icon">🧮</span> ${t('menu.dashboard')}
@@ -258,22 +272,6 @@ function buildSidebar() {
       `;
     }
   }
-
-  html += `
-    <div class="nav-divider" style="margin-top:8px">${t('sidebar.divGestione')}</div>
-    <div class="nav-item nav-item-interni ${isActive('piani')}" onclick="navigate('piani')">
-      <span class="nav-icon">💰</span> ${t('menu.piani')}
-    </div>
-    <div class="nav-item nav-item-esterni ${isActive('concorrenti')}" onclick="navigate('concorrenti')">
-      <span class="nav-icon">🏷️</span> ${t('menu.concorrenti')}
-    </div>
-    <div class="nav-item nav-item-interni ${isActive('macchinari-interni')}" onclick="navigate('macchinari-interni')">
-      <span class="nav-icon">🔬</span> ${t('menu.macchinariInterni')}
-    </div>
-    <div class="nav-item nav-item-esterni ${isActive('macchinari-esterni')}" onclick="navigate('macchinari-esterni')">
-      <span class="nav-icon">🧰</span> ${t('menu.macchinariEsterni')}
-    </div>
-  `;
 
   if (S.strutture.length >= 2) {
     html += `
