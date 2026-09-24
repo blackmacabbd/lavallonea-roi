@@ -4685,7 +4685,7 @@ function selezionaPianoClip(id) {
   if (panel) panel.style.display = 'none';
   const btn = el('clip-piano-btn');
   if (btn) {
-    btn.textContent = t('roi.pianoBtn', { nome: pianoSelezionatoNomeClip() || t('roi.nessuno') });
+    btn.textContent = t('roi.listinoBtn', { nome: pianoSelezionatoNomeClip() || t('roi.nessuno') });
     btn.title = pianoSelezionatoNomeClip() || '';
   }
   const tbody = el('clip-tbody');
@@ -4724,7 +4724,7 @@ function buildClipSectionHtml() {
         <div style="position:relative">
           <button class="btn-outline roi-piano-btn roi-pill-myl" id="clip-piano-btn"
                   onclick="toggleClipPianoPanel()" title="${escHtml(pianoSelezionatoNomeClip() || '')}">
-            ${t('roi.pianoBtn', { nome: escHtml(pianoSelezionatoNomeClip() || t('roi.nessuno')) })}
+            ${t('roi.listinoBtn', { nome: escHtml(pianoSelezionatoNomeClip() || t('roi.nessuno')) })}
           </button>
           <div id="clip-piano-panel" class="roi-piano-panel" style="display:none"></div>
         </div>
