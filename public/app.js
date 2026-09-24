@@ -318,6 +318,7 @@ function buildSidebar() {
           <div onclick="mostraAuthScreen('login')">${t('comune.accedi')}</div>
           <div onclick="mostraAuthScreen('register')">${t('auth.registrati')}</div>
           <div onclick="authGuest()">${t('auth.ospiteEntra')}</div>` : `
+          <div onclick="cambiaPasswordUI()">${t('auth.cambiaPassword')}</div>
           <div onclick="authLogout()">${t('comune.esci')}</div>
           <div onclick="mostraAuthScreen('login')">${t('auth.cambiaAccount')}</div>`}
       </div>
@@ -5036,6 +5037,30 @@ async function authRegister(email, password) {
 function authGuest() {
   S.auth = { token: null, email: null, isAdmin: false, guest: true };
   nascondiAuthScreen(); avviaApp();
+}
+
+// Cambio password da dentro l'applicazione, senza passare dalla posta. Serve
+// perche' finche' esisteva solo il codice via email bastava che la consegna si
+// rompesse per lasciare il proprietario chiuso fuori dal suo account.
+// Il codice di recupero nuovo si mostra UNA volta sola: il server ne conserva
+// solo l'impronta, quindi se si chiude questa finestra senza copiarlo e' perso
+// e bisogna rifare il cambio.
+async function cambiaPasswordUI() {
+  const nuova = prompt(t('auth.cambiaPasswordChiedi'));
+  if (nuova == null) return;
+  const conferma = prompt(t('auth.cambiaPasswordConferma'));
+  if (conferma == null) return;
+  if (nuova !== conferma) { alert(t('auth.cambiaPasswordNonCoincidono')); return; }
+  try {
+    const resp = await api('/api/auth/cambia-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ newPassword: nuova })
+    });
+    alert(t('auth.cambiaPasswordFatto', { codice: resp.recoveryCode }));
+  } catch (e) {
+    alert(messaggioErrore(e, t('auth.cambiaPasswordErrore')));
+  }
 }
 
 async function authLogout(silent) {

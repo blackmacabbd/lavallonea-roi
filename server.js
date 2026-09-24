@@ -727,6 +727,45 @@ app.post('/api/auth/reset-password', authRateLimit, express.json(), (req, res) =
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Cambio password da dentro, con la sola sessione: NON si chiede la password
+// attuale, ed e' deliberato. Senza questa rotta l'unico modo di cambiarla era
+// un codice via email, quindi bastava che la posta smettesse di consegnare
+// perche' il proprietario restasse chiuso fuori dal proprio account senza
+// alcun rimedio — e' successo davvero. Chi ha una sessione valida puo' gia'
+// leggere e cancellare tutti i dati dell'account: poter impostare la password
+// non e' un potere nuovo di cui preoccuparsi, mentre dipendere dalla posta per
+// non perdere l'accesso lo era.
+//
+// Due contropartite, entrambe pratica corrente:
+//  - cambiando la password TUTTE le altre sessioni si chiudono (resta viva
+//    solo quella da cui e' partita la richiesta), cosi' una sessione rubata
+//    non sopravvive al cambio;
+//  - si consegna un codice di recupero NUOVO, mostrato una volta sola, che
+//    sostituisce il precedente: e' la via che non passa dalla posta.
+app.post('/api/auth/cambia-password', requireAuth, express.json(), (req, res) => {
+  try {
+    const pv = auth.validaPassword(String(req.body?.newPassword || ''));
+    if (!pv.ok) return res.status(400).json({ error: pv.motivo, codice: pv.codice });
+
+    const tokenAttuale = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const recoveryCode = auth.genRecoveryCode();
+
+    db.exec('BEGIN');
+    try {
+      db.prepare(`UPDATE users SET pass_hash = ?, recovery_hash = ?, recovery_lookup = ? WHERE id = ?`)
+        .run(auth.hashPassword(req.body.newPassword), auth.hashPassword(recoveryCode),
+             auth.lookupHash(recoveryCode), req.user.id);
+      db.prepare(`DELETE FROM sessions WHERE user_id = ? AND token <> ?`).run(req.user.id, tokenAttuale);
+      // I codici di reset in sospeso non valgono piu': erano richiesti per una
+      // password che non esiste piu'.
+      db.prepare(`UPDATE reset_codes SET used = 1 WHERE user_id = ? AND used = 0`).run(req.user.id);
+      db.exec('COMMIT');
+    } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
+
+    res.json({ ok: true, recoveryCode });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.post('/api/auth/recover-full', authRateLimit, express.json(), (req, res) => {
   try {
     const recoveryCode = String(req.body?.recoveryCode || '');
