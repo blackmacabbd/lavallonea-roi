@@ -175,9 +175,6 @@ function buildSidebar() {
   if (!nav) return;
 
   let html = `
-    <div class="nav-upload" onclick="openUploadModal()">
-      <span class="nav-icon">+</span> ${t('menu.upload')}
-    </div>
     <div class="nav-divider">${t('sidebar.divCalcolatori')}</div>
     <div class="nav-item nav-item-primario ${isActive('dashboard')}" onclick="navigate('dashboard')">
       <span class="nav-icon">🧮</span> ${t('menu.dashboard')}
@@ -302,7 +299,6 @@ function buildSidebar() {
       </div>
       <div class="struttura-children ${altroOpen}">
         <div class="struttura-child ${isActive('risparmio-totale')}" onclick="navigate('risparmio-totale')">${t('menu.risparmioTotale')}</div>
-        <div class="struttura-child ${isActive('debug')}" onclick="navigate('debug')">${t('menu.debugExcel')}</div>
       </div>
     </div>
   `;
@@ -333,7 +329,7 @@ function buildSidebar() {
 // titolo si mette solo dove il troncamento avviene davvero, cosi' vale anche
 // per le lingue che verranno, senza sporcare le voci che stanno larghe.
 function titoliVociTroncate() {
-  document.querySelectorAll('#sidebar-nav .nav-item, #sidebar-nav .nav-upload').forEach(voce => {
+  document.querySelectorAll('#sidebar-nav .nav-item').forEach(voce => {
     if (voce.scrollWidth > voce.clientWidth + 1) voce.title = voce.textContent.trim();
     else voce.removeAttribute('title');
   });
@@ -449,7 +445,6 @@ function navigate(view, params = {}) {
     case 'cronologia': disegno = renderCronologia();                             break;
     case 'cronologia-clip': disegno = renderCronologiaClip();                    break;
     case 'confronto':  disegno = renderConfronto();                              break;
-    case 'debug':      disegno = renderDebug();                                  break;
     case 'risparmio-totale': disegno = renderRisparmioTotale();                  break;
     case 'piani':      disegno = renderPiani();                                  break;
     case 'concorrenti': disegno = renderConcorrentiAdmin();                      break;
@@ -562,7 +557,6 @@ async function renderDashboard() {
           <div class="empty-icon">📂</div>
           <div class="empty-title">${t('stato.nessunDato')}</div>
           <div class="empty-sub">${t('pagina.dashboard.corpoVuoto')}</div>
-          <button class="btn-primary mt-4" onclick="openUploadModal()">${t('pagina.dashboard.caricaBtn')}</button>
         </div>
       </div>
     `);
@@ -1649,62 +1643,6 @@ async function renderConfronto() {
   });
 }
 
-// ── Upload ─────────────────────────────────────────
-function openUploadModal() {
-  el('upload-modal').hidden   = false;
-  el('modal-backdrop').hidden = false;
-  el('upload-status').hidden  = true;
-  el('upload-status').className = 'upload-status';
-  el('upload-status').textContent = '';
-}
-function closeUploadModal() {
-  el('upload-modal').hidden   = true;
-  el('modal-backdrop').hidden = true;
-}
-function showStatus(type, msg) {
-  const s = el('upload-status');
-  s.hidden = false;
-  s.className = `upload-status ${type}`;
-  s.innerHTML = msg;
-}
-
-async function doUpload(file, force = false) {
-  if (S.auth.guest || !S.auth.token) { showStatus('error', '❌ ' + t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
-  showStatus('loading', '<div class="spinner" style="width:18px;height:18px"></div> ' + t('caricamento.elaborazione'));
-
-  const fd = new FormData();
-  fd.append('file', file);
-  if (force) fd.append('force', '1');
-
-  let resp;
-  try {
-    const res = await fetch('/api/upload', { method: 'POST', headers: authHeaders(), body: fd });
-    resp = await res.json();
-
-    if (res.status === 409 && resp.conflict) {
-      el('confirm-msg').textContent = t('caricamento.confermaSovrascrivi', { file: file.name, struttura: resp.struttura });
-      el('confirm-modal').hidden = false;
-      el('confirm-ok').onclick  = () => { el('confirm-modal').hidden = true; doUpload(file, true); };
-      el('confirm-cancel').onclick = () => { el('confirm-modal').hidden = true; };
-      el('upload-status').hidden = true;
-      return;
-    }
-    if (!res.ok) throw new Error(I18n.messaggioErrore(resp, t('errore.upload')));
-  } catch (e) {
-    showStatus('error', '❌ ' + e.message);
-    return;
-  }
-
-  await loadStrutture();
-  S.expanded[resp.struttura_id] = true;
-  closeUploadModal();
-  navigate('foglio', {
-    fileId:      resp.file_id,
-    foglio:      resp.fogli[0],
-    strutturaId: resp.struttura_id
-  });
-}
-
 async function downloadPdf(fileId, foglio, tipo) {
   const donutCanvas = el('chart-donut');
   const barreCanvas = el('chart-barre');
@@ -1746,79 +1684,6 @@ async function downloadPdf(fileId, foglio, tipo) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-}
-
-// ── Dropzone ───────────────────────────────────────
-function initDropzone() {
-  const dz = el('dropzone');
-  const fi = el('file-input');
-  if (!dz || !fi) return;
-
-  dz.addEventListener('click', () => fi.click());
-  fi.addEventListener('change', () => {
-    if (fi.files[0]) doUpload(fi.files[0]);
-    fi.value = '';
-  });
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault();
-    dz.classList.remove('drag-over');
-    const file = e.dataTransfer.files[0];
-    if (file) doUpload(file);
-  });
-
-  el('modal-close').addEventListener('click', closeUploadModal);
-  el('modal-backdrop').addEventListener('click', closeUploadModal);
-}
-
-// ── Debug Excel ─────────────────────────────────────
-function renderDebug() {
-  setMain(`
-    <div class="page-header">
-      <div>
-        <div class="page-title">${t('pagina.debug.titolo')}</div>
-        <div class="page-subtitle">${t('pagina.debug.sottotitolo')}</div>
-      </div>
-    </div>
-    <div class="page-body">
-      <div class="section-card">
-        <div class="section-card-title">${t('pagina.debug.caricaTitolo')}</div>
-        <div style="margin-top:12px">
-          <input type="file" id="dbg-input" accept=".xlsx,.xls"
-                 style="font-size:13px;padding:6px;border:1px solid #e8e9eb;border-radius:6px;width:100%">
-        </div>
-        <div id="dbg-result" style="margin-top:16px"></div>
-      </div>
-    </div>
-  `);
-
-  el('dbg-input').addEventListener('change', async function() {
-    const file = this.files[0];
-    if (!file) return;
-    const out = el('dbg-result');
-    out.innerHTML = '<div class="spinner" style="width:20px;height:20px"></div>';
-    const fd = new FormData();
-    fd.append('file', file);
-    const res  = await fetch('/api/debug', { method: 'POST', headers: authHeaders(), body: fd });
-    const data = await res.json();
-    let html = '';
-    for (const [sheet, info] of Object.entries(data)) {
-      html += `<div style="margin-bottom:24px">
-        <div style="font-weight:500;font-size:14px;margin-bottom:8px;color:#0f76bc">
-          ${t('pagina.debug.foglioInfo', { sheet, riga: info.hRow })}
-        </div>
-        <div style="font-family:monospace;font-size:12px;background:#f5f6f8;
-                    padding:12px;border-radius:6px;overflow-x:auto;white-space:pre">${info.headers.join('\n')}</div>
-        <div style="margin-top:8px;font-size:12px;color:#6b7280;font-weight:500">${t('pagina.debug.prime3Righe')}</div>
-        <div style="font-family:monospace;font-size:11px;background:#f5f6f8;
-                    padding:10px;border-radius:6px;overflow-x:auto;white-space:pre;margin-top:4px">${
-          info.sample.map((r,i) => t('pagina.debug.rigaN', { n: i + 1, json: JSON.stringify(r) })).join('\n')
-        }</div>
-      </div>`;
-    }
-    out.innerHTML = html || `<div style="color:#6b7280">${t('pagina.debug.nessunFoglio')}</div>`;
-  });
 }
 
 // ── Gestione piani ──────────────────────────────────
@@ -4967,15 +4832,13 @@ async function avviaApp() {
   await loadPiani().catch(() => { S.piani = []; });
   await loadConcorrenti().catch(() => { S.concorrenti = []; });
   buildSidebar();
-  initDropzone();
   navigate('dashboard');
 }
 
-// public/index.html contiene alcuni nodi statici (finestra di caricamento file
-// Excel, la sua conferma di sovrascrittura, il "Caricamento..." iniziale della
-// sidebar) che non passano mai da un t() perche' non li disegna nessun render
-// di questo file: li aggiorniamo a mano qui, richiamata sia all'avvio sia da
-// ridisegnaTutto() a ogni cambio lingua.
+// public/index.html contiene alcuni nodi statici (il "Caricamento..." iniziale
+// della sidebar, il claim del brand) che non passano mai da un t() perche' non
+// li disegna nessun render di questo file: li aggiorniamo a mano qui, richiamata
+// sia all'avvio sia da ridisegnaTutto() a ogni cambio lingua.
 //
 // L'accoppiamento testo/chiave vive nel markup stesso (data-i18n/data-i18n-attr
 // su ciascun nodo in index.html), non in un elenco di selettori CSS qui dentro:

@@ -46,45 +46,6 @@
 
 </div>
 
-<!-- ═══════════════════════════════════════════
-     UPLOAD MODAL
-══════════════════════════════════════════════ -->
-<div class="modal-backdrop" id="modal-backdrop" hidden></div>
-<div class="modal" id="upload-modal" hidden role="dialog" aria-modal="true" aria-label="Carica file Excel" data-i18n-attr="aria-label:menu.upload">
-  <div class="modal-header">
-    <h2 data-i18n="menu.upload">Carica file Excel</h2>
-    <button class="modal-close" id="modal-close" aria-label="Chiudi" data-i18n-attr="aria-label:comune.chiudi">&times;</button>
-  </div>
-
-  <div class="modal-body">
-    <div class="dropzone" id="dropzone">
-      <div class="dropzone-icon">📂</div>
-      <div class="dropzone-text" data-i18n="caricamento.trascina">Trascina qui il file <strong>.xlsx</strong></div>
-      <div class="dropzone-sub" data-i18n="caricamento.oppure">oppure</div>
-      <label class="btn-outline" for="file-input" data-i18n="caricamento.selezionaFile">Seleziona file</label>
-      <input type="file" id="file-input" accept=".xlsx,.xls" style="display:none">
-    </div>
-
-    <div class="upload-status" id="upload-status" hidden></div>
-  </div>
-</div>
-
-<!-- ═══════════════════════════════════════════
-     CONFIRM MODAL (duplicati)
-══════════════════════════════════════════════ -->
-<div class="modal modal--sm" id="confirm-modal" hidden role="dialog" aria-modal="true">
-  <div class="modal-header">
-    <h2 data-i18n="caricamento.filePresenteTitolo">File già presente</h2>
-  </div>
-  <div class="modal-body">
-    <p id="confirm-msg" style="color:#6b7280;margin-bottom:20px;line-height:1.5"></p>
-    <div style="display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn-ghost" id="confirm-cancel" data-i18n="comune.annulla">Annulla</button>
-      <button class="btn-primary" id="confirm-ok" data-i18n="caricamento.sovrascrivi">Sovrascrivi</button>
-    </div>
-  </div>
-</div>
-
 <script src="/vendor/chart.min.js"></script>
 <script src="ricerca.js"></script>
 <script src="i18n.js"></script>

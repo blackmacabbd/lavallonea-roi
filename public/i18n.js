@@ -18,7 +18,6 @@
   const DIZIONARIO = {
     it: {
       // Menu laterale (voci di navigazione)
-      'menu.upload': 'Carica file Excel',
       'brand.tagline': 'Il laboratorio dei <b>clinici</b> per i <b>clinici</b>',
       'menu.dashboard': 'Calcolatore esami',
       'menu.calcolatoreClip': 'Calcolatore macchinari',
@@ -337,26 +336,15 @@
       'sidebar.divAltro': 'Altro',
       'sidebar.cronologiaStrumenti': 'Strumenti',
       'menu.risparmioTotale': 'Risparmio totale strutture',
-      'menu.debugExcel': 'Debug Excel',
       'sidebar.confermaEliminaStruttura': "Eliminare la struttura \"{nome}\" con tutti i suoi file e dati? L'operazione non è reversibile.",
       'sidebar.confermaEliminaCalcolo': "Eliminare il calcolo \"{label}\"? L'operazione non è reversibile.",
       'sidebar.questaStruttura': 'questa struttura',
 
-      // ── Finestra di caricamento file Excel (fetta 6) ──
-      'caricamento.trascina': 'Trascina qui il file <strong>.xlsx</strong>',
-      'caricamento.oppure': 'oppure',
-      'caricamento.selezionaFile': 'Seleziona file',
-      'caricamento.filePresenteTitolo': 'File già presente',
-      'caricamento.confermaSovrascrivi': 'File "{file}" già presente per "{struttura}". Sovrascrivere?',
-      'caricamento.sovrascrivi': 'Sovrascrivi',
-      'caricamento.elaborazione': 'Elaborazione...',
-      'errore.upload': 'Errore upload',
       'errore.reteMsg': 'Errore rete: {msg}',
       'errore.pdfMsg': 'Errore PDF: {msg}',
 
       // ── Dashboard (fetta 6) ──
-      'pagina.dashboard.corpoVuoto': 'Carica un file Excel oppure usa il Calcolatore ROI qui sotto.',
-      'pagina.dashboard.caricaBtn': '+ Carica file Excel',
+      'pagina.dashboard.corpoVuoto': 'Usa il Calcolatore ROI qui sotto.',
       'pagina.dashboard.risparmioLabel': 'Risparmio calcolo attuale',
       'pagina.dashboard.risparmioSub': 'vs concorrenza — solo il calcolo qui sopra',
 
@@ -534,15 +522,6 @@
       'pagina.risparmioTotale.riepilogoTitolo': 'Riepilogo per struttura',
       'pagina.risparmioTotale.nessunCalcolo': 'Nessun calcolo salvato',
 
-      // ── Debug Excel (fetta 6) ──
-      'pagina.debug.titolo': '🔍 Debug Excel',
-      'pagina.debug.sottotitolo': 'Analizza gli header rilevati senza salvare',
-      'pagina.debug.caricaTitolo': 'Carica un file Excel da analizzare',
-      'pagina.debug.foglioInfo': 'Foglio: <strong>{sheet}</strong> — riga header: {riga}',
-      'pagina.debug.prime3Righe': 'Prime 3 righe:',
-      'pagina.debug.rigaN': 'Riga {n}: {json}',
-      'pagina.debug.nessunFoglio': 'Nessun foglio trovato',
-
       // ── Recupero e reset password (fetta 6, la parte piu' importante) ──
       'auth.tornaLogin': '&larr; Torna al login',
       'auth.reset.titolo': 'Recupera la password',
@@ -610,7 +589,6 @@
       'foglio.tabella.risparmiPct': 'Risparmi %'
     },
     en: {
-      'menu.upload': 'Upload Excel file',
       'brand.tagline': 'The lab run by <b>clinicians</b>, for <b>clinicians</b>',
       'menu.dashboard': 'Test calculator',
       'menu.calcolatoreClip': 'Equipment calculator',
@@ -906,26 +884,15 @@
       'sidebar.divAltro': 'Other',
       'sidebar.cronologiaStrumenti': 'Tools',
       'menu.risparmioTotale': 'Total saving by practice',
-      'menu.debugExcel': 'Excel debug',
       'sidebar.confermaEliminaStruttura': 'Delete the practice "{nome}" along with all its files and data? This action cannot be undone.',
       'sidebar.confermaEliminaCalcolo': 'Delete the calculation "{label}"? This action cannot be undone.',
       'sidebar.questaStruttura': 'this practice',
 
-      // ── Finestra di caricamento file Excel (fetta 6) ──
-      'caricamento.trascina': 'Drag the <strong>.xlsx</strong> file here',
-      'caricamento.oppure': 'or',
-      'caricamento.selezionaFile': 'Choose file',
-      'caricamento.filePresenteTitolo': 'File already exists',
-      'caricamento.confermaSovrascrivi': 'File "{file}" already exists for "{struttura}". Overwrite?',
-      'caricamento.sovrascrivi': 'Overwrite',
-      'caricamento.elaborazione': 'Processing...',
-      'errore.upload': 'Upload error',
       'errore.reteMsg': 'Network error: {msg}',
       'errore.pdfMsg': 'PDF error: {msg}',
 
       // ── Dashboard (fetta 6) ──
-      'pagina.dashboard.corpoVuoto': 'Upload an Excel file or use the ROI Calculator below.',
-      'pagina.dashboard.caricaBtn': '+ Upload Excel file',
+      'pagina.dashboard.corpoVuoto': 'Use the ROI Calculator below.',
       'pagina.dashboard.risparmioLabel': 'Saving on the current calculation',
       'pagina.dashboard.risparmioSub': 'vs competition — this calculation only',
 
@@ -1103,15 +1070,6 @@
       'pagina.risparmioTotale.riepilogoTitolo': 'Summary by practice',
       'pagina.risparmioTotale.nessunCalcolo': 'No calculation saved',
 
-      // ── Debug Excel (fetta 6) ──
-      'pagina.debug.titolo': '🔍 Excel debug',
-      'pagina.debug.sottotitolo': 'Analyze the detected headers without saving',
-      'pagina.debug.caricaTitolo': 'Upload an Excel file to analyze',
-      'pagina.debug.foglioInfo': 'Sheet: <strong>{sheet}</strong> — header row: {riga}',
-      'pagina.debug.prime3Righe': 'First 3 rows:',
-      'pagina.debug.rigaN': 'Row {n}: {json}',
-      'pagina.debug.nessunFoglio': 'No sheet found',
-
       // ── Recupero e reset password (fetta 6, la parte piu' importante) ──
       'auth.tornaLogin': '&larr; Back to login',
       'auth.reset.titolo': 'Recover your password',
@@ -1179,7 +1137,6 @@
       'foglio.tabella.risparmiPct': 'Saving %'
     },
     fr: {
-      'menu.upload': 'Importer un fichier Excel',
       'brand.tagline': 'Le laboratoire des <b>cliniciens</b> pour les <b>cliniciens</b>',
       'menu.dashboard': 'Calculateur analyses',
       'menu.calcolatoreClip': 'Calculateur équipements',
@@ -1475,26 +1432,15 @@
       'sidebar.divAltro': 'Autres',
       'sidebar.cronologiaStrumenti': 'Outils',
       'menu.risparmioTotale': 'Économie totale par clinique',
-      'menu.debugExcel': 'Débogage Excel',
       'sidebar.confermaEliminaStruttura': 'Supprimer la clinique « {nome} » ainsi que tous ses fichiers et données ? Cette action est irréversible.',
       'sidebar.confermaEliminaCalcolo': 'Supprimer le calcul « {label} » ? Cette action est irréversible.',
       'sidebar.questaStruttura': 'cette clinique',
 
-      // ── Finestra di caricamento file Excel (fetta 6) ──
-      'caricamento.trascina': 'Déposez ici le fichier <strong>.xlsx</strong>',
-      'caricamento.oppure': 'ou',
-      'caricamento.selezionaFile': 'Choisir un fichier',
-      'caricamento.filePresenteTitolo': 'Fichier déjà présent',
-      'caricamento.confermaSovrascrivi': 'Le fichier « {file} » existe déjà pour « {struttura} ». Écraser ?',
-      'caricamento.sovrascrivi': 'Écraser',
-      'caricamento.elaborazione': 'Traitement en cours...',
-      'errore.upload': "Erreur lors de l'import du fichier",
       'errore.reteMsg': 'Erreur réseau : {msg}',
       'errore.pdfMsg': 'Erreur PDF : {msg}',
 
       // ── Dashboard (fetta 6) ──
-      'pagina.dashboard.corpoVuoto': "Importez un fichier Excel ou utilisez le Calculateur ROI ci-dessous.",
-      'pagina.dashboard.caricaBtn': '+ Importer un fichier Excel',
+      'pagina.dashboard.corpoVuoto': 'Utilisez le Calculateur ROI ci-dessous.',
       'pagina.dashboard.risparmioLabel': 'Économie du calcul actuel',
       'pagina.dashboard.risparmioSub': 'vs concurrence — ce calcul uniquement',
 
@@ -1672,15 +1618,6 @@
       'pagina.risparmioTotale.riepilogoTitolo': 'Récapitulatif par clinique',
       'pagina.risparmioTotale.nessunCalcolo': 'Aucun calcul enregistré',
 
-      // ── Debug Excel (fetta 6) ──
-      'pagina.debug.titolo': '🔍 Débogage Excel',
-      'pagina.debug.sottotitolo': 'Analysez les en-têtes détectés sans enregistrer',
-      'pagina.debug.caricaTitolo': 'Importez un fichier Excel à analyser',
-      'pagina.debug.foglioInfo': "Feuille : <strong>{sheet}</strong> — ligne d'en-tête : {riga}",
-      'pagina.debug.prime3Righe': '3 premières lignes :',
-      'pagina.debug.rigaN': 'Ligne {n} : {json}',
-      'pagina.debug.nessunFoglio': 'Aucune feuille trouvée',
-
       // ── Recupero e reset password (fetta 6, la parte piu' importante) ──
       'auth.tornaLogin': '&larr; Retour à la connexion',
       'auth.reset.titolo': 'Récupérer le mot de passe',
@@ -1748,7 +1685,6 @@
       'foglio.tabella.risparmiPct': 'Économie %'
     },
     es: {
-      'menu.upload': 'Subir archivo Excel',
       'brand.tagline': 'El laboratorio de los <b>clínicos</b> para los <b>clínicos</b>',
       'menu.dashboard': 'Calculadora de análisis',
       'menu.calcolatoreClip': 'Calculadora de equipos',
@@ -2044,26 +1980,15 @@
       'sidebar.divAltro': 'Otros',
       'sidebar.cronologiaStrumenti': 'Herramientas',
       'menu.risparmioTotale': 'Ahorro total por clínica',
-      'menu.debugExcel': 'Depuración de Excel',
       'sidebar.confermaEliminaStruttura': '¿Eliminar la clínica "{nome}" junto con todos sus archivos y datos? Esta acción no se puede deshacer.',
       'sidebar.confermaEliminaCalcolo': '¿Eliminar el cálculo "{label}"? Esta acción no se puede deshacer.',
       'sidebar.questaStruttura': 'esta clínica',
 
-      // ── Finestra di caricamento file Excel (fetta 6) ──
-      'caricamento.trascina': 'Arrastra aquí el archivo <strong>.xlsx</strong>',
-      'caricamento.oppure': 'o',
-      'caricamento.selezionaFile': 'Elegir archivo',
-      'caricamento.filePresenteTitolo': 'El archivo ya existe',
-      'caricamento.confermaSovrascrivi': 'El archivo "{file}" ya existe para "{struttura}". ¿Sobrescribir?',
-      'caricamento.sovrascrivi': 'Sobrescribir',
-      'caricamento.elaborazione': 'Procesando...',
-      'errore.upload': 'Error al subir',
       'errore.reteMsg': 'Error de red: {msg}',
       'errore.pdfMsg': 'Error de PDF: {msg}',
 
       // ── Dashboard (fetta 6) ──
-      'pagina.dashboard.corpoVuoto': 'Sube un archivo Excel o usa la Calculadora de ROI de abajo.',
-      'pagina.dashboard.caricaBtn': '+ Subir archivo Excel',
+      'pagina.dashboard.corpoVuoto': 'Usa la Calculadora de ROI de abajo.',
       'pagina.dashboard.risparmioLabel': 'Ahorro del cálculo actual',
       'pagina.dashboard.risparmioSub': 'vs competencia — solo este cálculo',
 
@@ -2240,15 +2165,6 @@
       'pagina.risparmioTotale.kpiSub': 'vs competencia — todas las clínicas',
       'pagina.risparmioTotale.riepilogoTitolo': 'Resumen por clínica',
       'pagina.risparmioTotale.nessunCalcolo': 'Ningún cálculo guardado',
-
-      // ── Debug Excel (fetta 6) ──
-      'pagina.debug.titolo': '🔍 Depuración de Excel',
-      'pagina.debug.sottotitolo': 'Analiza los encabezados detectados sin guardar',
-      'pagina.debug.caricaTitolo': 'Sube un archivo Excel para analizar',
-      'pagina.debug.foglioInfo': 'Hoja: <strong>{sheet}</strong> — fila de encabezado: {riga}',
-      'pagina.debug.prime3Righe': 'Primeras 3 filas:',
-      'pagina.debug.rigaN': 'Fila {n}: {json}',
-      'pagina.debug.nessunFoglio': 'No se encontró ninguna hoja',
 
       // ── Recupero e reset password (fetta 6, la parte piu' importante) ──
       'auth.tornaLogin': '&larr; Volver al inicio de sesión',
