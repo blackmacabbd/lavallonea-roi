@@ -2220,7 +2220,6 @@ async function renderMacchinariEsterni() {
       </div>
       <div class="page-actions">
         <button class="btn-outline" onclick="importaPdfMacchinari()">${t('comune.importaListinoPdf')}</button>
-        <button class="btn-outline" onclick="avviaRecuperoClip()">${t('macchinari.recuperaBtn')}</button>
       </div>
     </div>
     <div class="page-body">
@@ -2229,7 +2228,6 @@ async function renderMacchinariEsterni() {
              oninput="filtraMacchinariLab(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
       <div class="table-card" id="macch-lista-wrap"></div>
       <div id="macch-listini-wrap" style="margin-top:16px"></div>
-      <div id="macch-recupero-wrap"></div>
       <div id="macch-dettaglio-wrap"></div>
     </div>
   `);
@@ -2578,111 +2576,6 @@ async function salvaClipManuale(concorrenteId) {
     renderMacchinariListiniBody();
     await renderMacchinariDettaglio(concorrenteId);
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
-}
-
-// ── Recupero dai listini gia' importati ──────────────
-// Il server non scrive nulla: restituisce solo le righe che sembrano clip.
-// Qui si mostra l'elenco con una casella per riga, gia' spuntata dove la clip
-// non e' ancora in catalogo, e si scrive solo alla conferma esplicita — riga
-// per riga, con POST /api/clip. Smistare righe senza conferma e' l'errore che
-// ha gia' fatto buttare una volta questa logica.
-async function avviaRecuperoClip() {
-  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
-  const wrap = el('macch-recupero-wrap');
-  if (!wrap) return;
-  wrap.innerHTML = `<div class="section-card">${t('stato.caricamento')}</div>`;
-  let dati;
-  try { dati = await api('/api/clip/recupera', { method: 'POST' }); }
-  catch (e) {
-    wrap.innerHTML = `<div class="section-card"><div class="empty-sub">${escHtml(e.message)}</div></div>`;
-    return;
-  }
-  S.macchRecupero = { trovate: (dati.trovate || []).map(r => ({ ...r, selezionata: !r.giaInCatalogo })) };
-  renderRecuperoPanel();
-}
-
-function renderRecuperoPanel() {
-  const wrap = el('macch-recupero-wrap');
-  const st = S.macchRecupero;
-  if (!wrap || !st) return;
-
-  if (!st.trovate.length) {
-    wrap.innerHTML = `<div class="section-card"><div class="empty-sub">${t('macchinari.recupero.nessuna')}</div></div>`;
-    return;
-  }
-
-  const n = st.trovate.length;
-  const rigaHtml = (r, i) => `<tr>
-    <td><input type="checkbox" ${r.selezionata ? 'checked' : ''} onchange="toggleRecuperoRiga(${i}, this.checked)"></td>
-    <td>${escHtml(r.nome)}</td>
-    <td class="td-muted">${escHtml(r.concorrenteNome || '')}</td>
-    <td class="td-muted">${fmtE(r.prezzoConfezione)}</td>
-    <td class="td-muted">${r.pezzi != null ? r.pezzi : '—'}</td>
-    <td class="td-muted">${r.giaInCatalogo ? t('macchinari.recupero.giaPresente') : ''}</td>
-  </tr>`;
-
-  wrap.innerHTML = `
-    <div class="section-card">
-      <div class="section-card-title">${t(n === 1 ? 'macchinari.recupero.trovate.uno' : 'macchinari.recupero.trovate', { n })}</div>
-      <div class="table-scroll" style="margin-bottom:12px">
-        <table>
-          <thead><tr><th></th><th>${t('clip.tabella.clip')}</th><th>${t('macchinari.tabella.laboratorio')}</th>
-            <th>${t('clip.tabella.prezzoConf')}</th><th>${t('clip.tabella.pezzi')}</th><th></th></tr></thead>
-          <tbody>${st.trovate.map(rigaHtml).join('')}</tbody>
-        </table>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn-primary" onclick="confermaRecuperoClip()">${t('macchinari.recupero.confermaBtn')}</button>
-        <button class="btn-outline" onclick="annullaRecuperoClip()">${t('comune.annulla')}</button>
-      </div>
-      <div id="macch-recupero-esito" style="margin-top:8px;font-size:13px"></div>
-    </div>`;
-}
-
-function toggleRecuperoRiga(i, checked) {
-  if (!S.macchRecupero) return;
-  const r = S.macchRecupero.trovate[i];
-  if (r) r.selezionata = checked;
-}
-
-function annullaRecuperoClip() {
-  S.macchRecupero = null;
-  const wrap = el('macch-recupero-wrap');
-  if (wrap) wrap.innerHTML = '';
-}
-
-async function confermaRecuperoClip() {
-  const st = S.macchRecupero;
-  if (!st) return;
-  const scelte = st.trovate.filter(r => r.selezionata);
-  if (!scelte.length) { alert(t('macchinari.recupero.nessunaSelezionata')); return; }
-
-  let aggiunte = 0;
-  for (const r of scelte) {
-    try {
-      await api('/api/clip', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nome: r.nome, prezzoConfezione: r.prezzoConfezione, pezzi: r.pezzi,
-          concorrenteId: r.concorrenteId, fonte: 'concorrente'
-        })
-      });
-      aggiunte++;
-    } catch (e) {
-      // Gia' in catalogo: non blocca il resto della conferma, e' solo una
-      // riga che non aveva bisogno di essere scritta.
-      if (e.codice !== 'CLIP_DUPLICATA') { alert(t('errore.generico', { msg: e.message })); }
-    }
-  }
-
-  const esito = el('macch-recupero-esito');
-  if (esito) esito.textContent = t(aggiunte === 1 ? 'macchinari.recupero.aggiunte.uno' : 'macchinari.recupero.aggiunte', { n: aggiunte });
-
-  S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
-  renderMacchinariListaBody();
-  renderMacchinariListiniBody();
-  if (S.macchDett) await renderMacchinariDettaglio(S.macchDett.concorrenteId);
-  S.macchRecupero = null;
 }
 
 // ══════════════════════════════════════════════════
@@ -4969,6 +4862,34 @@ function authErr(msg) {
   d.style.display = msg ? 'block' : 'none';
 }
 
+// Campo password col pulsante per mostrarla, usato in tutte le viste della
+// schermata di accesso. Il pulsante e' type="button": dentro un <form> un
+// <button> senza tipo farebbe partire l'invio del modulo invece di mostrare la
+// password.
+function campoPassword(id, autocomplete) {
+  return `<div class="campo-password">
+        <input class="auth-input" type="password" id="${id}" required autocomplete="${autocomplete}">
+        <button type="button" class="vedi-password-btn" data-per="${id}"
+                aria-label="${escHtml(t('auth.mostraPassword'))}" aria-pressed="false">👁</button>
+      </div>`;
+}
+
+// Un solo ascoltatore per tutti i pulsanti: le viste della schermata di accesso
+// si ridisegnano spesso, e legare un ascoltatore a ogni pulsante vorrebbe dire
+// rifarlo a ogni ridisegno. Il campo torna a fuoco, cosi' si continua a
+// scrivere senza doverlo ricliccare.
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.vedi-password-btn');
+  if (!btn) return;
+  const inp = document.getElementById(btn.dataset.per);
+  if (!inp) return;
+  const mostra = inp.type === 'password';
+  inp.type = mostra ? 'text' : 'password';
+  btn.setAttribute('aria-pressed', mostra ? 'true' : 'false');
+  btn.setAttribute('aria-label', t(mostra ? 'auth.nascondiPassword' : 'auth.mostraPassword'));
+  inp.focus();
+});
+
 function mostraAuthScreen(vista = 'login') {
   _authUltimo = { tipo: 'vista', arg: vista };
   const ov = el('auth-overlay');
@@ -5013,7 +4934,7 @@ function renderAuthBody(vista) {
         <label class="auth-label">${t('auth.email')}</label>
         <input class="auth-input" type="email" id="auth-login-email" required autocomplete="username">
         <label class="auth-label">${t('auth.password')}</label>
-        <input class="auth-input" type="password" id="auth-login-pass" required autocomplete="current-password">
+        ${campoPassword('auth-login-pass', 'current-password')}
         <button type="submit" class="btn-primary auth-submit">${t('comune.accedi')}</button>
       </form>`;
     el('auth-form-login').addEventListener('submit', async (e) => {
@@ -5033,7 +4954,7 @@ function renderAuthBody(vista) {
         <label class="auth-label">${t('auth.email')}</label>
         <input class="auth-input" type="email" id="auth-reg-email" required autocomplete="username">
         <label class="auth-label">${t('auth.password')}</label>
-        <input class="auth-input" type="password" id="auth-reg-pass" required autocomplete="new-password">
+        ${campoPassword('auth-reg-pass', 'new-password')}
         <ul class="auth-rules" id="auth-rules">
           <li data-rule="lunghezza">${t('auth.regola.lunghezza')}</li>
           <li data-rule="cifra">${t('auth.regola.cifra')}</li>
@@ -5095,7 +5016,7 @@ function renderAuthBody(vista) {
         <label class="auth-label">${t('auth.recover.nuovaEmailLabel')}</label>
         <input class="auth-input" type="email" id="auth-rec-email" required autocomplete="username">
         <label class="auth-label">${t('auth.nuovaPasswordLabel')}</label>
-        <input class="auth-input" type="password" id="auth-rec-pass" required autocomplete="new-password">
+        ${campoPassword('auth-rec-pass', 'new-password')}
         <ul class="auth-rules" id="auth-rec-rules">
           <li data-rule="lunghezza">${t('auth.regola.lunghezza')}</li>
           <li data-rule="cifra">${t('auth.regola.cifra')}</li>
@@ -5142,7 +5063,7 @@ function renderResetStep2(email) {
       <label class="auth-label">${t('auth.resetStep2.codiceLabel')}</label>
       <input class="auth-input" type="text" id="auth-reset-code" required>
       <label class="auth-label">${t('auth.nuovaPasswordLabel')}</label>
-      <input class="auth-input" type="password" id="auth-reset-newpass" required autocomplete="new-password">
+      ${campoPassword('auth-reset-newpass', 'new-password')}
       <ul class="auth-rules" id="auth-reset-rules">
         <li data-rule="lunghezza">${t('auth.regola.lunghezza')}</li>
         <li data-rule="cifra">${t('auth.regola.cifra')}</li>

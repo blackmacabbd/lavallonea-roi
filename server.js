@@ -443,8 +443,6 @@ function rateLimitCheck(key) {
   return true;
 }
 
-function rateLimitReset(key) { rateLimitHits.delete(key); }
-
 // Pulizia periodica delle chiavi scadute (facoltativa, evita crescita illimitata
 // della Map su processi a lunga vita). unref() cosi' non tiene vivo il processo.
 const rateLimitCleanup = setInterval(() => {
@@ -493,13 +491,20 @@ app.post('/api/auth/register', express.json(), async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/auth/login', authRateLimit, express.json(), (req, res) => {
+// L'accesso NON ha limite di tentativi, per scelta del committente: si puo'
+// sbagliare la password quante volte si vuole senza essere bloccati. Il limite
+// resta invece sulle tre rotte che verificano un CODICE (request-reset,
+// reset-password, recover-full), ed e' li' che conta: il codice di reset ha
+// solo sei cifre, e senza limite un programma potrebbe provarle tutte in pochi
+// minuti e prendersi qualunque account senza conoscerne la password. La
+// password invece ha almeno otto caratteri con numero e simbolo, quindi
+// indovinarla a tentativi resta lento anche senza un tetto.
+app.post('/api/auth/login', express.json(), (req, res) => {
   try {
     const email = auth.normEmail(req.body?.email);
     const password = String(req.body?.password || '');
     const u = db.prepare(`SELECT * FROM users WHERE email = ?`).get(email);
     if (!u || !auth.verifyPassword(password, u.pass_hash)) return res.status(401).json({ error: 'Email o password errati', codice: 'CREDENZIALI_ERRATE' });
-    rateLimitReset(req._rateLimitKey);
     const token = auth.genToken();
     db.prepare(`INSERT INTO sessions (token, user_id) VALUES (?, ?)`).run(token, u.id);
     // Rete di sicurezza: idempotente, crea la copia se per qualche motivo manca.
@@ -1494,50 +1499,6 @@ app.delete('/api/clip/:id', requireAuth, (req, res) => {
     const ok = clipLib.eliminaClip(db, req.params.id, req.user.id);
     if (!ok) return res.status(404).json({ error: 'Clip non trovata', codice: 'CLIP_NON_TROVATA' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
-// Il recupero rilegge i listini dei laboratori gia' importati e propone le
-// righe che sembrano clip (stesso riconoscimento dell'import, sembraClip +
-// leggiPezzi): NON scrive nulla. E' il client, dopo la conferma esplicita
-// dell'operatore, a mandare ogni riga scelta a POST /api/clip una per una.
-// Serve a chi ha importato un listino prima che la spunta clip esistesse: le
-// sue righe-clip sono ferme in esami_concorrente, mai entrate nel catalogo.
-app.post('/api/clip/recupera', requireAuth, (req, res) => {
-  try {
-    const righe = db.prepare(`
-      SELECT ec.nome_originale AS nome, ec.prezzo, ec.concorrente_id, c.nome AS concorrente_nome
-      FROM esami_concorrente ec
-      JOIN concorrenti c ON c.id = ec.concorrente_id
-      WHERE c.user_id = ?
-      ORDER BY c.nome, ec.nome_originale
-    `).all(req.user.id);
-
-    const trovate = [];
-    for (const r of righe) {
-      if (!clipLib.sembraClip(r.nome)) continue;
-      // Volutamente senza file_origine nel WHERE: esami_concorrente (da cui
-      // arriva r) non lo tiene, quindi qui non si puo' sapere da quale PDF
-      // verrebbe la clip recuperata. giaInCatalogo resta percio' un
-      // avvertimento a grana grossa ("un laboratorio con questo nome c'e'
-      // gia', in un qualche file"), non il controllo esatto a quattro colonne
-      // che vale altrove (POST /api/clip, PUT .../laboratorio): non scrive
-      // nulla (vedi il commento sopra la rotta), quindi non puo' creare i
-      // doppioni che la chiave nuova previene, solo suggerire con un flag in
-      // meno di precisione di quanta ne avrebbe se il file fosse noto.
-      const giaInCatalogo = !!db.prepare(
-        `SELECT 1 FROM clip WHERE user_id = ? AND concorrente_id = ? AND nome = ?`
-      ).get(req.user.id, r.concorrente_id, r.nome);
-      trovate.push({
-        nome: r.nome,
-        prezzoConfezione: r.prezzo,
-        pezzi: clipLib.leggiPezzi(r.nome),
-        concorrenteId: r.concorrente_id,
-        concorrenteNome: r.concorrente_nome,
-        giaInCatalogo
-      });
-    }
-    res.json({ trovate });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
