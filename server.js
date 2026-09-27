@@ -1339,11 +1339,13 @@ app.post('/api/concorrenti/:id/rimuovi-match', requireAuth, express.json(), (req
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// «Elimina» in Gestione esami esterni: solo gli esami del laboratorio. I suoi
+// listini macchinari restano (vedi eliminaEsamiConcorrente).
 app.delete('/api/concorrenti/:id', requireAuth, (req, res) => {
   try {
-    const ok = concorrenti.eliminaConcorrente(db, req.params.id, req.user.id);
-    if (!ok) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
-    res.json({ success: true });
+    const r = concorrenti.eliminaEsamiConcorrente(db, req.params.id, req.user.id);
+    if (!r.trovato) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
+    res.json({ success: true, eliminati: r.eliminati, laboratorioRimosso: r.laboratorioRimosso });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1495,19 +1497,26 @@ app.put('/api/clip/:id/laboratorio', requireAuth, express.json(), (req, res) => 
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Elimina un intero listino (tutte le clip di un PDF) in un colpo solo: la via
-// d'uscita per chi ha importato per sbaglio un listino non di macchinari, senza
-// doverne eliminare le righe una per una con una conferma ciascuna. Il nome del
-// file arriva nel CORPO della richiesta, non nell'indirizzo: un nome di file
-// contiene punti, spazi e barre, e infilarlo in un percorso e' un invito agli
-// sbagli. fileOrigine null (o assente dal corpo) chiede il gruppo senza
-// provenienza, che si elimina come gli altri.
+// Elimina un intero listino (tutte le clip di un PDF, per UN laboratorio) in un
+// colpo solo: la via d'uscita per chi ha importato per sbaglio un listino non
+// di macchinari, senza doverne eliminare le righe una per una con una conferma
+// ciascuna. Laboratorio e nome del file arrivano nel CORPO della richiesta, non
+// nell'indirizzo: un nome di file contiene punti, spazi e barre, e infilarlo in
+// un percorso e' un invito agli sbagli. concorrenteId/fileOrigine null (o
+// assenti dal corpo) chiedono il gruppo senza laboratorio/senza provenienza,
+// che si elimina come gli altri. Un laboratorio che non e' un intero positivo
+// ne' nullo e' una richiesta sbagliata: 400, invece di cancellare con un
+// filtro strano.
 // Va dichiarata prima di DELETE /api/clip/:id, altrimenti 'gruppo' verrebbe
 // letto come un id (stessa cautela di /api/import-pdf/audit sopra).
 app.delete('/api/clip/gruppo', requireAuth, express.json(), (req, res) => {
   try {
-    const { fileOrigine } = req.body || {};
-    const r = clipLib.eliminaGruppoClip(db, fileOrigine == null ? null : fileOrigine, req.user.id);
+    const { concorrenteId, fileOrigine } = req.body || {};
+    const lab = concorrenteId == null ? null : Number(concorrenteId);
+    if (lab !== null && !(Number.isInteger(lab) && lab > 0)) {
+      return res.status(400).json({ error: 'Laboratorio non valido', codice: 'LABORATORIO_NON_VALIDO' });
+    }
+    const r = clipLib.eliminaGruppoClip(db, lab, fileOrigine == null ? null : fileOrigine, req.user.id);
     res.json(r);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
