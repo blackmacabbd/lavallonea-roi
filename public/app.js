@@ -2284,15 +2284,19 @@ function renderMacchinariListaBody() {
   const q = st.filtro.trim();
   const etichettaFile = g => g.fileOrigine == null ? t('clip.senzaFile') : g.fileOrigine;
   const etichettaLab = g => g.concorrenteId == null ? t('macchinari.senzaLaboratorio') : g.nomeLab;
-  const listini = gruppiClipClient(st.clip, st.concorrenti)
+  const gruppi = gruppiClipClient(st.clip, st.concorrenti);
+  const listini = gruppi
     .filter(g => !q || Ricerca.corrisponde(etichettaLab(g), q) || Ricerca.corrisponde(etichettaFile(g), q))
     // Per laboratorio (quelli senza laboratorio in fondo), poi dal piu' recente.
+    // «IVET» e «ivet» sono due laboratori ma per localeCompare sono uguali:
+    // l'id li tiene separati, o le loro righe si mescolerebbero per data.
     .sort((a, b) => (a.concorrenteId == null) - (b.concorrenteId == null)
       || String(etichettaLab(a)).localeCompare(String(etichettaLab(b)), 'it', { sensitivity: 'base' })
+      || (a.concorrenteId || 0) - (b.concorrenteId || 0)
       || String(b.dataUltimo || '').localeCompare(String(a.dataUltimo || '')));
 
   const sub = el('macch-sottotitolo');
-  const tutti = gruppiClipClient(st.clip, st.concorrenti).length;
+  const tutti = gruppi.length;
   if (sub) sub.textContent = t('pagina.macchinariEsterni.sottotitolo' + (tutti === 1 ? '.uno' : ''), { n: tutti });
 
   if (!listini.length) {
@@ -2304,14 +2308,13 @@ function renderMacchinariListaBody() {
   // Laboratorio e file possono essere nulli: jsAttr(null) darebbe "" e il
   // gestore li scambierebbe per un nome vuoto, quindi il null si scrive a mano.
   const arg = v => v == null ? 'null' : (typeof v === 'number' ? String(v) : jsAttr(v));
-  const dataFmt = d => d ? new Date(d).toLocaleDateString('it-IT') : '';
 
   const rigaHtml = g => `<tr>
     <td>
       <div class="listino-lab">${g.concorrenteId == null ? `<em>${escHtml(etichettaLab(g))}</em>` : escHtml(etichettaLab(g))}</div>
       <div class="listino-file">${escHtml(etichettaFile(g))}</div>
     </td>
-    <td class="td-muted">${dataFmt(g.dataUltimo)}</td>
+    <td class="td-muted">${fmtDate(g.dataUltimo)}</td>
     <td class="td-muted">${g.n}</td>
     <td style="display:flex;gap:6px">
       <button class="btn-outline" onclick="renderMacchinariDettaglio(${arg(g.concorrenteId)}, ${arg(g.fileOrigine)})">${t('macchinari.vediListino')}</button>
@@ -2644,6 +2647,10 @@ async function eliminaClipUI(id, nome) {
     await api(`/api/clip/${id}`, { method: 'DELETE' });
     if (S.macchDett) S.macchDett.clip = S.macchDett.clip.filter(c => c.id !== id);
     if (S.macch) S.macch.clip = S.macch.clip.filter(c => c.id !== id);
+    // L'ultima riga di un laboratorio senza esami se lo porta via (vedi
+    // eliminaClip): l'elenco dei laboratori va riletto, o il selettore
+    // «assegna laboratorio» continuerebbe a proporlo.
+    if (S.macch) S.macch.concorrenti = await api('/api/concorrenti').catch(() => S.macch.concorrenti);
     renderMacchinariDettaglioBody();
     renderMacchinariListaBody();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
