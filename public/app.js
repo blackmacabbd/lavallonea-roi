@@ -1850,13 +1850,11 @@ async function importaPianiJson(inputEl) {
 
 async function renderConcorrentiAdmin() {
   let elenco;
-  // Elenco completo apposta (nessun soloConEsami qui): questa e' la pagina di
-  // gestione, l'unico posto con il pulsante elimina (eliminaConcorrenteUI non
-  // ha altro punto di chiamata). Un laboratorio nato da un import di clip e
-  // ancora senza nessun esame deve restare visibile qui, altrimenti non lo si
-  // puo' piu' eliminare. Il filtro soloConEsami=1 resta solo in
-  // loadConcorrenti, che alimenta il selettore del calcolatore esami.
-  try { elenco = await api('/api/concorrenti'); }
+  // Solo i laboratori con almeno un esame: questa e' la pagina di gestione
+  // esami esterni, e un laboratorio nato da un import di clip e ancora senza
+  // nessun esame si gestisce (e si elimina) dalla sua sezione macchinari, non
+  // da qui.
+  try { elenco = await api('/api/concorrenti?soloConEsami=1'); }
   catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
       <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
@@ -1881,7 +1879,7 @@ async function renderConcorrentiAdmin() {
             <thead><tr><th>${t('concorrenti.tabella.nome')}</th><th>${t('concorrenti.tabella.dataImport')}</th><th>${t('concorrenti.tabella.esami')}</th><th>${t('concorrenti.tabella.mappati')}</th><th></th></tr></thead>
             <tbody>
               ${elenco.map(c => `<tr>
-                <td>${escHtml(c.nome)}${c.n_esami === 0 ? ` <span class="badge badge-gray">${t('concorrenti.soloMacchinari')}</span>` : ''}</td>
+                <td>${escHtml(c.nome)}</td>
                 <td class="td-muted">${fmtDate(c.data_import)}</td>
                 <td class="td-muted">${c.n_esami}</td>
                 <td class="td-muted">${c.n_mappati} / ${c.n_esami}</td>
@@ -2001,28 +1999,14 @@ async function confermaImportConcorrente() {
 async function eliminaConcorrenteUI(id) {
   const c = S.concorrenti.find(x => x.id === id);
   const nome = c ? c.nome : t('concorrenti.questoConcorrente');
-  const nEsami = c && c.n_esami != null ? c.n_esami : null;
-  // Il laboratorio porta via anche le sue clip (Task 2): la conferma deve
-  // nominarle, altrimenti chi elimina non sa che sta perdendo anche quelle.
-  // Interrogare il catalogo filtrato per laboratorio e' l'unico modo di
-  // saperlo prima di cancellare, perche' l'elenco concorrenti non le conta.
-  let nClip = 0;
-  try { nClip = (await api(`/api/clip?concorrenteId=${id}`)).length; } catch (_) { /* meglio un avviso incompleto che nessuno */ }
-
-  // Una frase sola per il caso con le clip: i conteggi fra parentesi non hanno
-  // singolare ne' plurale, quindi non producono "i suoi 1 esami" in nessuna
-  // delle quattro lingue. E il conteggio degli esami non puo' arrivare nullo
-  // dentro la frase, altrimenti a schermo comparirebbe il segnaposto.
-  const chiave = nClip > 0
-    ? 'concorrenti.confermaElimina.conClip'
-    : (nEsami == null
-      ? 'concorrenti.confermaElimina.senzaConteggio'
-      : (nEsami === 1 ? 'concorrenti.confermaElimina.uno' : 'concorrenti.confermaElimina.molti'));
-  if (!confirm(t(chiave, { nome, n: nEsami == null ? '?' : nEsami, nClip }))) return;
+  const n = c && c.n_esami != null ? c.n_esami : '?';
+  // Si eliminano SOLO gli esami: i listini macchinari del laboratorio restano,
+  // e la conferma lo dice. Il conteggio sta fra parentesi, cosi' la frase non
+  // ha bisogno di singolare e plurale in nessuna delle quattro lingue.
+  if (!confirm(t('concorrenti.confermaEliminaEsami', { nome, n }))) return;
   try {
     await api(`/api/concorrenti/${id}`, { method: 'DELETE' });
     scordaSottoVista('concorrente', id);
-    scordaSottoVista('macchDett', id);
     await loadConcorrenti();
     renderConcorrentiAdmin();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
