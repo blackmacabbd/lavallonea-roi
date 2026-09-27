@@ -415,7 +415,10 @@ function riapriSottoVista(sotto) {
   if (!sotto) return Promise.resolve();
   if (sotto.tipo === 'pianoEdit') return Promise.resolve(renderPianoEdit(sotto.arg));
   if (sotto.tipo === 'concorrente') return Promise.resolve(renderConcorrenteDettaglio(sotto.arg));
-  if (sotto.tipo === 'macchDett') return Promise.resolve(renderMacchinariDettaglio(sotto.arg));
+  if (sotto.tipo === 'macchDett') {
+    const a = sotto.arg && typeof sotto.arg === 'object' ? sotto.arg : { concorrenteId: sotto.arg, fileOrigine: null };
+    return Promise.resolve(renderMacchinariDettaglio(a.concorrenteId, a.fileOrigine));
+  }
   if (sotto.tipo === 'analizDett') return Promise.resolve(renderAnalizzatoriDettaglio(sotto.arg));
   return Promise.resolve();
 }
@@ -2214,100 +2217,61 @@ async function renderMacchinariEsterni() {
       <input class="roi-input dett-search" id="macch-search" placeholder="${escHtml(t('macchinari.cercaLaboratorioPlaceholder'))}"
              oninput="filtraMacchinariLab(this.value)" autocomplete="off" style="margin-bottom:12px;max-width:320px">
       <div class="table-card" id="macch-lista-wrap"></div>
-      <div id="macch-listini-wrap" style="margin-top:16px"></div>
       <div id="macch-dettaglio-wrap"></div>
     </div>
   `);
   renderMacchinariListaBody();
-  renderMacchinariListiniBody();
 }
 
-// ── Elenco dei PDF importati, per eliminarli in blocco ──
-// Ortogonale al raggruppamento per laboratorio sopra: una stessa clip ha un
-// laboratorio (a chi appartiene) e un file di provenienza (da quale PDF viene
-// l'ultima volta), e le due cose non coincidono. Calcolato lato client sul
-// catalogo completo (S.macch.clip, gia' caricato sopra): non serve una rotta
-// server dedicata solo per questo elenco, la stessa cosa che fa gia'
-// renderMacchinariListaBody per i conteggi per laboratorio.
-function gruppiClipClient(clip) {
-  const perFile = new Map();
+// Un listino e' un file importato PER UN LABORATORIO: la chiave e' la coppia.
+// Raggruppare per solo file fondeva in una riga lo stesso file caricato per
+// due laboratori. Il nome del laboratorio si prende dall'elenco dei
+// laboratori della pagina, e in mancanza da quello che la clip porta con se'.
+function gruppiClipClient(clip, concorrenti) {
+  const nomeDi = new Map((concorrenti || []).map(c => [c.id, c.nome]));
+  const per = new Map();
   clip.forEach(c => {
-    const chiave = c.fileOrigine == null ? null : c.fileOrigine;
-    if (!perFile.has(chiave)) perFile.set(chiave, { fileOrigine: chiave, n: 0, dataUltimo: null });
-    const g = perFile.get(chiave);
+    const lab = c.concorrenteId == null ? null : c.concorrenteId;
+    const file = c.fileOrigine == null ? null : c.fileOrigine;
+    const k = JSON.stringify([lab, file]);
+    if (!per.has(k)) {
+      per.set(k, { concorrenteId: lab, fileOrigine: file, n: 0, dataUltimo: null,
+        nomeLab: lab == null ? null : (nomeDi.get(lab) || c.concorrenteNome || '') });
+    }
+    const g = per.get(k);
     g.n++;
     if (c.dataImport && (!g.dataUltimo || c.dataImport > g.dataUltimo)) g.dataUltimo = c.dataImport;
   });
-  return [...perFile.values()];
+  return [...per.values()];
 }
 
-function renderMacchinariListiniBody() {
-  const st = S.macch;
-  const wrap = el('macch-listini-wrap');
-  if (!wrap || !st) return;
-
-  const gruppi = gruppiClipClient(st.clip);
-  const conFile = gruppi.filter(g => g.fileOrigine != null)
-    .sort((a, b) => a.fileOrigine.localeCompare(b.fileOrigine, 'it', { sensitivity: 'base' }));
-  const senza = gruppi.find(g => g.fileOrigine == null);
-
-  // Nessun listino PDF (ne' un gruppo senza provenienza con righe dentro):
-  // niente da eliminare in blocco, la sezione non compare.
-  if (!conFile.length && !senza) {
-    wrap.innerHTML = '';
-    return;
-  }
-
-  const dataFmt = d => d ? new Date(d).toLocaleDateString('it-IT') : '';
-
-  const rigaHtml = g => `<tr>
-    <td>${escHtml(g.fileOrigine)}</td>
-    <td class="td-muted">${g.n}</td>
-    <td class="td-muted">${dataFmt(g.dataUltimo)}</td>
-    <td><button class="btn-outline" onclick="eliminaGruppoClipUI(${jsAttr(g.fileOrigine)}, ${g.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button></td>
-  </tr>`;
-
-  const rigaSenza = senza ? `<tr>
-      <td><em>${t('analizzatori.senzaFile')}</em></td>
-      <td class="td-muted">${senza.n}</td>
-      <td class="td-muted">${dataFmt(senza.dataUltimo)}</td>
-      <td><button class="btn-outline" onclick="eliminaGruppoClipUI(null, ${senza.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button></td>
-    </tr>` : '';
-
-  wrap.innerHTML = `
-    <div class="section-card">
-      <div class="section-card-title">${t('macchinari.listiniTitolo')}</div>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>${t('cronologia.tabella.file')}</th><th>${t('cronologiaClip.tabella.righe')}</th>
-            <th>${t('cronologia.tabella.data')}</th><th></th></tr></thead>
-          <tbody>${conFile.map(rigaHtml).join('')}${rigaSenza}</tbody>
-        </table>
-      </div>
-    </div>`;
-}
-
-// Elimina un intero listino (tutte le clip di un PDF, gruppo senza
-// provenienza incluso): la via d'uscita per chi ha importato per sbaglio un
-// listino che non era di macchinari. Il numero di righe nella conferma non e'
-// un dettaglio: e' l'unica cosa che distingue tre righe da milleduecentottanta.
-async function eliminaGruppoClipUI(fileOrigine, n) {
-  const nome = fileOrigine == null ? t('analizzatori.senzaFile') : fileOrigine;
-  if (!confirm(t('macchinari.confermaEliminaListino', { nome, n }))) return;
+// Elimina un listino — quel file, per quel laboratorio. Il numero di righe
+// nella conferma e' l'unica cosa che distingue tre righe da milleduecento.
+async function eliminaGruppoClipUI(concorrenteId, fileOrigine, n) {
+  const lab = concorrenteId == null ? null : ((S.macch && S.macch.concorrenti) || []).find(c => c.id === concorrenteId);
+  const nomeLab = concorrenteId == null ? t('macchinari.senzaLaboratorio') : (lab ? lab.nome : '');
+  const nomeFile = fileOrigine == null ? t('clip.senzaFile') : fileOrigine;
+  if (!confirm(t('macchinari.confermaEliminaListino', { nome: `${nomeLab} — ${nomeFile}`, n }))) return;
   try {
     await api('/api/clip/gruppo', {
       method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fileOrigine })
+      body: JSON.stringify({ concorrenteId, fileOrigine })
     });
-    S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
+    // Si ricaricano laboratori E clip: eliminare l'ultimo listino di un
+    // laboratorio senza esami toglie anche il laboratorio. Non si ridisegna
+    // la pagina intera: un ALTRO listino aperto sotto deve restare aperto.
+    try {
+      const [concorrenti, clip] = await Promise.all([api('/api/concorrenti'), api('/api/clip')]);
+      S.macch.concorrenti = concorrenti;
+      S.macch.clip = clip;
+    } catch (_) { /* la cancellazione e' riuscita: al peggio l'elenco resta vecchio fino al prossimo giro */ }
     renderMacchinariListaBody();
-    renderMacchinariListiniBody();
-    // Il laboratorio aperto (se ne ha uno) puo' avere perso righe di quel PDF:
-    // si riallinea alla stessa cache appena ricaricata, come fa eliminaClipUI.
-    if (S.macchDett) {
-      S.macchDett.clip = S.macch.clip.filter(c =>
-        S.macchDett.concorrenteId == null ? c.concorrenteId == null : c.concorrenteId === S.macchDett.concorrenteId);
-      renderMacchinariDettaglioBody();
+    if (S.macchDett && S.macchDett.concorrenteId === concorrenteId && S.macchDett.fileOrigine === fileOrigine) {
+      // Il listino aperto era proprio questo: non ha piu' niente da mostrare.
+      S.macchDett = null;
+      _sottoVista = null;
+      const wrap = el('macch-dettaglio-wrap');
+      if (wrap) wrap.innerHTML = '';
     }
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
@@ -2317,48 +2281,50 @@ function renderMacchinariListaBody() {
   const wrap = el('macch-lista-wrap');
   if (!wrap || !st) return;
 
-  const perLab = {};
-  let nSenza = 0;
-  st.clip.forEach(c => {
-    if (c.concorrenteId == null) { nSenza++; return; }
-    perLab[c.concorrenteId] = (perLab[c.concorrenteId] || 0) + 1;
-  });
+  const q = st.filtro.trim();
+  const etichettaFile = g => g.fileOrigine == null ? t('clip.senzaFile') : g.fileOrigine;
+  const etichettaLab = g => g.concorrenteId == null ? t('macchinari.senzaLaboratorio') : g.nomeLab;
+  const listini = gruppiClipClient(st.clip, st.concorrenti)
+    .filter(g => !q || Ricerca.corrisponde(etichettaLab(g), q) || Ricerca.corrisponde(etichettaFile(g), q))
+    // Per laboratorio (quelli senza laboratorio in fondo), poi dal piu' recente.
+    .sort((a, b) => (a.concorrenteId == null) - (b.concorrenteId == null)
+      || String(etichettaLab(a)).localeCompare(String(etichettaLab(b)), 'it', { sensitivity: 'base' })
+      || String(b.dataUltimo || '').localeCompare(String(a.dataUltimo || '')));
 
   const sub = el('macch-sottotitolo');
-  if (sub) sub.textContent = t('pagina.macchinariEsterni.sottotitolo' + (st.concorrenti.length === 1 ? '.uno' : ''), { n: st.concorrenti.length });
+  const tutti = gruppiClipClient(st.clip, st.concorrenti).length;
+  if (sub) sub.textContent = t('pagina.macchinariEsterni.sottotitolo' + (tutti === 1 ? '.uno' : ''), { n: tutti });
 
-  const q = st.filtro.trim();
-  const righe = st.concorrenti
-    .map(c => ({ id: c.id, nome: c.nome, nClip: perLab[c.id] || 0 }))
-    .filter(r => !q || Ricerca.corrisponde(r.nome, q));
-
-  const rigaHtml = r => `<tr>
-    <td>${escHtml(r.nome)}</td>
-    <td class="td-muted">${r.nClip}</td>
-    <td><button class="btn-outline" onclick="renderMacchinariDettaglio(${r.id})">${t('macchinari.vediClip')}</button></td>
-  </tr>`;
-
-  // Il gruppo "senza laboratorio" compare solo quando ha righe dentro: vuoto,
-  // non aggiunge niente da raggiungere e affollerebbe solo la lista.
-  const rigaSenza = (nSenza > 0 && (!q || Ricerca.corrisponde(t('macchinari.senzaLaboratorio'), q)))
-    ? `<tr>
-        <td><em>${t('macchinari.senzaLaboratorio')}</em></td>
-        <td class="td-muted">${nSenza}</td>
-        <td><button class="btn-outline" onclick="renderMacchinariDettaglio(null)">${t('macchinari.vediClip')}</button></td>
-      </tr>`
-    : '';
-
-  if (!righe.length && !rigaSenza) {
+  if (!listini.length) {
     wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🧰</div>
       <div class="empty-title">${t('stato.nessunDato')}</div></div>`;
     return;
   }
 
+  // Laboratorio e file possono essere nulli: jsAttr(null) darebbe "" e il
+  // gestore li scambierebbe per un nome vuoto, quindi il null si scrive a mano.
+  const arg = v => v == null ? 'null' : (typeof v === 'number' ? String(v) : jsAttr(v));
+  const dataFmt = d => d ? new Date(d).toLocaleDateString('it-IT') : '';
+
+  const rigaHtml = g => `<tr>
+    <td>
+      <div class="listino-lab">${g.concorrenteId == null ? `<em>${escHtml(etichettaLab(g))}</em>` : escHtml(etichettaLab(g))}</div>
+      <div class="listino-file">${escHtml(etichettaFile(g))}</div>
+    </td>
+    <td class="td-muted">${dataFmt(g.dataUltimo)}</td>
+    <td class="td-muted">${g.n}</td>
+    <td style="display:flex;gap:6px">
+      <button class="btn-outline" onclick="renderMacchinariDettaglio(${arg(g.concorrenteId)}, ${arg(g.fileOrigine)})">${t('macchinari.vediListino')}</button>
+      <button class="btn-outline" onclick="eliminaGruppoClipUI(${arg(g.concorrenteId)}, ${arg(g.fileOrigine)}, ${g.n})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>
+    </td>
+  </tr>`;
+
   wrap.innerHTML = `
     <div class="table-scroll">
       <table>
-        <thead><tr><th>${t('macchinari.tabella.laboratorio')}</th><th>${t('clip.tabella.clip')}</th><th></th></tr></thead>
-        <tbody>${righe.map(rigaHtml).join('')}${rigaSenza}</tbody>
+        <thead><tr><th>${t('concorrenti.tabella.nome')}</th><th>${t('concorrenti.tabella.dataImport')}</th>
+          <th>${t('clip.tabella.clip')}</th><th></th></tr></thead>
+        <tbody>${listini.map(rigaHtml).join('')}</tbody>
       </table>
     </div>`;
 }
@@ -2545,26 +2511,28 @@ async function confermaImportClipExcel() {
 // listaClip senza filtro): evita una seconda forma di query al server solo
 // per isolare le clip senza laboratorio, che la rotta GET /api/clip di oggi
 // non sa esprimere.
-async function renderMacchinariDettaglio(concorrenteId) {
-  _sottoVista = { tipo: 'macchDett', arg: concorrenteId };
+async function renderMacchinariDettaglio(concorrenteId, fileOrigine) {
+  const file = fileOrigine == null ? null : fileOrigine;
+  _sottoVista = { tipo: 'macchDett', arg: { concorrenteId, fileOrigine: file } };
   let tutteLeClip;
   try { tutteLeClip = await api('/api/clip'); }
   catch (e) { alert(t('errore.generico', { msg: e.message })); return; }
 
-  const clipDelGruppo = tutteLeClip.filter(c =>
-    concorrenteId == null ? c.concorrenteId == null : c.concorrenteId === concorrenteId);
+  const stessoLab = c => concorrenteId == null ? c.concorrenteId == null : c.concorrenteId === concorrenteId;
+  const stessoFile = c => file == null ? c.fileOrigine == null : c.fileOrigine === file;
+  const clipDelListino = tutteLeClip.filter(c => stessoLab(c) && stessoFile(c));
   // S.macch.concorrenti, non S.concorrenti: qui serve l'elenco completo dei
   // laboratori (anche uno senza esami), che questa pagina tiene per conto suo.
   const lab = concorrenteId == null ? null : ((S.macch && S.macch.concorrenti) || []).find(c => c.id === concorrenteId);
 
-  S.macchDett = { concorrenteId, nomeLab: lab ? lab.nome : null, clip: clipDelGruppo, filtro: '' };
+  S.macchDett = { concorrenteId, fileOrigine: file, nomeLab: lab ? lab.nome : null, clip: clipDelListino, filtro: '' };
 
   const wrap = el('macch-dettaglio-wrap');
   if (!wrap) return;
 
-  const titolo = concorrenteId == null
-    ? t('macchinari.dettaglio.titoloSenzaLaboratorio')
-    : t('macchinari.dettaglio.titolo', { nome: escHtml(S.macchDett.nomeLab || '') });
+  const nomeTitolo = concorrenteId == null ? t('macchinari.senzaLaboratorio') : (S.macchDett.nomeLab || '');
+  const fileTitolo = file == null ? t('clip.senzaFile') : file;
+  const titolo = t('macchinari.dettaglio.titoloListino', { nome: escHtml(nomeTitolo), file: escHtml(fileTitolo) });
 
   wrap.innerHTML = `
     <div class="section-card">
@@ -2580,7 +2548,7 @@ async function renderMacchinariDettaglio(concorrenteId) {
         <label>${t('clip.tabella.prezzoConf')}<br><input class="roi-input" id="macch-nuova-prezzo" type="number" step="0.01" style="width:110px"></label>
         <label>${t('clip.tabella.pezzi')}<br><input class="roi-input" id="macch-nuova-pezzi" type="number" style="width:80px"></label>
         <label>${t('concorrenti.tabella.sconto')}<br><input class="roi-input" id="macch-nuova-sconto" type="number" step="0.1" style="width:80px"></label>
-        <button class="btn-primary" onclick="salvaClipManuale(${concorrenteId == null ? 'null' : concorrenteId})">${t('comune.salva')}</button>
+        <button class="btn-primary" onclick="salvaClipManuale(${concorrenteId == null ? 'null' : concorrenteId}, ${file == null ? 'null' : jsAttr(file)})">${t('comune.salva')}</button>
       </div>
     </div>`;
   renderMacchinariDettaglioBody();
@@ -2678,7 +2646,6 @@ async function eliminaClipUI(id, nome) {
     if (S.macch) S.macch.clip = S.macch.clip.filter(c => c.id !== id);
     renderMacchinariDettaglioBody();
     renderMacchinariListaBody();
-    renderMacchinariListiniBody();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
@@ -2704,7 +2671,7 @@ async function assegnaLaboratorioClip(id) {
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 
-async function salvaClipManuale(concorrenteId) {
+async function salvaClipManuale(concorrenteId, fileOrigine) {
   if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') })); return; }
   const nome = (el('macch-nuova-nome')?.value || '').trim();
   if (!nome) return alert(t('macchinari.scriviNomeClip'));
@@ -2714,12 +2681,14 @@ async function salvaClipManuale(concorrenteId) {
   try {
     await api('/api/clip', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nome, prezzoConfezione, pezzi, sconto, concorrenteId, fonte: 'manuale' })
+      body: JSON.stringify({ nome, prezzoConfezione, pezzi, sconto, concorrenteId, fileOrigine, fonte: 'manuale' })
     });
+    // Senza il file, la clip aggiunta a mano dentro un listino finirebbe in
+    // un'altra riga dell'elenco (quella "importate prima che si tenesse
+    // traccia del file"): fileOrigine mantiene la clip nello stesso listino.
     S.macch.clip = await api('/api/clip').catch(() => S.macch.clip);
     renderMacchinariListaBody();
-    renderMacchinariListiniBody();
-    await renderMacchinariDettaglio(concorrenteId);
+    await renderMacchinariDettaglio(concorrenteId, fileOrigine);
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
 }
 

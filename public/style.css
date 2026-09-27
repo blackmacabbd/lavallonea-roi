@@ -626,6 +626,13 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 .td-muted  { color: #9ca3af !important; }
 .crono-ordine { color: var(--blue); font-weight: 600; font-size: 12px; }
 
+/* Elenco dei listini esterni: il laboratorio e' la cosa da trovare, il file
+   sta sotto, piu' piccolo e tenue, e distingue due listini dello stesso
+   laboratorio. Il nome di un file e' lungo e senza spazi: va a capo dove
+   serve invece di allargare la tabella. */
+.listino-lab { font-weight: 600; color: var(--ink); }
+.listino-file { font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+
 /* ═══════════════════════════════════════════════════
    BUTTONS
    ═══════════════════════════════════════════════════ */
