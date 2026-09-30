@@ -3531,6 +3531,8 @@ function calcPrezConc(lc, sc, n) {
 // piede) e' ora generica e vive nel motore comune (calcolatore.js), guidata
 // dall'elenco delle colonne. Questa funzione resta il "calcolaRiga" del
 // descrittore e la usano sia il disegno iniziale sia l'aggiornamento per riga.
+// DEVE restare identica a lib/calcoloesami.js, che fa lo stesso conto al
+// salvataggio: se divergono, la cronologia non dice cio' che lo schermo mostra.
 function calcolaRigaRoi(r) {
   const n  = r.n_esami || 1;
   const nc = parseFloat(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav

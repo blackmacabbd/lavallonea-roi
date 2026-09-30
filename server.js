@@ -14,6 +14,7 @@ const importbozze = require('./lib/importbozze');
 const clipLib = require('./lib/clip');
 const analizzatoriLib = require('./lib/analizzatori');
 const { leggiImporto, leggiPezziCella } = require('./lib/importi');
+const { calcolaRigaEsami, calcolaTotaliEsami } = require('./lib/calcoloesami');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -383,30 +384,8 @@ function parseConcorrenteExcel(filePath, opts = {}) {
   return risultato;
 }
 
-function calcolaTotali(dati) {
-  const t = dati.reduce((acc, d) => {
-    acc.totale_concorrenza          += d.totale_concorrenza          || 0;
-    acc.prezzo_scontato_concorrenza += d.prezzo_scontato_concorrenza || 0;
-    acc.totale_listino_lav          += d.totale_listino_lav          || 0;
-    acc.totale_scontato_lav         += d.totale_scontato_lav         || 0;
-    acc.sconto_totale_concorrenza   += d.sconto_concorrenza          || 0;
-    acc.sconto_totale_lav           += d.sconto_lav                  || 0;
-    return acc;
-  }, {
-    totale_concorrenza: 0,
-    prezzo_scontato_concorrenza: 0,
-    totale_listino_lav: 0,
-    totale_scontato_lav: 0,
-    sconto_totale_concorrenza: 0,
-    sconto_totale_lav: 0
-  });
-
-  t.risparmio_totale_dottore = t.prezzo_scontato_concorrenza - t.totale_scontato_lav;
-  t.risparmio_pct = t.prezzo_scontato_concorrenza > 0
-    ? +((t.risparmio_totale_dottore / t.prezzo_scontato_concorrenza) * 100).toFixed(1)
-    : 0;
-  return t;
-}
+// I totali di un file: vedi lib/calcoloesami.js.
+const calcolaTotali = calcolaTotaliEsami;
 
 // ── Middleware ─────────────────────────────────────
 // Nessun parser JSON globale: ogni rotta dichiara il proprio express.json()
@@ -2036,21 +2015,16 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
       `);
 
       for (const r of righe) {
-        const n        = r.n_esami || 1;
-        // Quantita' del lato concorrenza: la sua se c'e', altrimenti quella
-        // Mylav — che e' come si comportavano tutte le righe prima che le due
-        // colonne esistessero.
-        const nConc    = r.n_concorrenza || n;
-        const lConc    = r.listino_concorrenza || 0;
-        const tConc    = lConc * nConc;
-        const pConc    = parseFloat((tConc * 0.9).toFixed(2));
-        const lLav     = r.listino_lav || 0;
-        const tLLav    = lLav * n;
-        const pLav     = r.prezzo_scontato_lav || 0;
-        const tPLav    = pLav * n;
-        ins.run(fileId, foglio, r.esame, n, r.esame_concorrente || null, nConc,
-          lConc, tConc, pConc, lLav, tLLav, pLav, tPLav,
-          pConc - tPLav, tConc - pConc, tLLav - tPLav, piano_id || null, r.listino_mylav || null);
+        // Stesso conto del calcolatore (lib/calcoloesami.js): prima qui lo
+        // sconto della concorrenza era un 10% fisso e, senza piano, Mylav
+        // contava zero, quindi la cronologia non diceva quello che lo schermo
+        // aveva mostrato.
+        const c = calcolaRigaEsami(r);
+        ins.run(fileId, foglio, r.esame, c.n, r.esame_concorrente || null, c.nConcorrenza,
+          c.listinoConcorrenza, c.totaleConcorrenza, c.prezzoScontatoConcorrenza,
+          c.listinoLav, c.totaleListinoLav, c.prezzoScontatoLav, c.totaleScontatoLav,
+          c.risparmio, c.totaleConcorrenza - c.prezzoScontatoConcorrenza,
+          c.totaleListinoLav - c.totaleScontatoLav, piano_id || null, r.listino_mylav || null);
       }
       db.exec('COMMIT');
       res.json({ success: true, file_id: fileId, struttura_id: strRow.id, struttura: strutturaNome, fogli: [foglio] });
@@ -2246,14 +2220,15 @@ app.post('/api/export-excel', requireAuth, express.json(), (req, res) => {
          'prezzo vet med scontato', '', 'LISTINO LAVALLONEA', 'TOTALE LISTINO',
          `prezzo lav. ${foglio}`, 'Totale prezzo lav'],
         ...righe.map((r, i) => {
-          const n = r.n_esami || 1;
-          const lc = r.listino_concorrenza || 0;
+          // Stesso conto del calcolatore e del salvataggio (lib/calcoloesami.js):
+          // qui c'era lo stesso sconto fisso del 10% che il salvataggio aveva.
+          const c = calcolaRigaEsami(r);
           return [
-            i === 0 ? struttura : '', '', r.esame, n,
-            lc, lc * n, parseFloat((lc * n * 0.9).toFixed(2)),
+            i === 0 ? struttura : '', '', r.esame, c.n,
+            c.listinoConcorrenza, c.totaleConcorrenza, c.prezzoScontatoConcorrenza,
             '',
-            r.listino_lav || 0, (r.listino_lav || 0) * n,
-            r.prezzo_scontato_lav || 0, (r.prezzo_scontato_lav || 0) * n
+            c.listinoLav, c.totaleListinoLav,
+            c.prezzoScontatoLav, c.totaleScontatoLav
           ];
         })
       ];
