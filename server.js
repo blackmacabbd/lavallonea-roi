@@ -1046,24 +1046,6 @@ app.get('/api/esami/autocomplete', optionalAuth, (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.get('/api/esami/prezzi', optionalAuth, (req, res) => {
-  try {
-    const nome = String(req.query.nome || '').trim();
-    if (!req.user) return res.json({});
-    const row = db.prepare(`
-      SELECT
-        ROUND(AVG(df.listino_concorrenza), 2) as listino_concorrenza,
-        ROUND(AVG(df.listino_lav), 2)         as listino_lav,
-        ROUND(AVG(df.prezzo_scontato_lav), 2) as prezzo_scontato_lav
-      FROM dati_foglio df
-      JOIN file_caricati fc ON fc.id = df.file_id
-      JOIN strutture s ON s.id = fc.struttura_id
-      WHERE s.user_id = ? AND LOWER(TRIM(df.esame)) = LOWER(TRIM(?))
-    `).get(req.user.id, nome);
-    res.json(row || {});
-  } catch (err) { res.status(500).json({ error: err.message }); }
-});
-
 app.get('/api/piani', optionalAuth, (req, res) => {
   try {
     const all = req.query.all === '1';
@@ -2248,14 +2230,26 @@ app.delete('/api/cronologia/:id', requireAuth, (req, res) => {
   try {
     const { id } = req.params;
     const owned = db.prepare(`
-      SELECT 1 FROM file_caricati fc
+      SELECT fc.struttura_id FROM file_caricati fc
       JOIN strutture s ON s.id = fc.struttura_id
       WHERE fc.id = ? AND s.user_id = ?
     `).get(id, req.user.id);
     if (!owned) return res.status(404).json({ error: 'File non trovato' });
-    db.prepare('DELETE FROM dati_foglio WHERE file_id = ?').run(id);
-    db.prepare('DELETE FROM file_caricati WHERE id = ?').run(id);
-    res.json({ ok: true });
+    // Eliminato l'ultimo file, la struttura se ne va con lui: restava in barra
+    // laterale con 0 file, senza niente da aprire. Nella stessa transazione.
+    let strutturaRimossa = false;
+    db.exec('BEGIN');
+    try {
+      db.prepare('DELETE FROM dati_foglio WHERE file_id = ?').run(id);
+      db.prepare('DELETE FROM file_caricati WHERE id = ?').run(id);
+      const restano = db.prepare('SELECT COUNT(*) AS n FROM file_caricati WHERE struttura_id = ?').get(owned.struttura_id).n;
+      if (restano === 0) {
+        db.prepare('DELETE FROM strutture WHERE id = ? AND user_id = ?').run(owned.struttura_id, req.user.id);
+        strutturaRimossa = true;
+      }
+      db.exec('COMMIT');
+    } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
+    res.json({ ok: true, strutturaRimossa });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

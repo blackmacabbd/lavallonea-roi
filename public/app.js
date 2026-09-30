@@ -77,14 +77,22 @@ function clipRigaVuota() {
 }
 
 // ── Utils ──────────────────────────────────────────
-function euro(n) {
-  return '€ ' + (Number(n) || 0).toLocaleString('it-IT', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2
+// Numero all'italiana con il punto delle migliaia SEMPRE: di suo il browser in
+// italiano lo mette solo da cinque cifre in su, e si leggevano «8677,00» e
+// «19.480,00» nella stessa tabella.
+function numeroIt(n, decimali) {
+  return (Number(n) || 0).toLocaleString('it-IT', {
+    minimumFractionDigits: decimali, maximumFractionDigits: decimali, useGrouping: 'always'
   });
+}
+// Percentuale con la virgola, come gli importi («31,6%», non «31.6%»).
+function fmtPct(n) { return numeroIt(n, 1) + '%'; }
+function euro(n) {
+  return '€ ' + numeroIt(n, 2);
 }
 function euroCompact(n) {
   const v = Number(n) || 0;
-  if (Math.abs(v) >= 1000) return '€ ' + (v / 1000).toFixed(1) + 'k';
+  if (Math.abs(v) >= 1000) return '€ ' + numeroIt(v / 1000, 1) + 'k';
   return '€ ' + v.toFixed(0);
 }
 function fmtDate(d) {
@@ -705,6 +713,20 @@ function modificaNelCalcolatore() {
   navigate('dashboard');
 }
 
+// Nel dettaglio di un file salvato: sotto l'esame Mylav, piccolo, quello del
+// concorrente con cui e' stato confrontato; e la quantita' della concorrenza
+// quando non e' la stessa. Prima si vedeva solo il lato Mylav, e una riga con
+// 3 esami Mylav contro 2 del concorrente sembrava sbagliata.
+function cellaEsameFoglio(d) {
+  const conc = (d.esame_concorrente || '').trim();
+  return escHtml(d.esame) + (conc ? `<div class="td-muted" style="font-size:11px">${escHtml(conc)}</div>` : '');
+}
+function cellaQuantitaFoglio(d) {
+  const nc = d.n_concorrenza;
+  return d.n_esami + (nc && nc !== d.n_esami
+    ? ` <span class="td-muted" style="font-size:11px">(${t('foglio.nConcorrenza', { n: nc })})</span>` : '');
+}
+
 async function renderFoglio(fileId, foglio) {
   let resp;
   try {
@@ -761,7 +783,7 @@ async function renderFoglio(fileId, foglio) {
         </div>
         <div class="kpi-card kpi-blue">
           <div class="kpi-label">${window.t('foglio.kpi.pctLabel')}</div>
-          <div class="kpi-value">${rispPct}%</div>
+          <div class="kpi-value">${fmtPct(rispPct)}</div>
           <div class="kpi-sub">${window.t('foglio.kpi.pctSub')}</div>
         </div>
       </div>
@@ -958,7 +980,7 @@ function renderDonutMia(t) {
       label: ctx => {
         if (totale === 0) return '  ' + window.t('foglio.nessunDato');
         const v   = ctx.raw;
-        const pct = base > 0 ? ((v / base) * 100).toFixed(1) : 0;
+        const pct = base > 0 ? numeroIt((v / base) * 100, 1) : numeroIt(0, 1);
         return [`  € ${(Number(v)||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2})}`, '  ' + window.t('foglio.donutMia.tooltipPct', { pct })];
       }
     })
@@ -973,7 +995,7 @@ function renderDonutDottore(t) {
   const pct = t.risparmio_pct || 0;
 
   const labels = [window.t('foglio.paghiConMylav'), window.t('foglio.risparmioVsMercato')];
-  el('donut-cv').textContent = `${pct}%`;
+  el('donut-cv').textContent = fmtPct(pct);
   el('donut-cl').textContent = window.t('foglio.donutDottore.cl');
   el('donut-legend').innerHTML = legendHtml([
     { label: labels[0], color: '#0f76bc' },
@@ -1061,7 +1083,7 @@ function renderBarreMia(dati) {
         if (!d) return '';
         if (ctx.datasetIndex === 0) return '  ' + t('foglio.tooltip.paghiMylavImporto', { importo: euro(d.totale_scontato_lav) });
         const pct = d.prezzo_scontato_concorrenza > 0
-          ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
+          ? numeroIt((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100, 1) : numeroIt(0, 1);
         return '  ' + t('foglio.tooltip.risparmioPct', { importo: euro(d.risparmio_dottore), pct });
       },
       afterBody: items => {
@@ -1116,7 +1138,7 @@ function renderBarreDottore(dati) {
         if (!d) return '';
         if (ctx.datasetIndex === 0) return '  ' + t('foglio.tooltip.prezzoMylavImporto', { importo: euro(d.totale_scontato_lav) });
         const pct = d.prezzo_scontato_concorrenza > 0
-          ? ((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0';
+          ? numeroIt((d.risparmio_dottore / d.prezzo_scontato_concorrenza) * 100, 1) : numeroIt(0, 1);
         return '  ' + t('foglio.tooltip.risparmiPct', { importo: euro(d.risparmio_dottore), pct });
       },
       afterBody: items => {
@@ -1182,16 +1204,16 @@ function renderFoglioTable(dati) {
     body.innerHTML = dati.map(d => {
       const risp = d.risparmio_dottore || 0;
       const pct  = d.prezzo_scontato_concorrenza > 0
-        ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
+        ? (risp / d.prezzo_scontato_concorrenza) * 100 : 0;
       return `<tr>
-        <td>${d.esame}</td>
-        <td class="text-center">${d.n_esami}</td>
+        <td>${cellaEsameFoglio(d)}</td>
+        <td class="text-center">${cellaQuantitaFoglio(d)}</td>
         <td class="td-muted">${euro(d.listino_concorrenza)}</td>
         <td style="color:#ce181e">${euro(d.prezzo_scontato_concorrenza)}</td>
         <td class="td-muted">${euro(d.listino_lav)}</td>
         <td class="td-yellow">${euro(d.totale_scontato_lav)}</td>
         <td class="td-green">${euro(risp)}</td>
-        <td class="td-green">${pct}%</td>
+        <td class="td-green">${fmtPct(pct)}</td>
       </tr>`;
     }).join('');
   } else {
@@ -1203,14 +1225,14 @@ function renderFoglioTable(dati) {
     body.innerHTML = dati.map(d => {
       const risp = d.risparmio_dottore || 0;
       const pct  = d.prezzo_scontato_concorrenza > 0
-        ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
+        ? (risp / d.prezzo_scontato_concorrenza) * 100 : 0;
       return `<tr>
-        <td>${d.esame}</td>
-        <td class="text-center">${d.n_esami}</td>
+        <td>${cellaEsameFoglio(d)}</td>
+        <td class="text-center">${cellaQuantitaFoglio(d)}</td>
         <td style="color:#ce181e">${euro(d.prezzo_scontato_concorrenza)}</td>
         <td class="td-yellow">${euro(d.totale_scontato_lav)}</td>
         <td class="td-green">${euro(risp)}</td>
-        <td class="td-green">${pct}%</td>
+        <td class="td-green">${fmtPct(pct)}</td>
       </tr>`;
     }).join('');
   }
@@ -1223,14 +1245,14 @@ async function renderTotali(strutturaId, nome) {
     data = await api(`/api/strutture/${strutturaId}/aggregato`);
   } catch (e) {
     setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">Errore</div><div class="empty-sub">${e.message}</div></div>`);
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
     return;
   }
 
   const { struttura, files } = data;
   if (!files.length) {
     setMain(`<div class="empty-state"><div class="empty-icon">📭</div>
-      <div class="empty-title">Nessun dato</div></div>`);
+      <div class="empty-title">${t('stato.nessunDato')}</div></div>`);
     return;
   }
 
@@ -1244,58 +1266,68 @@ async function renderTotali(strutturaId, nome) {
     return acc;
   }, { totale_concorrenza: 0, prezzo_scontato_concorrenza: 0, totale_scontato_lav: 0, risparmio_totale_dottore: 0 });
 
-  const labels       = files.map(f => fmtDate(f.file.data_carico));
+  // Giorno E ora: piu' calcoli dello stesso giorno avevano tutti la stessa
+  // etichetta e non si distinguevano. Stesso formato della barra laterale.
+  const labels       = files.map(f => f.file.data_carico
+    ? new Date(f.file.data_carico).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
+    : '');
   const foglioSet    = ['Foglio 1', 'Platinum', 'Gold'];
   const foglioColors = { 'Foglio 1': '#6b7280', 'Platinum': '#0f76bc', 'Gold': '#0f76bc' };
+  // "Platinum" e' il nome interno del foglio con cui salva il calcolatore, non
+  // dice niente all'operatore: la legenda dice cosa misura la linea, e il
+  // nome del foglio compare solo se i fogli sono piu' d'uno (file vecchi).
+  const fogliPresenti = foglioSet.filter(fg => files.some(f => f.fogli[fg]));
+  const etichettaSerie = (cosa, fg) => fogliPresenti.length > 1 ? `${cosa} — ${fg}` : cosa;
 
   setMain(`
     <div class="page-header">
       <div>
-        <div class="page-title">Totali — ${struttura.nome}</div>
-        <div class="page-subtitle">${files.length} file caricati</div>
+        <div class="page-title">${t('totali.titolo', { nome: escHtml(struttura.nome) })}</div>
+        <div class="page-subtitle">${t('totali.sottotitolo' + (files.length === 1 ? '.uno' : ''), { n: files.length })}</div>
       </div>
     </div>
     <div class="page-body">
       <div class="kpi-grid kpi-grid-4">
         <div class="kpi-card">
-          <div class="kpi-label">Listino concorrenza</div>
+          <div class="kpi-label">${t('totali.kpi.listinoConc')}</div>
           <div class="kpi-value">${euro(cum.totale_concorrenza)}</div>
         </div>
         <div class="kpi-card kpi-red">
-          <div class="kpi-label">Scontato concorrenza</div>
+          <div class="kpi-label">${t('totali.kpi.scontatoConc')}</div>
           <div class="kpi-value">${euro(cum.prezzo_scontato_concorrenza)}</div>
         </div>
         <div class="kpi-card kpi-yellow">
-          <div class="kpi-label">Scontato Mylav</div>
+          <div class="kpi-label">${t('totali.kpi.scontatoLav')}</div>
           <div class="kpi-value">${euro(cum.totale_scontato_lav)}</div>
         </div>
         <div class="kpi-card kpi-green">
-          <div class="kpi-label">Risparmio dottore</div>
+          <div class="kpi-label">${t('totali.kpi.risparmio')}</div>
           <div class="kpi-value">${euro(cum.risparmio_totale_dottore)}</div>
         </div>
       </div>
 
       <div class="section-card">
-        <div class="section-card-title">Risparmio nel tempo</div>
+        <div class="section-card-title">${t('totali.risparmioNelTempo')}</div>
         <div id="linea-legend" class="chart-legend" style="margin-bottom:12px"></div>
         <canvas id="chart-linea" height="220"></canvas>
       </div>
 
       <div class="section-card">
-        <div class="section-card-title">Confronto file — Platinum vs Gold</div>
+        <div class="section-card-title">${t('totali.confrontoFile')}</div>
         <canvas id="chart-grouped" height="200"></canvas>
       </div>
     </div>
   `);
 
-  const lineDatasets = foglioSet
-    .filter(fg => files.some(f => f.fogli[fg]))
+  const lineDatasets = fogliPresenti
     .map(fg => ({
-      label: fg,
+      label: etichettaSerie(t('totali.kpi.risparmio'), fg),
       data: files.map(f => f.fogli[fg]?.risparmio_totale_dottore ?? null),
       borderColor: foglioColors[fg],
       backgroundColor: foglioColors[fg] + '22',
-      tension: 0.3,
+      // monotone: la curva passa per i punti senza superarli. Con la tensione
+      // semplice sbordava sopra il valore piu' alto e usciva dal grafico.
+      cubicInterpolationMode: 'monotone',
       fill: false,
       pointRadius: 5,
       pointHoverRadius: 7,
@@ -1315,7 +1347,9 @@ async function renderTotali(strutturaId, nome) {
       plugins: { legend: { display: false }, tooltip: tooltipDefaults() },
       scales: {
         x: { grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 11 } } },
-        y: { grid: { color: 'rgba(0,0,0,0.05)' },
+        // grace: un po' di margine sopra e sotto, o il punto piu' alto finiva
+        // tagliato a meta' dal bordo del grafico.
+        y: { grace: '8%', grid: { color: 'rgba(0,0,0,0.05)' },
              ticks: { font: { size: 11 }, callback: v => euroCompact(v) } }
       }
     }
@@ -1324,7 +1358,7 @@ async function renderTotali(strutturaId, nome) {
   const pgDatasets = ['Platinum', 'Gold']
     .filter(fg => files.some(f => f.fogli[fg]))
     .map(fg => ({
-      label: fg,
+      label: etichettaSerie(t('totali.kpi.scontatoConc'), fg),
       data: files.map(f => f.fogli[fg]?.prezzo_scontato_concorrenza ?? 0),
       backgroundColor: foglioColors[fg],
       borderRadius: 4
@@ -1431,7 +1465,7 @@ async function filterCronologia() {
 async function deleteCrono(id) {
   if (!confirm(t('cronologia.confermaElimina'))) return;
   try {
-    await fetch(`/api/cronologia/${id}`, { method: 'DELETE', headers: authHeaders() });
+    await api(`/api/cronologia/${id}`, { method: 'DELETE' });
     await loadStrutture();
     buildSidebar();
     renderCronologia();
@@ -2071,6 +2105,15 @@ async function renderConcorrenteDettaglio(id) {
     </div>
   `;
   renderDettaglioBody();
+  portaAlDettaglio(wrap);
+}
+
+// Il dettaglio si apre SOTTO l'elenco: senza scorrere fin li', cliccando
+// «Vedi…» sembrava non succedere niente. Non durante un cambio lingua, che
+// riapre il dettaglio da solo e non deve spostare la pagina.
+function portaAlDettaglio(wrap) {
+  if (window._cambioLingua || !wrap) return;
+  wrap.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function renderDettaglioBody() {
@@ -2240,9 +2283,15 @@ function gruppiClipClient(clip, concorrenti) {
     }
     const g = per.get(k);
     g.n++;
-    if (c.dataImport && (!g.dataUltimo || c.dataImport > g.dataUltimo)) g.dataUltimo = c.dataImport;
+    // La «Data import» e' quella dell'import: una clip aggiunta a mano o
+    // entrata da un calcolo non la sposta. Prima bastava salvare un calcolo
+    // con una clip nuova perche' il listino sembrasse importato oggi.
+    // dataQualsiasi resta per i gruppi fatti solo di righe a mano.
+    const daImport = c.fonte !== 'manuale' && c.fonte !== 'calcolo';
+    if (c.dataImport && daImport && (!g.dataUltimo || c.dataImport > g.dataUltimo)) g.dataUltimo = c.dataImport;
+    if (c.dataImport && (!g.dataQualsiasi || c.dataImport > g.dataQualsiasi)) g.dataQualsiasi = c.dataImport;
   });
-  return [...per.values()];
+  return [...per.values()].map(g => ({ ...g, dataUltimo: g.dataUltimo || g.dataQualsiasi || null }));
 }
 
 // Elimina un listino — quel file, per quel laboratorio. Il numero di righe
@@ -2555,6 +2604,7 @@ async function renderMacchinariDettaglio(concorrenteId, fileOrigine) {
       </div>
     </div>`;
   renderMacchinariDettaglioBody();
+  portaAlDettaglio(wrap);
 }
 
 function renderMacchinariDettaglioBody() {
@@ -2788,7 +2838,7 @@ function renderAnalizzatoriListaBody() {
         <td class="td-muted">${senza.n}</td>
         <td class="td-muted">${dataFmt(senza.dataUltimo)}</td>
         <td style="display:flex;gap:6px">
-          <button class="btn-outline" onclick="renderAnalizzatoriDettaglio(null)">${t('analizzatori.vediRighe')}</button>
+          <button class="btn-outline" onclick="renderAnalizzatoriDettaglio(null)">${t(senza.n > 0 ? 'analizzatori.vediRighe' : 'analizzatori.aggiungiAMano')}</button>
           ${senza.n > 0 ? `<button class="btn-outline" onclick="eliminaGruppoAnalizzatoriUI(null, ${senza.n})" style="color:var(--red);border-color:var(--red)">${t('macchinari.eliminaListinoBtn')}</button>` : ''}
         </td>
       </tr>`
@@ -2865,6 +2915,7 @@ async function renderAnalizzatoriDettaglio(fileOrigine) {
       </div>
     </div>`;
   renderAnalizzatoriRigaBody();
+  portaAlDettaglio(wrap);
 }
 
 function renderAnalizzatoriRigaBody() {
@@ -3096,17 +3147,11 @@ async function suCampoUscitoRoiEsami(tr, col) {
 
 // Selezionato un suggerimento dalla tendina esami: la cascata prezzi Mylav,
 // poi il pre-riempimento (solo se vuoti) dai prezzi storici dell'esame.
-async function suSelezioneAutocompleteRoiEsami(tr, nome) {
+// I prezzi vengono solo dal catalogo (listino) e dal piano scelto. Prima qui
+// si riempivano anche i campi rimasti vuoti con la media dei calcoli salvati
+// in passato: senza piano compariva un «prezzo piano» che nessun piano dava.
+async function suSelezioneAutocompleteRoiEsami(tr) {
   await aggiornaPrezziAutomatici(tr);
-  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
-  if (prezzi.listino_lav) {
-    const llInp = tr.querySelector('[data-col="listino_lav"]');
-    if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
-  }
-  if (prezzi.prezzo_scontato_lav) {
-    const plInp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
-    if (plInp && !plInp.value) plInp.value = prezzi.prezzo_scontato_lav;
-  }
 }
 
 const motoreEsami = window.Calcolatore.crea({
@@ -3433,6 +3478,16 @@ async function aggiornaMatchConcorrente(tr) {
     return;
   }
 
+  // L'esame del concorrente l'ha scelto l'operatore: il lato concorrenza e'
+  // suo, l'abbinamento dell'esame Mylav non lo tocca. Prima gli cambiava il
+  // prezzo lasciandogli il nome, e la riga diceva «ALTRO ESAME a 30 €» con il
+  // prezzo di un altro esame.
+  const ecScelto = tr.querySelector('[data-col="esame_concorrente"]');
+  if (ecScelto && (ecScelto.value || '').trim() && ecScelto.dataset.auto !== '1') {
+    if (banner) banner.style.display = 'none';
+    return;
+  }
+
   const requestedConcorrenteId = S.roi.concorrenteId;
   const m = await fetch(`/api/concorrenti/${requestedConcorrenteId}/match?esame=${encodeURIComponent(esame)}`, { headers: authHeaders() })
     .then(r => r.json()).catch(() => ({ trovato: false }));
@@ -3440,6 +3495,18 @@ async function aggiornaMatchConcorrente(tr) {
 
   if (m.trovato && m.sicuro) {
     if (banner) banner.style.display = 'none';
+    // Il prezzo arriva dall'esame abbinato: anche il suo nome va nella colonna
+    // del concorrente, o la riga si salva con un prezzo senza sapere di cosa.
+    // Marcato automatico, cosi' cambiando l'esame Mylav si azzera con il
+    // prezzo (vedi concGuidato in aggiornaPrezziAutomatici).
+    const ecInp = tr.querySelector('[data-col="esame_concorrente"]');
+    // Non campoFillabile: quello guarda un numero, e un nome scritto a mano
+    // per lui sarebbe "vuoto". Qui si riempie solo un campo davvero vuoto o
+    // gia' riempito da noi.
+    if (ecInp && m.nomeOriginale && (!(ecInp.value || '').trim() || ecInp.dataset.auto === '1')) {
+      ecInp.value = m.nomeOriginale;
+      ecInp.dataset.auto = '1';
+    }
     if (campoFillabile(lcInp)) {
       lcInp.value = m.prezzo;
       lcInp.dataset.auto = '1';
@@ -3651,9 +3718,11 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
     // concorrente, quel lato ha una sua identita': azzerarlo qui gli
     // cancellerebbe sotto gli occhi il prezzo appena comparso.
     const concInp = tr.querySelector('[data-col="esame_concorrente"]');
-    const concGuidato = !concInp || !(concInp.value || '').trim();
+    // Un nome del concorrente messo dall'abbinamento (auto) e' guidato
+    // dall'esame Mylav quanto il suo prezzo: se ne va insieme a lui.
+    const concGuidato = !concInp || !(concInp.value || '').trim() || concInp.dataset.auto === '1';
     const daAzzerare = concGuidato
-      ? ['listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav']
+      ? ['esame_concorrente', 'listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav']
       : ['listino_lav', 'prezzo_scontato_lav'];
     daAzzerare.forEach(col => {
       const inp = tr.querySelector(`[data-col="${col}"]`);
@@ -4525,19 +4594,11 @@ async function suCampoUscitoClip(tr, col) {
   else if (col === 'profilo_mylav') await aggiornaPrezziAutomaticiClip(tr);
 }
 
-// Selezionato un suggerimento dalla tendina profilo Mylav: la cascata piano,
-// poi il pre-riempimento (solo se vuoti) dai prezzi storici del profilo.
-async function suSelezioneAutocompleteClip(tr, nome) {
+// Selezionato un suggerimento dalla tendina profilo Mylav: solo la cascata di
+// listino e piano. Niente piu' pre-riempimento con la media dei calcoli
+// salvati: dava prezzi che nessun listino ne' piano aveva.
+async function suSelezioneAutocompleteClip(tr) {
   await aggiornaPrezziAutomaticiClip(tr);
-  const prezzi = await fetch(`/api/esami/prezzi?nome=${encodeURIComponent(nome)}`, { headers: authHeaders() }).then(r => r.json()).catch(() => ({}));
-  if (prezzi.listino_lav) {
-    const llInp = tr.querySelector('[data-col="listino_lav"]');
-    if (llInp && !llInp.value) llInp.value = prezzi.listino_lav;
-  }
-  if (prezzi.prezzo_scontato_lav) {
-    const plInp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
-    if (plInp && !plInp.value) plInp.value = prezzi.prezzo_scontato_lav;
-  }
 }
 
 function calcolaClipTotali(righe) {
@@ -4683,7 +4744,7 @@ function renderClipPianoPanel(filtro) {
   let html = `<input class="roi-input" id="clip-piano-search" placeholder="${escHtml(t('roi.cercaPianoPlaceholder'))}"
     value="${escHtml(filtro)}" oninput="renderClipPianoPanel(this.value)"
     style="width:100%;box-sizing:border-box;margin-bottom:8px;border:1px solid #e8e9eb">`;
-  html += `<div class="roi-piano-item" onclick="selezionaPianoClip(null)" style="font-style:italic">${t('roi.nessunPianoOpzione')}</div>`;
+  html += `<div class="roi-piano-item" onclick="selezionaPianoClip(null)" style="font-style:italic">${t('roi.nessunListinoOpzione')}</div>`;
   for (const [categoria, items] of Object.entries(perCategoria)) {
     html += `<div class="roi-piano-categoria">${escHtml(categoria)}</div>`;
     items.forEach(p => {

@@ -298,10 +298,35 @@ window.Calcolatore = (function () {
 
     // ── Tendina dei suggerimenti (colonna configurata via colonnaAutocomplete) ──
     let acTimeout = null;
+    // La tendina aperta: le voci, quella evidenziata dalle frecce e il campo a
+    // cui appartiene. Serve a Invio, che prima chiudeva la tendina senza
+    // scegliere niente: il nome restava quello scritto a meta', mentre
+    // l'uscita dal campo gli trovava comunque i prezzi di un altro esame.
+    let acVoci = [], acIndice = -1, acCampo = null;
+    let clicDocumentoAttivo = false;
 
     function nascondiAc() {
       const ac = el(idAc);
       if (ac) { ac.style.display = 'none'; ac.innerHTML = ''; }
+      acVoci = []; acIndice = -1; acCampo = null;
+    }
+
+    function evidenziaAc(indice) {
+      const ac = el(idAc);
+      if (!ac || !acVoci.length) return;
+      acIndice = (indice + acVoci.length) % acVoci.length;
+      [...ac.querySelectorAll('.roi-ac-item')].forEach((voce, i) => {
+        voce.classList.toggle('attivo', i === acIndice);
+        if (i === acIndice) voce.scrollIntoView({ block: 'nearest' });
+      });
+    }
+
+    // La voce che Invio sceglie: quella evidenziata; altrimenti quella uguale
+    // a cio' che e' scritto; altrimenti la prima.
+    function voceDaScegliere(scritto) {
+      if (acIndice >= 0) return acVoci[acIndice];
+      const s = String(scritto || '').trim().toLowerCase();
+      return acVoci.find(v => String(v).trim().toLowerCase() === s) || acVoci[0];
     }
 
     async function selezionaSuggerimento(nome, inp) {
@@ -318,6 +343,10 @@ window.Calcolatore = (function () {
       const q = inp.value.trim();
       if (q.length < 1) return nascondiAc();
       const items = suggerimenti ? await suggerimenti(q).catch(() => []) : [];
+      // Risposta arrivata tardi: nel frattempo il campo e' cambiato (o una
+      // voce e' gia' stata scelta con Invio). Riaprire la tendina adesso
+      // mostrerebbe suggerimenti per un testo che non c'e' piu'.
+      if (inp.value.trim() !== q || document.activeElement !== inp) return;
       const ac = el(idAc);
       if (!items.length || !ac) return nascondiAc();
       const rect = inp.getBoundingClientRect();
@@ -326,10 +355,13 @@ window.Calcolatore = (function () {
       ac.style.left = rect.left + 'px';
       ac.style.top = (rect.bottom + 4) + 'px';
       ac.style.zIndex = '9999';
-      ac.innerHTML = items.map(s => `<div class="roi-ac-item">${s}</div>`).join('');
+      // escHtml: sono nomi dell'operatore, e un "<" nel nome non deve
+      // diventare HTML.
+      ac.innerHTML = items.map(s => `<div class="roi-ac-item">${escHtml(s)}</div>`).join('');
       [...ac.querySelectorAll('.roi-ac-item')].forEach((voce, idx) => {
         voce.addEventListener('click', () => selezionaSuggerimento(items[idx], inp));
       });
+      acVoci = items; acIndice = -1; acCampo = inp;
     }
 
     function messaggio(msg, tipo) {
@@ -343,6 +375,11 @@ window.Calcolatore = (function () {
     function inizializzaEventi() {
       const wrap = el(idTableWrap);
       if (!wrap) return;
+      // Una volta sola per contenitore: due disegni della pagina partiti
+      // insieme agganciavano gli ascoltatori due volte, e ogni tasto contava
+      // doppio (una freccia saltava una voce della tendina).
+      if (wrap.dataset.eventiAttivi === '1') { if (dopoInizializzaEventi) dopoInizializzaEventi(); return; }
+      wrap.dataset.eventiAttivi = '1';
 
       wrap.addEventListener('input', e => {
         const inp = e.target;
@@ -386,20 +423,37 @@ window.Calcolatore = (function () {
           }
         }
         if (e.key === 'Escape') nascondiAc();
+        const tendinaAperta = acVoci.length && acCampo === e.target;
+        if (tendinaAperta && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+          e.preventDefault();
+          evidenziaAc(acIndice + (e.key === 'ArrowDown' ? 1 : -1));
+          return;
+        }
         if (e.key === 'Enter') {
           const inp = e.target;
           if (!inp.matches('.roi-input')) return;
           e.preventDefault();
+          // Con la tendina aperta Invio sceglie una voce, come il clic.
+          if (tendinaAperta) {
+            clearTimeout(acTimeout);
+            selezionaSuggerimento(voceDaScegliere(inp.value), inp);
+            return;
+          }
           nascondiAc();
           inp.blur();
         }
       });
 
-      document.addEventListener('click', e => {
-        const suTendina = e.target.matches('.roi-ac-item');
-        const suCampoAc = colonnaAutocomplete && e.target.matches(`[data-col="${colonnaAutocomplete}"]`);
-        if (!suTendina && !suCampoAc) nascondiAc();
-      }, { once: false });
+      // Il documento resta lo stesso fra una pagina e l'altra: registrato a
+      // ogni visita, se ne accumulava uno in piu' ogni volta.
+      if (!clicDocumentoAttivo) {
+        clicDocumentoAttivo = true;
+        document.addEventListener('click', e => {
+          const suTendina = e.target.matches('.roi-ac-item');
+          const suCampoAc = colonnaAutocomplete && e.target.matches(`[data-col="${colonnaAutocomplete}"]`);
+          if (!suTendina && !suCampoAc) nascondiAc();
+        });
+      }
 
       if (dopoInizializzaEventi) dopoInizializzaEventi();
     }

@@ -1042,7 +1042,8 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   border-bottom: 1px solid #f3f4f6;
 }
 .roi-ac-item:last-child { border-bottom: none; }
-.roi-ac-item:hover { background: var(--blue-tint); }
+.roi-ac-item:hover,
+.roi-ac-item.attivo { background: var(--blue-tint); }
 
 .roi-piano-btn { white-space: nowrap; border-radius: 20px; }
 
@@ -1113,6 +1114,10 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
   z-index: 500;
 }
 .roi-consiglio-banner strong { color: var(--blue); }
+/* I due riquadri dei consigli sono fissi in basso a destra e coprivano la
+   fine della classifica dei piani: spazio in fondo alla pagina del
+   calcolatore, cosi' scorrendo l'ultima riga sale sempre sopra di loro. */
+.page-body:has(#roi-classifica) { padding-bottom: 170px; }
 .roi-consiglio-close {
   position: absolute;
   top: 6px;
