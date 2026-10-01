@@ -14,8 +14,14 @@
 
   <div id="selettore-lingua"></div>
 
+  <!-- Solo da telefono: il menu sta nascosto e si apre da qui (vedi style.css,
+       @media max-width 760px). Su schermi larghi il pulsante non si vede. -->
+  <button type="button" class="menu-btn" id="menu-btn" aria-controls="sidebar" aria-expanded="false"
+          data-i18n-attr="aria-label: menu.apri; title: menu.apri" onclick="apriChiudiMenu()">☰</button>
+  <div class="sidebar-velo" onclick="apriChiudiMenu(false)"></div>
+
   <!-- ── SIDEBAR ── -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <div class="brand-word" aria-label="MYLAV">
         <span>MYL</span>
@@ -49,6 +55,7 @@
 <script src="/vendor/chart.min.js"></script>
 <script src="ricerca.js"></script>
 <script src="i18n.js"></script>
+<script src="/importi.js"></script>
 <script src="calcolatore.js"></script>
 <script src="app.js"></script>
 <script src="importpdf.js"></script>

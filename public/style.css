@@ -1096,6 +1096,9 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 .roi-piano-item:hover { background: var(--blue-tint); }
 
 .roi-prezzo-nuovo { border-color: var(--blue) !important; background: var(--blue-tint); }
+/* Valore impossibile (prezzo negativo, sconto oltre 100, quantita' non intera):
+   si vede subito, prima del salvataggio che lo fermerebbe. */
+.roi-input.roi-input-errato { border-color: var(--red) !important; background: #fdecec; }
 
 .roi-consiglio-banner {
   position: fixed;
@@ -1728,4 +1731,37 @@ body.imp-aperto #selettore-lingua { display: none; }
   /* Ripetuto qui perche' .nav-item.active e' piu' specifico di
      .nav-item-primario e gli portava via il peso del testo. */
   font-weight: 600;
+}
+
+/* ── Telefono: il menu laterale si apre e si chiude ──────────────────────
+   Sotto i 760px la barra laterale occupava 220px su 375 e il calcolatore
+   restava largo 155px. Qui sta nascosta a sinistra e si apre dal pulsante ☰;
+   il velo dietro chiude toccando fuori. Su schermi larghi niente cambia. */
+.menu-btn, .sidebar-velo { display: none; }
+@media (max-width: 760px) {
+  .menu-btn {
+    display: flex; align-items: center; justify-content: center;
+    position: fixed; top: 10px; left: 10px; z-index: 2100;
+    width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid #e8e9eb; background: #fff; color: var(--ink);
+    font-size: 20px; line-height: 1; cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  .menu-btn:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .sidebar {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 2000;
+    width: min(280px, 85vw);
+    transform: translateX(-100%);
+    transition: transform .2s ease;
+  }
+  /* L'ombra solo a menu aperto: chiuso sporgeva sul bordo sinistro. */
+  body.menu-aperto .sidebar { transform: none; box-shadow: 0 0 24px rgba(0,0,0,0.18); }
+  body.menu-aperto .sidebar-velo {
+    display: block; position: fixed; inset: 0; z-index: 1990; background: rgba(38,38,42,0.35);
+  }
+  /* Spazio in alto per il pulsante e per la lingua, che stanno sopra la pagina. */
+  .main-content { padding-top: 56px; }
+}
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+  .sidebar { transition: none; }
 }

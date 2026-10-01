@@ -77,7 +77,10 @@ window.Calcolatore = (function () {
     }
     function valoreDi(col, r) {
       const v = typeof col.valore === 'function' ? col.valore(r) : r[col.col];
-      return (v === undefined || v === null) ? '' : v;
+      if (v === undefined || v === null) return '';
+      // Un numero torna nel campo con la virgola, come l'operatore lo scrive:
+      // ridisegnando la tabella «12,5» non deve diventare «12.5».
+      return (col.tipo === 'numero' && typeof v === 'number') ? String(v).replace('.', ',') : v;
     }
     function stileCella(col) {
       const parti = [];
@@ -225,8 +228,17 @@ window.Calcolatore = (function () {
         const inp = tr.querySelector(`[data-col="${col.col}"]`);
         if (!inp) return;
         if (col.tipo === 'numero') {
-          const grezzo = parseFloat(inp.value) || 0;
-          r[col.col] = grezzo || (col.fallbackSuZero !== undefined ? col.fallbackSuZero : 0);
+          // Lo stesso lettore del server (lib/importi.js, servito come
+          // /importi.js): «12,50» e' 12,5. Con parseFloat diventava 12, e i
+          // decimali scritti con la virgola sparivano dai conti e dal salvato.
+          const letto = Importi.leggiCampo(inp.value, Importi.tipoCampo(col.col));
+          // Un valore impossibile (prezzo negativo, sconto oltre 100, quantita'
+          // non intera...) resta com'e' nello stato, cosi' il salvataggio lo
+          // ferma, e il campo si vede rosso subito.
+          inp.classList.toggle('roi-input-errato', !!letto.errore);
+          inp.setAttribute('aria-invalid', letto.errore ? 'true' : 'false');
+          const ripiego = col.fallbackSuZero !== undefined ? col.fallbackSuZero : '';
+          r[col.col] = letto.errore ? inp.value : (letto.vuoto ? ripiego : letto.valore);
         } else {
           r[col.col] = inp.value;
         }

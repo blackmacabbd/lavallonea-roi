@@ -13,8 +13,53 @@ const pdfclassifica = require('./lib/pdfclassifica');
 const importbozze = require('./lib/importbozze');
 const clipLib = require('./lib/clip');
 const analizzatoriLib = require('./lib/analizzatori');
-const { leggiImporto, leggiPezziCella } = require('./lib/importi');
+const { leggiImporto, leggiPezziCella, leggiCampo, campiNonValidi } = require('./lib/importi');
+
+// Un campo numerico scritto a mano (vedi leggiCampo in lib/importi.js): null se
+// vuoto, il numero se e' valido, altrimenti un errore con il codice del tipo di
+// campo, che le rotte mandano come 400 e il browser traduce. Prima qui c'era
+// Number(): «333,5» diventava NaN e il prezzo si cancellava, e un prezzo
+// negativo o uno sconto del 150% passavano.
+const CODICI_VALORE = {
+  prezzo: 'PREZZO_NON_VALIDO', sconto: 'SCONTO_NON_VALIDO',
+  quantita: 'QUANTITA_NON_VALIDA', pezzi: 'PEZZI_NON_VALIDI'
+};
+function campoNumerico(v, tipo) {
+  const letto = leggiCampo(v, tipo);
+  if (letto.errore) {
+    const err = new Error('Valore non valido');
+    err.codice = CODICI_VALORE[tipo];
+    throw err;
+  }
+  return letto.vuoto ? null : letto.valore;
+}
+
+// Le righe di un calcolo: la prima con un valore impossibile ferma il
+// salvataggio (o l'export) con il suo numero nel dettaglio. Il browser fa lo
+// stesso controllo prima di inviare; questo vale per chi chiama la rotta
+// direttamente.
+function controllaRighe(righe, colonne) {
+  righe.forEach((r, i) => {
+    if (campiNonValidi(r, colonne).length) {
+      const err = new Error(`Valore non valido alla riga ${i + 1}`);
+      err.codice = 'RIGA_NON_VALIDA';
+      err.dettaglio = String(i + 1);
+      throw err;
+    }
+  });
+}
+const COLONNE_NUMERICHE_ESAMI = ['n_esami', 'n_concorrenza', 'listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav'];
+const COLONNE_NUMERICHE_CLIP = ['n_clip', 'prezzo_confezione', 'pezzi', 'sconto_clip', 'n_mylav', 'pezzi_mylav', 'listino_lav', 'prezzo_scontato_lav'];
+// Risposta per un errore: 400 con codice e dettaglio se l'errore li porta
+// (dato sbagliato dell'operatore), 500 altrimenti.
+function rispondiErrore(res, err) {
+  if (err.codice) return res.status(400).json({ error: err.message, codice: err.codice, ...(err.dettaglio ? { dettaglio: err.dettaglio } : {}) });
+  console.error(err);
+  res.status(500).json({ error: err.message });
+}
 const { calcolaRigaEsami, calcolaTotaliEsami } = require('./lib/calcoloesami');
+const { calcolaRigaClip } = require('./lib/calcoloclip');
+const { foglioCalcolo } = require('./lib/esporta');
 const auth = require('./lib/auth');
 const mailer = require('./lib/mailer');
 
@@ -139,6 +184,11 @@ try {
 // ── Concorrenza ─────────────────────────────────────
 concorrenti.ensureSchema(db);
 addColIfMissing('concorrenti', 'user_id', 'INTEGER');
+// Il laboratorio concorrente scelto nel calcolatore esami: prima non si
+// salvava, e riaprendo un calcolo tornava «Concorrente: Nessuno». Nessun
+// vincolo verso concorrenti: se il laboratorio viene eliminato il calcolo
+// resta, e si riapre senza laboratorio.
+addColIfMissing('file_caricati', 'concorrente_id', 'INTEGER');
 
 // ── Bozze di import PDF e audit ─────────────────────
 importbozze.ensureSchema(db);
@@ -404,6 +454,12 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 app.get('/vendor/chart.min.js', (req, res) => {
   res.sendFile(path.join(__dirname, 'node_modules/chart.js/dist/chart.umd.min.js'));
+});
+// Lo stesso lettore di importi del server, servito al browser: una regola sola
+// per cio' che lo schermo calcola e cio' che il server salva (vedi lib/importi.js).
+app.get('/importi.js', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('application/javascript').sendFile(path.join(__dirname, 'lib/importi.js'));
 });
 
 // Build "legacy" di pdfjs: UMD, quindi si carica con un <script> semplice senza
@@ -838,7 +894,7 @@ app.get('/api/confronto', requireAuth, (req, res) => {
 // ── PDF ────────────────────────────────────────────
 function euro(n) {
   return '€ ' + (Number(n) || 0).toLocaleString('it-IT', {
-    minimumFractionDigits: 2, maximumFractionDigits: 2
+    minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: 'always'
   });
 }
 
@@ -891,8 +947,34 @@ const PDF_BRAND_STYLE = `
   .ftr{padding:15px 28px;font-size:9.5px;color:#9ca3af;border-top:2px solid #0f76bc;margin-top:8px}
 `;
 
+// Testo dell'operatore dentro l'HTML del PDF. L'HTML lo apre un browser
+// senza interfaccia sul server: un nome con dentro uno <script> lo
+// eseguirebbe li', non solo sullo schermo di chi lo ha scritto.
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// Le immagini dei grafici arrivano dal browser: solo un PNG/JPEG in base64,
+// niente altro puo' finire dentro src="...".
+function immagineSicura(src) {
+  return typeof src === 'string' && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(src) ? src : '';
+}
+// Colore della legenda: un esadecimale o un rgb/rgba, altrimenti grigio.
+function coloreSicuro(c) {
+  return typeof c === 'string' && /^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s.,%]+\))$/.test(c) ? c : '#9ca3af';
+}
+// Nome di file per l'intestazione Content-Disposition: solo caratteri sicuri
+// (un apostrofo o una lettera accentata nel nome della struttura rendevano
+// l'intestazione non valida), piu' la versione UTF-8 per i browser moderni.
+function intestazioneAllegato(nome) {
+  const ascii = String(nome).normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9._-]+/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(nome)}`;
+}
+
 function brandHeader(fileInfo, foglio, titolo, badge) {
-  const data = new Date().toLocaleDateString('it-IT');
+  // Il server gira in UTC: la data del resoconto e' quella italiana.
+  const data = new Date().toLocaleDateString('it-IT', { timeZone: 'Europe/Rome' });
   return `<div class="hdr">
   <div>
     ${mylavLogo()}
@@ -900,7 +982,7 @@ function brandHeader(fileInfo, foglio, titolo, badge) {
   </div>
   <div class="hdr-meta">
     <div class="hdr-title">${titolo}${badge ? `<span class="badge">${badge}</span>` : ''}</div>
-    <div class="hdr-sub">${fileInfo.struttura_nome} &middot; ${foglio} &middot; ${data}</div>
+    <div class="hdr-sub">${escHtml(fileInfo.struttura_nome)} &middot; ${escHtml(foglio)} &middot; ${data}</div>
   </div>
 </div>
 <div class="brand-rule"></div>`;
@@ -910,7 +992,7 @@ function brandHeader(fileInfo, foglio, titolo, badge) {
 function pdfLegend(items) {
   if (!Array.isArray(items) || !items.length) return '';
   const chips = items.map(i => `<span style="display:inline-flex;align-items:center;gap:5px;font-size:9.5px;color:#26262a">
-      <span style="width:10px;height:10px;border-radius:2px;background:${i.color};display:inline-block;flex:0 0 auto"></span>${i.label}</span>`).join('');
+      <span style="width:10px;height:10px;border-radius:2px;background:${coloreSicuro(i.color)};display:inline-block;flex:0 0 auto"></span>${escHtml(i.label)}</span>`).join('');
   return `<div style="display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center;margin-top:10px">${chips}</div>`;
 }
 
@@ -920,13 +1002,13 @@ function chartsSection(donutImg, barreImg, donutLegend, barreLegend) {
   const donutHtml = donutImg
     ? `<div style="flex:0 0 230px;text-align:center">
          <div style="${lbl}">Confronto prezzi</div>
-         <img src="${donutImg}" style="width:190px;height:190px;object-fit:contain">
+         <img src="${immagineSicura(donutImg)}" style="width:190px;height:190px;object-fit:contain">
          ${pdfLegend(donutLegend)}
        </div>` : '';
   const barreHtml = barreImg
     ? `<div style="flex:1;min-width:0">
          <div style="${lbl}">Confronto per esame</div>
-         <img src="${barreImg}" style="width:100%;max-height:300px;object-fit:contain">
+         <img src="${immagineSicura(barreImg)}" style="width:100%;max-height:300px;object-fit:contain">
          ${pdfLegend(barreLegend)}
        </div>` : '';
   return `<div class="sec">
@@ -942,9 +1024,9 @@ function buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg, donutLe
   const rows = dati.map(d => {
     const risp    = d.risparmio_dottore || 0;
     const rispPct = d.prezzo_scontato_concorrenza > 0
-      ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1) : '0.0';
+      ? ((risp / d.prezzo_scontato_concorrenza) * 100).toFixed(1).replace('.', ',') : '0,0';
     return `<tr>
-      <td>${d.esame}</td>
+      <td>${escHtml(d.esame)}</td>
       <td style="text-align:center">${d.n_esami}</td>
       <td class="c-conc">${euro(d.prezzo_scontato_concorrenza)}</td>
       <td class="c-lav">${euro(d.totale_scontato_lav)}</td>
@@ -1007,7 +1089,7 @@ app.post('/api/pdf/dottore/:fileId/:foglio', requireAuth, express.json({ limit: 
     const t   = calcolaTotali(dati);
     const pdf = await renderPDF(buildHtmlDottore(fileInfo, foglio, dati, t, donutImg, barreImg, donutLegend, barreLegend));
     const fname = `mylav_${fileInfo.struttura_nome.replace(/\s/g,'_')}_${foglio}_dottore.pdf`;
-    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="${fname}"` });
+    res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': intestazioneAllegato(fname) });
     res.send(pdf);
   } catch (err) {
     console.error(err);
@@ -1135,9 +1217,11 @@ app.post('/api/prezzi-custom', requireAuth, express.json(), (req, res) => {
     if (!esame_nome || !piano_id || prezzo == null) {
       return res.status(400).json({ error: 'Dati mancanti (esame_nome, piano_id, prezzo)' });
     }
-    piani.salvaPrezzoCustom(db, esame_nome, Number(piano_id), Number(prezzo), req.user.id);
+    const prezzoOk = campoNumerico(prezzo, 'prezzo');
+    if (prezzoOk == null) return res.status(400).json({ error: 'Prezzo mancante', codice: 'PREZZO_NON_VALIDO' });
+    piani.salvaPrezzoCustom(db, esame_nome, Number(piano_id), prezzoOk, req.user.id);
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 // Il piano richiesto deve appartenere all'ambito del chiamante (propria copia per
@@ -1176,10 +1260,15 @@ app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (r
       INSERT INTO prezzi_piano_esame (piano_id, esame_id, prezzo) VALUES (?, ?, ?)
       ON CONFLICT(piano_id, esame_id) DO UPDATE SET prezzo = excluded.prezzo
     `);
+    // Ogni prezzo con la regola di campoNumerico, PRIMA di scrivere: un solo
+    // prezzo sbagliato ferma tutto, invece di salvarne una parte. Un campo
+    // vuoto non cambia il prezzo salvato.
+    const letti = prezzi.map(r => ({ esame_id: r.esame_id, prezzo: campoNumerico(r.prezzo, 'prezzo') }))
+      .filter(r => r.prezzo != null);
     db.exec('BEGIN');
     let aggiornati = 0;
     try {
-      for (const r of prezzi) {
+      for (const r of letti) {
         if (!esameProprio.get(r.esame_id, req.user.id)) continue;
         upsert.run(req.params.id, r.esame_id, r.prezzo);
         aggiornati++;
@@ -1187,7 +1276,7 @@ app.put('/api/piani/:id/prezzi', requireAuth, express.json({ limit: '2mb' }), (r
       db.exec('COMMIT');
     } catch (e) { db.exec('ROLLBACK'); throw e; }
     res.json({ success: true, aggiornati, ignorati: prezzi.length - aggiornati });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
@@ -1198,6 +1287,16 @@ app.put('/api/piani/:id/attivo', requireAuth, express.json(), (req, res) => {
       .run(attivo ? 1 : 0, req.params.id, req.user.id);
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Elimina un piano della propria copia del catalogo, solo se nessun calcolo
+// salvato lo usa (altrimenti 400 PIANO_IN_USO: si disattiva). Vedi eliminaPiano.
+app.delete('/api/piani/:id', requireAuth, (req, res) => {
+  try {
+    const ok = piani.eliminaPiano(db, req.params.id, req.user.id);
+    if (!ok) return res.status(404).json({ error: 'Piano non trovato', codice: 'PIANO_NON_TROVATO' });
+    res.json({ success: true });
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 // Import nella PROPRIA copia del catalogo: non tocca il template ne' altri account.
@@ -1230,18 +1329,16 @@ app.post('/api/concorrenti/import/conferma', requireAuth, express.json({ limit: 
     if (!nomeConcorrente || colEsame == null || colPrezzo == null || !Array.isArray(rows)) {
       return res.status(400).json({ error: 'Dati mancanti (nomeConcorrente, colEsame, colPrezzo, rows)' });
     }
-    const righe = rows
-      .map(r => ({
-        nome_originale: r[colEsame],
-        prezzo: parseFloat(String(r[colPrezzo]).replace(',', '.')) || 0,
-        sconto: (colSconto != null && colSconto >= 0 && r[colSconto] !== '')
-          ? (parseFloat(String(r[colSconto]).replace(',', '.')) || 0)
-          : null
-      }))
-      .filter(r => r.nome_originale && String(r.nome_originale).trim());
-    const result = concorrenti.upsertConcorrente(db, nomeConcorrente, righe, req.user.id);
-    res.json({ success: true, ...result });
-  } catch (err) { res.status(500).json({ error: err.message }); }
+    // Le celle passano com'erano: la lettura (prezzi italiani, righe senza
+    // prezzo, doppioni) sta in importaEsamiExcel, con i suoi test.
+    const conSconto = colSconto != null && colSconto >= 0;
+    const result = concorrenti.importaEsamiExcel(db, {
+      userId: req.user.id, nomeConcorrente,
+      righe: rows.map(r => ({ nome: r[colEsame], prezzo: r[colPrezzo], sconto: conSconto ? r[colSconto] : null }))
+    });
+    // righeSalvate resta per chi lo leggeva gia'.
+    res.json({ success: true, ...result, righeSalvate: result.importate });
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 // soloConEsami=1: usato dal lato esami (Gestione esami esterni, calcolatore
@@ -1284,8 +1381,10 @@ app.post('/api/concorrenti/:id/conferma-match', requireAuth, express.json(), (re
     }
     const owned = concorrenti.dettaglioConcorrente(db, req.params.id, req.user.id);
     if (!owned) return res.status(404).json({ error: 'Concorrente non trovato', codice: 'CONCORRENTE_NON_TROVATO' });
-    concorrenti.confermaMatch(db, Number(req.params.id), Number(esameConcorrenteId), esameMylavNome);
-    res.json({ success: true });
+    // tolto: gli esami da cui l'abbinamento si e' spostato (un esame Mylav
+    // vale un solo esame per laboratorio, vedi confermaMatch).
+    const esito = concorrenti.confermaMatch(db, Number(req.params.id), Number(esameConcorrenteId), esameMylavNome);
+    res.json({ success: true, ...esito });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -1366,15 +1465,16 @@ app.post('/api/clip', requireAuth, express.json(), (req, res) => {
       return res.status(409).json({ error: 'Esiste gia\' una clip con questo nome', codice: 'CLIP_DUPLICATA' });
     }
     // Pezzi non indicato -> si prova a leggerlo dal nome, come fa il riconoscimento import.
-    const pezziOk = (pezzi == null || pezzi === '') ? clipLib.leggiPezzi(nomeTrim) : Number(pezzi);
+    // I numeri con la regola di campoNumerico: «12,50» e' 12,5, un negativo no.
+    const pezziScritti = campoNumerico(pezzi, 'pezzi');
+    const pezziOk = pezziScritti == null ? clipLib.leggiPezzi(nomeTrim) : pezziScritti;
     const { id } = clipLib.upsertClip(db, {
-      userId: req.user.id, concorrenteId: concorrenteOk, nome: nomeTrim, prezzoConfezione, pezzi: pezziOk,
-      sconto, fonte: fonte || 'manuale', fileOrigine: fileOrigineOk
+      userId: req.user.id, concorrenteId: concorrenteOk, nome: nomeTrim,
+      prezzoConfezione: campoNumerico(prezzoConfezione, 'prezzo'), pezzi: pezziOk,
+      sconto: campoNumerico(sconto, 'sconto'), fonte: fonte || 'manuale', fileOrigine: fileOrigineOk
     });
     res.status(201).json({ id });
-  } catch (err) {
-    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
-  }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
@@ -1395,34 +1495,28 @@ app.put('/api/clip/:id', requireAuth, express.json(), (req, res) => {
     const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
     // Un campo numerico svuotato arriva come stringa vuota: significa "non lo
     // so", non "vale zero". Zero pezzi renderebbe incalcolabile il costo per
-    // clip, e zero euro lo renderebbe gratis.
-    const numero = v => (v === '' || v == null ? null : v);
-
-    const prezzoConfezione = numero(campo('prezzoConfezione', riga.prezzo_confezione));
-    const prezzoNum = prezzoConfezione == null ? NaN : Number(prezzoConfezione);
-    if (!Number.isFinite(prezzoNum) || prezzoNum < 0) {
+    // clip, e zero euro lo renderebbe gratis. «123,45» e' 123,45 (campoNumerico):
+    // prima veniva rifiutato con «Nome o prezzo non validi».
+    const prezzoNum = campoNumerico(campo('prezzoConfezione', riga.prezzo_confezione), 'prezzo');
+    if (prezzoNum == null) {
       const err = new Error('Nome o prezzo non validi');
       err.codice = 'NOME_PREZZO_NON_VALIDI';
       throw err;
     }
-    const pezziVal = numero(campo('pezzi', riga.pezzi));
-    const scontoVal = numero(campo('sconto', riga.sconto));
+    const pezziVal = campoNumerico(campo('pezzi', riga.pezzi), 'pezzi');
+    const scontoVal = campoNumerico(campo('sconto', riga.sconto), 'sconto');
     const fonteVal = campo('fonte', riga.fonte);
 
     db.prepare(`
       UPDATE clip SET prezzo_confezione = ?, pezzi = ?, sconto = ?, fonte = ?
       WHERE id = ? AND user_id = ?
     `).run(
-      prezzoNum,
-      pezziVal == null ? null : Number(pezziVal),
-      scontoVal == null ? null : Number(scontoVal),
+      prezzoNum, pezziVal, scontoVal,
       fonteVal == null ? null : String(fonteVal),
       riga.id, req.user.id
     );
     res.json({ id: riga.id });
-  } catch (err) {
-    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
-  }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 // Assegna (o riassegna) il laboratorio di una clip. Va per id, non per nome
@@ -1622,13 +1716,15 @@ app.post('/api/analizzatori', requireAuth, express.json(), (req, res) => {
     // finiscono in .pdf), ma da una chiamata diretta si': qui si normalizza a
     // null, che e' cio' che quel valore significa comunque (fileOrigineOk
     // calcolato sopra, prima del controllo duplicati).
+    // I numeri si leggono qui, con la virgola e i limiti di campoNumerico:
+    // prima un prezzo negativo passava e uno scritto in lettere diventava vuoto.
     const { id } = analizzatoriLib.upsertAnalizzatore(db, {
-      userId: req.user.id, nome: nomeTrim, prezzo, noleggio, note, pezzi, sconto, fileOrigine: fileOrigineOk
+      userId: req.user.id, nome: nomeTrim,
+      prezzo: campoNumerico(prezzo, 'prezzo'), noleggio: campoNumerico(noleggio, 'prezzo'), note,
+      pezzi: campoNumerico(pezzi, 'pezzi'), sconto: campoNumerico(sconto, 'sconto'), fileOrigine: fileOrigineOk
     });
     res.status(201).json({ id });
-  } catch (err) {
-    res.status(err.codice ? 400 : 500).json({ error: err.message, ...(err.codice ? { codice: err.codice } : {}) });
-  }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
@@ -1651,12 +1747,12 @@ app.put('/api/analizzatori/:id', requireAuth, express.json(), (req, res) => {
     const body = req.body || {};
     const campo = (chiave, attuale) => (chiave in body ? body[chiave] : attuale);
     // v === '' (campo svuotato in un form) conta come "non lo so", non zero.
-    const numero = v => (v === '' || v == null ? null : Number(v));
-
-    const prezzoVal = numero(campo('prezzo', riga.prezzo));
-    const noleggioVal = numero(campo('noleggio', riga.noleggio));
-    const pezziVal = numero(campo('pezzi', riga.pezzi));
-    const scontoVal = numero(campo('sconto', riga.sconto));
+    // campoNumerico, non Number(): «333,5» con Number() era NaN e il prezzo
+    // si cancellava.
+    const prezzoVal = campoNumerico(campo('prezzo', riga.prezzo), 'prezzo');
+    const noleggioVal = campoNumerico(campo('noleggio', riga.noleggio), 'prezzo');
+    const pezziVal = campoNumerico(campo('pezzi', riga.pezzi), 'pezzi');
+    const scontoVal = campoNumerico(campo('sconto', riga.sconto), 'sconto');
     const noteRaw = campo('note', riga.note);
     const noteVal = noteRaw == null || noteRaw === '' ? null : String(noteRaw);
 
@@ -1970,9 +2066,12 @@ app.post('/api/import-pdf/:id/conferma', requireAuth, express.json({ limit: '10m
 
 app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
   try {
-    const { struttura: strutturaNome, foglio, righe, nomeFile, piano_id } = req.body || {};
+    const { struttura: strutturaNome, foglio, righe, nomeFile, piano_id, concorrente_id } = req.body || {};
     if (!strutturaNome || !foglio || !righe?.length)
       return res.status(400).json({ error: 'Dati mancanti' });
+    // Un prezzo negativo, uno sconto oltre il 100% o una quantita' impossibile
+    // fermano il salvataggio con il numero della riga (vedi controllaRighe).
+    controllaRighe(righe, COLONNE_NUMERICHE_ESAMI);
 
     db.exec('BEGIN');
     try {
@@ -1982,9 +2081,12 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
         strRow = { id: Number(r.lastInsertRowid) };
       }
       const nomef = nomeFile || `Calcolo_${foglio}_${new Date().toISOString().split('T')[0]}`;
+      // Il laboratorio scelto si salva solo se e' di questo account.
+      const concOk = concorrente_id != null && db.prepare('SELECT 1 FROM concorrenti WHERE id = ? AND user_id = ?').get(Number(concorrente_id), req.user.id)
+        ? Number(concorrente_id) : null;
       const fRow  = db.prepare(
-        'INSERT INTO file_caricati (struttura_id, nome_file, path_file) VALUES (?, ?, ?)'
-      ).run(strRow.id, nomef, '');
+        'INSERT INTO file_caricati (struttura_id, nome_file, path_file, concorrente_id) VALUES (?, ?, ?, ?)'
+      ).run(strRow.id, nomef, '', concOk);
       const fileId = Number(fRow.lastInsertRowid);
 
       const ins = db.prepare(`
@@ -2011,7 +2113,7 @@ app.post('/api/calcolo/salva', requireAuth, express.json(), (req, res) => {
       db.exec('COMMIT');
       res.json({ success: true, file_id: fileId, struttura_id: strRow.id, struttura: strutturaNome, fogli: [foglio] });
     } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
-  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 // Calcolatore clip: fare in casa (clip precaricata) o mandare a Mylav?
@@ -2024,6 +2126,8 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
   try {
     const { struttura, righe, nomeFile, piano_id } = req.body || {};
     if (!struttura || !righe?.length) return res.status(400).json({ error: 'Dati mancanti' });
+    // Valori impossibili fermano il salvataggio con il numero della riga.
+    controllaRighe(righe, COLONNE_NUMERICHE_CLIP);
 
     db.exec('BEGIN');
     try {
@@ -2041,38 +2145,14 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
       `);
 
       for (const r of righe) {
-        // Stessa formula del calcolatore (public/app.js, calcolaRigaClip —
-        // le due DEVONO restare identiche, vedi il commento li'): il prezzo
-        // di listino e' della confezione, il costo di una clip si ottiene
-        // dividendo per i pezzi. Deciso dal cliente (due volte, sapendo la
-        // conseguenza): senza pezzi si assume 1, non piu' null — un costo
-        // sbagliato di un fattore dodici ma visibile, mai un campo silenzioso.
-        const pezziGrezzi = parseFloat(r.pezzi) || 0;
-        const prezzoConf = parseFloat(r.prezzo_confezione) || 0;
-        const sconto    = parseFloat(r.sconto_clip) || 0;
-        const pezzi     = pezziGrezzi > 0 ? pezziGrezzi : 1;
-        const costoClip = parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2));
-        const nClip     = parseFloat(r.n_clip) || 1;
-        const totaleClip = costoClip * nClip;
-
-        const nMyl        = parseFloat(r.n_mylav) || 1;
-        const listinoLav  = parseFloat(r.listino_lav) || 0;
-        const prezzoPiano = parseFloat(r.prezzo_scontato_lav) || 0;
-        // pezzi_mylav (task 4): a specchio esatto di pezzi/costo_clip qui
-        // sopra — stessa regola "mancante = 1", stessa divisione.
-        const pezziMylGrezzi = parseFloat(r.pezzi_mylav) || 0;
-        const pezziMyl = pezziMylGrezzi > 0 ? pezziMylGrezzi : 1;
-        const totaleMylav = (prezzoPiano > 0 ? prezzoPiano : listinoLav) / pezziMyl * nMyl;
-
-        // Segno invertito rispetto al calcolatore esami: qui positivo vuol
-        // dire che la clip costa piu' di Mylav, cioe' conviene Mylav (stesso
-        // senso per chi legge: positivo = conviene Mylav).
-        const risparmio = totaleClip - totaleMylav;
-
+        // Stessa formula del calcolatore (lib/calcoloclip.js, identica a
+        // calcolaRigaClip in public/app.js): si ricalcola qui invece di fidarsi
+        // dei campi calcolati mandati dal browser.
+        const c = calcolaRigaClip(r);
         ins.run(
-          calcoloId, r.laboratorio || null, r.listino_conc || null, r.clip_nome || null, nClip, prezzoConf || null, pezziGrezzi || null, sconto || null,
-          costoClip, totaleClip, r.listino_mylav || null, r.profilo_mylav || null, nMyl, pezziMylGrezzi || null, listinoLav || null,
-          prezzoPiano || null, totaleMylav, risparmio
+          calcoloId, r.laboratorio || null, r.listino_conc || null, r.clip_nome || null, c.nClip, c.prezzoConfezione || null, c.pezziGrezzi || null, c.sconto || null,
+          c.costoClip, c.totaleClip, r.listino_mylav || null, r.profilo_mylav || null, c.nMylav, c.pezziMylavGrezzi || null, c.listinoLav || null,
+          c.prezzoPiano || null, c.totaleMylav, c.risparmio
         );
       }
 
@@ -2108,7 +2188,7 @@ app.post('/api/calcolo-clip/salva', requireAuth, express.json(), (req, res) => {
       db.exec('COMMIT');
       res.json({ success: true, calcolo_id: calcoloId, clipAggiunte });
     } catch (txErr) { db.exec('ROLLBACK'); throw txErr; }
-  } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 // Cronologia dei calcoli clip: voce di menu propria, separata da quella dei
@@ -2177,53 +2257,57 @@ app.delete('/api/calcolo-clip/:id', requireAuth, (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.post('/api/export-excel', requireAuth, express.json(), (req, res) => {
+// Export Excel di un calcolo (calcolatore esami o macchinari): le colonne
+// dello schermo, un'intestazione con struttura, piano, laboratorio e data, e
+// la riga di totale. Il foglio si costruisce in lib/esporta.js (con i test).
+// Il corpo:
+//   tipo: 'esami' | 'clip'
+//   colonne: [{ chiave, titolo }] — le colonne del calcolatore, gia' tradotte
+//   intestazione: [[etichetta, valore], ...]
+//   righe, struttura, titoloTotale, nomeFoglio
+// Un browser con la pagina vecchia in cache manda solo { foglio, struttura,
+// righe }: riceve lo stesso le colonne principali, con titoli italiani.
+const COLONNE_ESAMI_PREDEFINITE = [
+  ['esame_concorrente', 'Esame concorrente'], ['n_concorrenza', 'N. conc.'], ['listino_concorrenza', 'Listino conc.'],
+  ['sconto_concorrenza', 'Sconto %'], ['prezzo_conc', 'Scontato conc.'], ['esame', 'Esame Mylav'], ['n_esami', 'N.'],
+  ['listino_lav', 'Listino Mylav'], ['prezzo_scontato_lav', 'Prezzo piano'], ['tot_prezzo_lav', 'Totale Mylav'], ['risparmio', 'Risparmio']
+].map(([chiave, titolo]) => ({ chiave, titolo }));
+
+app.post('/api/export-excel', requireAuth, express.json({ limit: '5mb' }), (req, res) => {
   try {
-    const { foglio, struttura, righe } = req.body || {};
-    if (!righe?.length) return res.status(400).json({ error: 'Nessuna riga' });
-    const wb = XLSX.utils.book_new();
-    let wsData;
-    if (foglio === 'Foglio 1') {
-      wsData = [
-        ['Struttura', '', 'ESAMI', 'listino vet med', 'prezzo vet med', '', 'Listino lav', 'prezzo lav'],
-        ...righe.map((r, i) => [
-          i === 0 ? struttura : '', '',
-          r.esame,
-          r.listino_concorrenza || 0,
-          parseFloat(((r.listino_concorrenza || 0) * 0.9).toFixed(2)),
-          '',
-          r.listino_lav || 0,
-          r.prezzo_scontato_lav || 0
-        ])
-      ];
-    } else {
-      wsData = [
-        ['Struttura', '', 'ESAMI', 'N. esami', 'Costo esami', 'Totale costo esami',
-         'prezzo vet med scontato', '', 'LISTINO LAVALLONEA', 'TOTALE LISTINO',
-         `prezzo lav. ${foglio}`, 'Totale prezzo lav'],
-        ...righe.map((r, i) => {
-          // Stesso conto del calcolatore e del salvataggio (lib/calcoloesami.js):
-          // qui c'era lo stesso sconto fisso del 10% che il salvataggio aveva.
-          const c = calcolaRigaEsami(r);
-          return [
-            i === 0 ? struttura : '', '', r.esame, c.n,
-            c.listinoConcorrenza, c.totaleConcorrenza, c.prezzoScontatoConcorrenza,
-            '',
-            c.listinoLav, c.totaleListinoLav,
-            c.prezzoScontatoLav, c.totaleScontatoLav
-          ];
-        })
-      ];
+    const corpo = req.body || {};
+    const tipo = corpo.tipo === 'clip' ? 'clip' : 'esami';
+    const righe = Array.isArray(corpo.righe) ? corpo.righe : [];
+    if (!righe.length) return res.status(400).json({ error: 'Nessuna riga' });
+    controllaRighe(righe, tipo === 'clip' ? COLONNE_NUMERICHE_CLIP : COLONNE_NUMERICHE_ESAMI);
+    const colonne = Array.isArray(corpo.colonne) && corpo.colonne.length ? corpo.colonne : COLONNE_ESAMI_PREDEFINITE;
+    const intestazione = Array.isArray(corpo.intestazione)
+      ? corpo.intestazione
+      : [['Struttura', corpo.struttura || '']];
+    const f = foglioCalcolo({ tipo, intestazione, colonne, righe, titoloTotale: corpo.titoloTotale || 'Totale' });
+
+    const ws = XLSX.utils.aoa_to_sheet(f.righe);
+    // Importi in euro, con il formato valuta: il cliente li vede come tali e
+    // l'Excel li somma. Le celle vuote restano vuote.
+    for (let r = f.primaRigaDati; r <= f.ultimaRigaDati + 1; r++) {
+      for (const c of f.colonneEuro) {
+        const cella = ws[XLSX.utils.encode_cell({ r, c })];
+        if (cella && cella.t === 'n') cella.z = '#,##0.00 "€"';
+      }
     }
-    const ws  = XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(wb, ws, foglio);
+    ws['!cols'] = colonne.map(c => ({ wch: Math.min(45, Math.max(10, String(c.titolo || '').length + 2,
+      ...f.righe.slice(f.primaRigaDati, f.ultimaRigaDati + 1).map(riga => String(riga[colonne.indexOf(c)] ?? '').length + 2))) }));
+    const wb = XLSX.utils.book_new();
+    // Il nome del foglio: niente caratteri che Excel non accetta, al massimo 31.
+    const nomeFoglio = String(corpo.nomeFoglio || 'Calcolo').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Calcolo';
+    XLSX.utils.book_append_sheet(wb, ws, nomeFoglio);
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     res.set({
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="mylav_${(struttura||'export').replace(/\s/g,'_')}_${foglio}.xlsx"`
+      'Content-Disposition': intestazioneAllegato(`mylav_${corpo.struttura || 'calcolo'}.xlsx`)
     });
     res.send(buf);
-  } catch (err) { res.status(500).json({ error: err.message }); }
+  } catch (err) { rispondiErrore(res, err); }
 });
 
 app.delete('/api/cronologia/:id', requireAuth, (req, res) => {

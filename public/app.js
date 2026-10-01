@@ -87,6 +87,9 @@ function numeroIt(n, decimali) {
 }
 // Percentuale con la virgola, come gli importi («31,6%», non «31.6%»).
 function fmtPct(n) { return numeroIt(n, 1) + '%'; }
+// Un numero da un campo o dallo stato, con la regola del server (lib/importi.js):
+// «12,50» e' 12,5. Cio' che non e' un numero vale 0, come faceva parseFloat || 0.
+function numero(v) { return Importi.leggiImporto(v) || 0; }
 function euro(n) {
   return '€ ' + numeroIt(n, 2);
 }
@@ -95,12 +98,24 @@ function euroCompact(n) {
   if (Math.abs(v) >= 1000) return '€ ' + numeroIt(v / 1000, 1) + 'k';
   return '€ ' + v.toFixed(0);
 }
+// Una data che arriva dal server. SQLite (CURRENT_TIMESTAMP) la scrive in UTC
+// ma senza dirlo: «2026-10-01 21:24:17». new Date() la leggeva come ora
+// italiana, e ogni data e ora del sito era indietro di 2 ore (1 d'inverno),
+// con il giorno sbagliato vicino a mezzanotte. Qui si dice che e' UTC, e il
+// browser la mostra nell'ora di chi guarda. Una data che porta gia' il fuso
+// (…Z, +02:00) passa com'e'.
+function dataDaServer(d) {
+  if (d instanceof Date) return d;
+  const s = String(d || '');
+  if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(s)) return new Date(s.replace(' ', 'T') + 'Z');
+  return new Date(s);
+}
 function fmtDate(d) {
   if (!d) return '—';
-  return new Date(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return dataDaServer(d).toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 function fmtEuro(n) {
-  return Number(n || 0).toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+  return numeroIt(n, 2) + ' €';
 }
 function authHeaders(extra = {}) {
   const h = { ...extra };
@@ -149,6 +164,20 @@ function el(id) { return document.getElementById(id); }
 function setMain(html) {
   destroyCharts();
   el('main-content').innerHTML = html;
+}
+
+// Un disegno di pagina che arriva tardi non deve coprire la pagina nuova.
+// Le pagine aspettano il server prima di disegnarsi: se nel frattempo
+// l'operatore e' andato altrove (o la pagina e' gia' stata ridisegnata da
+// una navigazione nuova), il vecchio disegno ricopriva lo schermo — per
+// esempio l'elenco dei piani, ricaricato dopo un'eliminazione, sopra il
+// calcolatore appena aperto. Ogni disegno ricorda per quale navigazione e'
+// partito (inizioDisegno) e scrive solo se e' ancora quella (setMainSe).
+function inizioDisegno() { return { vista: window._currentView, giro: window._giroNavigazione || 0 }; }
+function setMainSe(disegno, html) {
+  if (disegno.vista !== window._currentView || disegno.giro !== (window._giroNavigazione || 0)) return false;
+  setMain(html);
+  return true;
 }
 
 // ── Sidebar ────────────────────────────────────────
@@ -230,7 +259,7 @@ function buildSidebar() {
       // Due salvati nello stesso minuto restano pero' identici: in quel caso, e
       // solo in quello, torna il numero a distinguerli.
       const etichette = files.map(f => {
-        const q = f.data_carico ? new Date(f.data_carico) : null;
+        const q = f.data_carico ? dataDaServer(f.data_carico) : null;
         const quando = q ? q.toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '') : '';
         return quando ? `${s.nome} · ${quando}` : s.nome;
       });
@@ -432,7 +461,26 @@ function riapriSottoVista(sotto) {
 }
 
 // ── Navigation ─────────────────────────────────────
+// Menu laterale da telefono (style.css, sotto i 760px): si apre dal pulsante ☰
+// e si chiude toccando fuori, con Esc o scegliendo una voce. forza = true/false
+// apre/chiude; senza argomento inverte. Su schermi larghi la classe non ha
+// effetto.
+function apriChiudiMenu(forza) {
+  const aperto = typeof forza === 'boolean' ? forza : !document.body.classList.contains('menu-aperto');
+  document.body.classList.toggle('menu-aperto', aperto);
+  const btn = el('menu-btn');
+  if (btn) btn.setAttribute('aria-expanded', aperto ? 'true' : 'false');
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('menu-aperto')) apriChiudiMenu(false);
+});
+
 function navigate(view, params = {}) {
+  // Scelta una voce, il menu da telefono si richiude da solo.
+  apriChiudiMenu(false);
+  // Una navigazione nuova: i disegni ancora in corso di quelle prima non
+  // scrivono piu' (vedi setMainSe).
+  window._giroNavigazione = (window._giroNavigazione || 0) + 1;
   window._currentView        = view;
   window._currentParams      = params;
   window._currentStrutturaId = params.strutturaId || null;
@@ -539,13 +587,14 @@ window.ridisegnaTutto = function () {
 
 // ── Dashboard ──────────────────────────────────────
 async function renderDashboard() {
+  const _disegno = inizioDisegno();
   let data;
   try {
     data = await api('/api/dashboard');
   } catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
       <div class="empty-title">${t('stato.erroreCaricamento')}</div>
-      <div class="empty-sub">${e.message}</div></div>`);
+      <div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
@@ -557,7 +606,7 @@ async function renderDashboard() {
   if (!S.analizzatoriCatalogo) S.analizzatoriCatalogo = await api('/api/analizzatori').catch(() => []);
 
   if (strutture_count === 0) {
-    setMain(`
+    if (!setMainSe(_disegno, `
       <div class="page-header">
         <div><div class="page-title">${t('pagina.dashboard.titolo')}</div></div>
       </div>
@@ -568,7 +617,7 @@ async function renderDashboard() {
           <div class="empty-sub">${t('pagina.dashboard.corpoVuoto')}</div>
         </div>
       </div>
-    `);
+    `)) return;
     const roiSection = document.createElement('div');
     roiSection.className = 'section-card';
     roiSection.style.cssText = 'margin:0 24px 24px';
@@ -582,7 +631,7 @@ async function renderDashboard() {
     return;
   }
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-body" style="padding-top:24px">
       <div class="section-card" id="roi-hero"></div>
       <div class="riepilogo-band">
@@ -594,7 +643,7 @@ async function renderDashboard() {
       </div>
       ${buildRoiActionsHtml()}
     </div>
-  `);
+  `)) return;
 
   // Calcolatore ROI — eroe in cima alla dashboard
   el('roi-hero').innerHTML = buildRoiSectionHtml();
@@ -619,15 +668,16 @@ function updateDashRisparmio() {
 
 // ── Risparmio totale strutture (sezione "Altro", poco evidente) ──
 async function renderRisparmioTotale() {
+  const _disegno = inizioDisegno();
   let data;
   try { data = await api('/api/dashboard'); }
   catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
   const { differenziale_totale, per_struttura } = data;
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div>
         <div class="page-title">${t('menu.risparmioTotale')}</div>
@@ -649,7 +699,7 @@ async function renderRisparmioTotale() {
       </div>` : `<div class="empty-state"><div class="empty-icon">📭</div>
         <div class="empty-title">${t('pagina.risparmioTotale.nessunCalcolo')}</div></div>`}
     </div>
-  `);
+  `)) return;
 
   if (per_struttura.length) {
     const ctx = el('chart-confronto-tot');
@@ -686,6 +736,10 @@ function modificaNelCalcolatore() {
   S.roi.struttura = f.file?.struttura_nome || '';
   const pid = f.dati.find(d => d.piano_id != null)?.piano_id;
   S.roi.pianoId = pid != null ? pid : null;
+  // Anche il laboratorio concorrente, se il calcolo lo ha salvato e se esiste
+  // ancora (fra quelli con esami): prima tornava sempre «Nessuno».
+  const cid = f.file?.concorrente_id;
+  S.roi.concorrenteId = cid != null && (S.concorrenti || []).some(c => c.id === cid) ? cid : null;
   S.roi.righe = f.dati.map(d => {
     const tc = d.totale_concorrenza || 0;
     const scRaw = tc > 0 ? Math.round((1 - (d.prezzo_scontato_concorrenza || 0) / tc) * 1000) / 10 : 0;
@@ -728,12 +782,13 @@ function cellaQuantitaFoglio(d) {
 }
 
 async function renderFoglio(fileId, foglio) {
+  const _disegno = inizioDisegno();
   let resp;
   try {
     resp = await api(`/api/file/${fileId}/dati?foglio=${encodeURIComponent(foglio)}`);
   } catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
@@ -741,20 +796,20 @@ async function renderFoglio(fileId, foglio) {
   S.foglio = { dati, totali: t, file, foglio, fileId };
 
   if (!dati.length) {
-    setMain(`<div class="empty-state"><div class="empty-icon">📭</div>
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">📭</div>
       <div class="empty-title">${window.t('foglio.nessunDato')}</div>
-      <div class="empty-sub">${window.t('foglio.nessunaRigaPerFoglio', { foglio })}</div></div>`);
+      <div class="empty-sub">${window.t('foglio.nessunaRigaPerFoglio', { foglio })}</div></div>`)) return;
     return;
   }
 
   const datiSorted = [...dati].sort((a, b) => (b.risparmio_dottore || 0) - (a.risparmio_dottore || 0));
   const rispPct = t.risparmio_pct || 0;
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div>
-        <div class="page-title">${file.struttura_nome} — ${foglio}</div>
-        <div class="page-subtitle">${file.nome_file} &middot; ${fmtDate(file.data_carico)}</div>
+        <div class="page-title">${escHtml(file.struttura_nome)} — ${escHtml(foglio)}</div>
+        <div class="page-subtitle">${escHtml(file.nome_file)} &middot; ${fmtDate(file.data_carico)}</div>
       </div>
       <div class="page-actions export-bar">
         <button class="btn-outline" onclick="downloadPdf(${fileId}, ${jsAttr(foglio)}, 'dottore')">
@@ -847,7 +902,7 @@ async function renderFoglio(fileId, foglio) {
         </div>
       </div>
     </div>
-  `);
+  `)) return;
 
   renderFoglioCharts(datiSorted, t);
   renderFoglioTable(datiSorted);
@@ -1185,7 +1240,7 @@ function legendHtml(items) {
   return items.map(i => `
     <div class="legend-item">
       <span class="legend-dot" style="background:${i.color}"></span>
-      <span>${i.label}</span>
+      <span>${escHtml(i.label)}</span>
     </div>`).join('');
 }
 
@@ -1240,19 +1295,20 @@ function renderFoglioTable(dati) {
 
 // ── Totali struttura ───────────────────────────────
 async function renderTotali(strutturaId, nome) {
+  const _disegno = inizioDisegno();
   let data;
   try {
     data = await api(`/api/strutture/${strutturaId}/aggregato`);
   } catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
   const { struttura, files } = data;
   if (!files.length) {
-    setMain(`<div class="empty-state"><div class="empty-icon">📭</div>
-      <div class="empty-title">${t('stato.nessunDato')}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">📭</div>
+      <div class="empty-title">${t('stato.nessunDato')}</div></div>`)) return;
     return;
   }
 
@@ -1269,7 +1325,7 @@ async function renderTotali(strutturaId, nome) {
   // Giorno E ora: piu' calcoli dello stesso giorno avevano tutti la stessa
   // etichetta e non si distinguevano. Stesso formato della barra laterale.
   const labels       = files.map(f => f.file.data_carico
-    ? new Date(f.file.data_carico).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
+    ? dataDaServer(f.file.data_carico).toLocaleString('it-IT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
     : '');
   const foglioSet    = ['Foglio 1', 'Platinum', 'Gold'];
   const foglioColors = { 'Foglio 1': '#6b7280', 'Platinum': '#0f76bc', 'Gold': '#0f76bc' };
@@ -1279,7 +1335,7 @@ async function renderTotali(strutturaId, nome) {
   const fogliPresenti = foglioSet.filter(fg => files.some(f => f.fogli[fg]));
   const etichettaSerie = (cosa, fg) => fogliPresenti.length > 1 ? `${cosa} — ${fg}` : cosa;
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div>
         <div class="page-title">${t('totali.titolo', { nome: escHtml(struttura.nome) })}</div>
@@ -1317,7 +1373,7 @@ async function renderTotali(strutturaId, nome) {
         <canvas id="chart-grouped" height="200"></canvas>
       </div>
     </div>
-  `);
+  `)) return;
 
   const lineDatasets = fogliPresenti
     .map(fg => ({
@@ -1337,7 +1393,7 @@ async function renderTotali(strutturaId, nome) {
   el('linea-legend').innerHTML = lineDatasets
     .map(d => `<div class="legend-item">
       <span class="legend-dot" style="background:${d.borderColor}"></span>
-      <span>${d.label}</span></div>`).join('');
+      <span>${escHtml(d.label)}</span></div>`).join('');
 
   S.charts.linea = new Chart(el('chart-linea'), {
     type: 'line',
@@ -1382,18 +1438,19 @@ async function renderTotali(strutturaId, nome) {
 
 // ── Cronologia ─────────────────────────────────────
 async function renderCronologia() {
+  const _disegno = inizioDisegno();
   let rows, strutture;
   try {
     [rows, strutture] = await Promise.all([api('/api/cronologia'), api('/api/strutture')]);
   } catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
-  const optStrutture = strutture.map(s => `<option value="${s.id}">${s.nome}</option>`).join('');
+  const optStrutture = strutture.map(s => `<option value="${s.id}">${escHtml(s.nome)}</option>`).join('');
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.cronologia.titolo')}</div>
         <div class="page-subtitle">${t('pagina.cronologia.sottotitolo')}</div>
@@ -1421,7 +1478,7 @@ async function renderCronologia() {
         </div>
       </div>
     </div>
-  `);
+  `)) return;
 
   window._cronoRows = rows;
 }
@@ -1442,9 +1499,9 @@ function buildCronoRows(rows) {
   return rows.map(r => `
     <tr class="clickable" onclick="navigateFromCrono(${r.id}, ${r.struttura_id}, ${jsAttr((r.fogli||'').split(',')[0])})">
       <td class="td-muted">${fmtDate(r.data_carico)}</td>
-      <td>${r.nome_file}${r._ordine ? ` <span class="crono-ordine">(${r._ordine})</span>` : ''}</td>
-      <td>${r.struttura_nome}</td>
-      <td>${(r.fogli || '').split(',').map(f => `<span class="badge badge-gray">${f}</span>`).join(' ')}</td>
+      <td>${escHtml(r.nome_file)}${r._ordine ? ` <span class="crono-ordine">(${r._ordine})</span>` : ''}</td>
+      <td>${escHtml(r.struttura_nome)}</td>
+      <td>${(r.fogli || '').split(',').map(f => `<span class="badge badge-gray">${escHtml(f)}</span>`).join(' ')}</td>
       <td style="color:#ce181e">${euro(r.totale_dottore)}</td>
       <td class="td-yellow">${euro(r.totale_costo)}</td>
       <td class="td-green">${euro(r.differenziale)}</td>
@@ -1482,15 +1539,16 @@ function navigateFromCrono(fileId, strutturaId, foglio) {
 // Voce di menu propria, separata da "Cronologia file": legge solo
 // calcoli_clip/righe_calcolo_clip, mai file_caricati/dati_foglio.
 async function renderCronologiaClip() {
+  const _disegno = inizioDisegno();
   let rows;
   try { rows = await api('/api/calcolo-clip'); }
   catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.cronologiaClip.titolo')}</div>
         <div class="page-subtitle">${t('pagina.cronologiaClip.sottotitolo')}</div>
@@ -1511,7 +1569,7 @@ async function renderCronologiaClip() {
         </div>
       </div>
     </div>
-  `);
+  `)) return;
 }
 
 function buildCronoClipRows(rows) {
@@ -1598,24 +1656,25 @@ async function apriCalcoloClipDaCronologia(id) {
 
 // ── Confronto strutture ────────────────────────────
 async function renderConfronto() {
+  const _disegno = inizioDisegno();
   let data;
   try { data = await api('/api/confronto'); }
   catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${e.message}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
   if (data.length < 2) {
-    setMain(`<div class="empty-state">
+    if (!setMainSe(_disegno, `<div class="empty-state">
       <div class="empty-icon">⚖️</div>
       <div class="empty-title">${t('confrontoStrutture.serveAlmeno2')}</div>
       <div class="empty-sub">${t('confrontoStrutture.caricaDatiSub')}</div>
-    </div>`);
+    </div>`)) return;
     return;
   }
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.confrontoStrutture.titolo')}</div>
         <div class="page-subtitle">${t('pagina.confrontoStrutture.sottotitolo' + (data.length === 1 ? '.uno' : ''), { n: data.length })}</div>
@@ -1637,7 +1696,7 @@ async function renderConfronto() {
             </tr></thead>
             <tbody>
               ${data.map(s => `<tr>
-                <td><strong>${s.nome}</strong></td>
+                <td><strong>${escHtml(s.nome)}</strong></td>
                 <td class="td-muted">${euro(s.totale_concorrenza)}</td>
                 <td style="color:#ce181e">${euro(s.prezzo_scontato_concorrenza)}</td>
                 <td class="td-yellow">${euro(s.totale_scontato_lav)}</td>
@@ -1648,7 +1707,7 @@ async function renderConfronto() {
         </div>
       </div>
     </div>
-  `);
+  `)) return;
 
   el('conf-legend').innerHTML = legendHtml([
     { label: t('chart.concorrenzaScontata'), color: '#ce181e' },
@@ -1723,18 +1782,19 @@ async function downloadPdf(fileId, foglio, tipo) {
 
 // ── Gestione piani ──────────────────────────────────
 async function renderPiani() {
+  const _disegno = inizioDisegno();
   let elenco;
   try { elenco = await api('/api/piani?all=1'); }
   catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
   S.pianiAdmin = elenco;
   // Ogni account modifica la PROPRIA copia del catalogo: basta essere loggati.
   const admin = !!(S.auth && S.auth.token && !S.auth.guest);
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.piani.titolo')}</div>
         <div class="page-subtitle">${t('pagina.piani.sottotitolo' + (elenco.length === 1 ? '.uno' : ''), { n: elenco.length })}</div>
@@ -1763,7 +1823,7 @@ async function renderPiani() {
       </div>
       <div id="piano-edit-wrap"></div>
     </div>
-  `);
+  `)) return;
   renderPianiBody();
 }
 
@@ -1783,7 +1843,8 @@ function renderPianiBody() {
     <td style="display:flex;gap:6px">
       ${admin
         ? `<button class="btn-outline" onclick="togglePianoAttivo(${p.id}, ${p.attivo ? 0 : 1})">${p.attivo ? t('piani.disattiva') : t('piani.attiva')}</button>
-      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">${t('piani.modificaPrezzi')}</button>`
+      <button class="btn-outline" onclick="renderPianoEdit(${p.id})">${t('piani.modificaPrezzi')}</button>
+      <button class="btn-outline" onclick="eliminaPianoUI(${p.id}, ${jsAttr(p.nome)})" style="color:var(--red);border-color:var(--red)">${t('comune.elimina')}</button>`
         : `<button class="btn-outline" onclick="renderPianoEdit(${p.id})">${t('piani.vediPrezzi')}</button>`}
     </td>
   </tr>`).join('') || `<tr><td colspan="5" class="td-muted" style="text-align:center;padding:16px">${t('piani.nessunTrovato')}</td></tr>`;
@@ -1801,6 +1862,22 @@ async function togglePianoAttivo(id, attivo) {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ attivo })
     });
+    await loadPiani();
+    renderPiani();
+  } catch (e) {
+    alert(t('errore.generico', { msg: e.message }));
+  }
+}
+
+// Elimina un piano. Il server lo permette solo se nessun calcolo salvato lo
+// usa; altrimenti il messaggio dice di disattivarlo (errore.PIANO_IN_USO).
+async function eliminaPianoUI(id, nome) {
+  if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.modificarePiani') })); return; }
+  if (!confirm(t('piani.confermaElimina', { nome }))) return;
+  try {
+    await api(`/api/piani/${id}`, { method: 'DELETE' });
+    if (S.roi.pianoId === id) S.roi.pianoId = null;
+    if (S.clip.pianoId === id) S.clip.pianoId = null;
     await loadPiani();
     renderPiani();
   } catch (e) {
@@ -1831,7 +1908,7 @@ async function renderPianoEdit(id) {
           ${data.prezzi.map(p => `<tr>
             <td>${escHtml(p.esame_nome)}</td>
             <td class="td-muted">${fmtE(p.prezzo_base)}</td>
-            <td><input class="roi-input roi-num" data-esame-id="${p.esame_id}" value="${p.prezzo != null ? p.prezzo : ''}" placeholder="0.00" ${admin ? '' : 'disabled'}></td>
+            <td><input class="roi-input roi-num" data-esame-id="${p.esame_id}" data-esame-nome="${escHtml(p.esame_nome)}" value="${p.prezzo != null ? String(p.prezzo).replace('.', ',') : ''}" placeholder="0,00" ${admin ? '' : 'disabled'}></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -1843,10 +1920,21 @@ async function renderPianoEdit(id) {
 async function salvaPianoPrezzi(id) {
   if (S.auth.guest || !S.auth.token) { alert(t('stato.ospiteAccedi', { azione: t('azione.modificarePiani') })); return; }
   const wrap = el('piano-edit-wrap');
-  const inputs = wrap.querySelectorAll('[data-esame-id]');
-  const prezzi = Array.from(inputs)
-    .map(inp => ({ esame_id: Number(inp.dataset.esameId), prezzo: parseFloat(inp.value) }))
-    .filter(p => !isNaN(p.prezzo));
+  const inputs = Array.from(wrap.querySelectorAll('[data-esame-id]'));
+  // «43,50» e' 43,5: con parseFloat si salvava 43 e il messaggio diceva
+  // «Prezzi salvati». Un prezzo sbagliato ferma il salvataggio e si dice quale.
+  const sbagliati = [];
+  const prezzi = [];
+  inputs.forEach(inp => {
+    const letto = Importi.leggiCampo(inp.value, 'prezzo');
+    inp.classList.toggle('roi-input-errato', !!letto.errore);
+    if (letto.errore) sbagliati.push(inp.dataset.esameNome || '');
+    else if (!letto.vuoto) prezzi.push({ esame_id: Number(inp.dataset.esameId), prezzo: letto.valore });
+  });
+  if (sbagliati.length) {
+    alert(t('piani.prezziNonValidi', { esami: sbagliati.slice(0, 5).join(', ') + (sbagliati.length > 5 ? '…' : '') }));
+    return;
+  }
   try {
     await api(`/api/piani/${id}/prezzi`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
@@ -1886,19 +1974,20 @@ async function importaPianiJson(inputEl) {
 // ══════════════════════════════════════════════════
 
 async function renderConcorrentiAdmin() {
+  const _disegno = inizioDisegno();
   let elenco;
   // Solo i laboratori con almeno un esame: questa e' la pagina di gestione
   // esami esterni, e un laboratorio nato da un import di clip e ancora senza
   // nessun esame si gestisce (e si elimina) dalla sua sezione macchinari, non
   // da qui.
-  try { elenco = await api('/api/concorrenti?soloConEsami=1'); }
+  try { elenco = await api('/api/concorrenti?soloConEsami=1'); S.concorrentiPagina = elenco; }
   catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.concorrenti.titolo')}</div>
         <div class="page-subtitle">${t('pagina.concorrenti.sottotitolo' + (elenco.length === 1 ? '.uno' : ''), { n: elenco.length })}</div>
@@ -1932,7 +2021,7 @@ async function renderConcorrentiAdmin() {
       <div id="concorrente-import-wrap"></div>
       <div id="concorrente-dettaglio-wrap"></div>
     </div>
-  `);
+  `)) return;
 }
 
 async function avviaImportConcorrente(inputEl) {
@@ -2021,20 +2110,24 @@ async function confermaImportConcorrente() {
   if (!rows.length) return alert(t('concorrenti.nessunaRigaImportare'));
 
   try {
-    await api('/api/concorrenti/import/conferma', {
+    const esito = await api('/api/concorrenti/import/conferma', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ nomeConcorrente, colEsame, colPrezzo, colSconto, rows })
     });
     await loadConcorrenti();
     renderConcorrentiAdmin();
-    alert(t('comune.importCompletato'));
+    // Quante righe sono entrate e quante no, e perche': prima diceva solo
+    // «Import completato» anche quando meta' dei prezzi erano finiti a 0.
+    alert(t('concorrenti.importEsito', { importate: esito.importate, scartate: esito.scartate || 0, doppioni: esito.doppioni || 0 }));
   } catch (e) {
     alert(`${t('comune.erroreImport')}: ${e.message}`);
   }
 }
 
 async function eliminaConcorrenteUI(id) {
-  const c = S.concorrenti.find(x => x.id === id);
+  // L'elenco della pagina, non S.concorrenti: un laboratorio appena importato
+  // c'e' gia' li', e la conferma diceva «questo concorrente (?)».
+  const c = (S.concorrentiPagina || []).find(x => x.id === id) || S.concorrenti.find(x => x.id === id);
   const nome = c ? c.nome : t('concorrenti.questoConcorrente');
   const n = c && c.n_esami != null ? c.n_esami : '?';
   // Si eliminano SOLO gli esami: i listini macchinari del laboratorio restano,
@@ -2171,8 +2264,18 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
   const inp = document.querySelector(`[data-esame-concorrente-id="${esameConcorrenteId}"]`);
   const esameMylavNome = inp ? inp.value.trim() : '';
   if (!esameMylavNome) return alert(t('concorrenti.scriviNomeEsameMylav'));
+  // Un esame Mylav vale un solo esame per laboratorio (il calcolatore ne usa un
+  // solo prezzo): se e' gia' abbinato a un altro, si chiede prima di spostarlo.
+  const uguale = s => String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const gia = S.concDett && S.concDett.id === concorrenteId
+    ? S.concDett.esami.find(e => e.id !== esameConcorrenteId && uguale(e.esame_mylav_nome) === uguale(esameMylavNome))
+    : null;
+  const questo = S.concDett && S.concDett.esami.find(e => e.id === esameConcorrenteId);
+  if (gia && !confirm(t('concorrenti.spostaAbbinamento', {
+    mylav: esameMylavNome, altro: gia.nome_originale, questo: questo ? questo.nome_originale : ''
+  }))) return;
   try {
-    await api(`/api/concorrenti/${concorrenteId}/conferma-match`, {
+    const esito = await api(`/api/concorrenti/${concorrenteId}/conferma-match`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ esameConcorrenteId, esameMylavNome })
     });
@@ -2180,6 +2283,11 @@ async function salvaMappaturaManuale(concorrenteId, esameConcorrenteId) {
     if (S.concDett && S.concDett.id === concorrenteId) {
       const row = S.concDett.esami.find(e => e.id === esameConcorrenteId);
       if (row) { row.esame_mylav_nome = esameMylavNome; row.confermato = 1; }
+      // Le righe da cui il server ha tolto l'abbinamento tornano «da mappare».
+      const tolti = new Set((esito && esito.tolto) || []);
+      S.concDett.esami.forEach(e => {
+        if (e.id !== esameConcorrenteId && tolti.has(e.nome_originale)) { e.esame_mylav_nome = null; e.confermato = 0; }
+      });
       renderDettaglioBody();
     }
     // il nuovo nome Mylav diventa disponibile in autocomplete calcolatore e datalist
@@ -2227,12 +2335,13 @@ function costoPerClipCatalogo(c) {
 }
 
 async function renderMacchinariEsterni() {
+  const _disegno = inizioDisegno();
   let concorrenti, clip;
   try {
     [concorrenti, clip] = await Promise.all([api('/api/concorrenti'), api('/api/clip')]);
   } catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
   // Elenco completo apposta (nessun soloConEsami qui): questa pagina deve
@@ -2243,7 +2352,7 @@ async function renderMacchinariEsterni() {
   // visita di questa pagina.
   S.macch = { concorrenti, clip, filtro: '' };
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.macchinariEsterni.titolo')}</div>
         <div class="page-subtitle" id="macch-sottotitolo"></div>
@@ -2262,7 +2371,7 @@ async function renderMacchinariEsterni() {
       <div class="table-card" id="macch-lista-wrap"></div>
       <div id="macch-dettaglio-wrap"></div>
     </div>
-  `);
+  `)) return;
   renderMacchinariListaBody();
 }
 
@@ -2493,18 +2602,19 @@ function renderImportClipExcelForm(parsed) {
   aggiornaConteggioImportClip();
 }
 
-// Stessa regola, identica, di leggiImporto in server.js: il conteggio qui sotto
-// deve dire esattamente quante righe il server accettera'. Se si cambia una
-// delle due va cambiata anche l'altra. "3.297,54" -> 3297.54, "€ 140,00" ->
-// 140, una cella gia' numerica passa com'e'.
-function leggiImporto(v) {
-  if (v == null) return null;
-  if (typeof v === 'number') return Number.isFinite(v) ? v : null;
-  let s = String(v).replace(/[^\d.,-]/g, '');
-  if (!s) return null;
-  if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
-  const n = parseFloat(s);
-  return Number.isFinite(n) ? n : null;
+// La regola del server per gli importi: il conteggio qui sotto deve dire
+// esattamente quante righe il server accettera'. Non e' piu' una copia ma lo
+// stesso file (lib/importi.js, servito come /importi.js), quindi le due non
+// possono divergere. "3.297,54" -> 3297.54, "€ 140,00" -> 140.
+function leggiImporto(v) { return Importi.leggiImporto(v); }
+
+// Lo sconto nella sua colonna: vuoto se 0, con la virgola se ha decimali, e
+// com'e' se e' un valore sbagliato, cosi' l'operatore lo vede e lo corregge
+// invece di vederlo sparire.
+function valoreSconto(v) {
+  const letto = Importi.leggiCampo(v, 'sconto');
+  if (letto.errore) return String(v);
+  return letto.valore > 0 ? String(letto.valore).replace('.', ',') : '';
 }
 
 function aggiornaConteggioImportClip() {
@@ -2674,9 +2784,9 @@ async function salvaModificaClip(id) {
     });
     const c = trovaClipInCache(id);
     if (c) {
-      c.prezzoConfezione = prezzoConfezione === '' ? null : Number(prezzoConfezione);
-      c.pezzi = pezzi === '' ? null : Number(pezzi);
-      c.sconto = sconto === '' ? null : Number(sconto);
+      c.prezzoConfezione = prezzoConfezione === '' ? null : leggiImporto(prezzoConfezione);
+      c.pezzi = pezzi === '' ? null : leggiImporto(pezzi);
+      c.sconto = sconto === '' ? null : leggiImporto(sconto);
     }
     renderMacchinariDettaglioBody();
   } catch (e) { alert(t('errore.generico', { msg: e.message })); }
@@ -2768,17 +2878,18 @@ async function salvaClipManuale(concorrenteId, fileOrigine) {
 const ANALIZ_SENZA_FILE = '__senza_file__';
 
 async function renderMacchinariInterni() {
+  const _disegno = inizioDisegno();
   let gruppi;
   try { gruppi = await api('/api/analizzatori/gruppi'); }
   catch (e) {
-    setMain(`<div class="empty-state"><div class="empty-icon">⚠️</div>
-      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`);
+    if (!setMainSe(_disegno, `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <div class="empty-title">${t('stato.errore')}</div><div class="empty-sub">${escHtml(e.message)}</div></div>`)) return;
     return;
   }
   const totale = gruppi.reduce((s, g) => s + g.n, 0);
   S.analiz = { gruppi, totale, filtro: '' };
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('pagina.macchinariInterni.titolo')}</div>
         <div class="page-subtitle" id="analiz-sottotitolo"></div>
@@ -2794,7 +2905,7 @@ async function renderMacchinariInterni() {
       <div class="table-card" id="analiz-lista-wrap"></div>
       <div id="analiz-dettaglio-wrap"></div>
     </div>
-  `);
+  `)) return;
   renderAnalizzatoriListaBody();
 }
 
@@ -2820,7 +2931,7 @@ function renderAnalizzatoriListaBody() {
   // ricevere la prima riga.
   const senza = st.gruppi.find(g => g.fileOrigine == null) || { fileOrigine: null, n: 0, dataUltimo: null };
 
-  const dataFmt = d => d ? new Date(d).toLocaleDateString('it-IT') : '';
+  const dataFmt = d => d ? dataDaServer(d).toLocaleDateString('it-IT') : '';
 
   const rigaHtml = g => `<tr>
     <td>${escHtml(g.fileOrigine)}</td>
@@ -2985,10 +3096,10 @@ async function salvaModificaAnalizzatore(id) {
     });
     const a = S.analizDett ? S.analizDett.righe.find(x => x.id === id) : null;
     if (a) {
-      a.prezzo = prezzo === '' ? null : Number(prezzo);
-      a.pezzi = pezzi === '' ? null : Number(pezzi);
-      a.sconto = sconto === '' ? null : Number(sconto);
-      a.noleggio = noleggio === '' ? null : Number(noleggio);
+      a.prezzo = prezzo === '' ? null : leggiImporto(prezzo);
+      a.pezzi = pezzi === '' ? null : leggiImporto(pezzi);
+      a.sconto = sconto === '' ? null : leggiImporto(sconto);
+      a.noleggio = noleggio === '' ? null : leggiImporto(noleggio);
       a.note = note === '' ? null : note;
     }
     renderAnalizzatoriRigaBody();
@@ -3086,10 +3197,10 @@ const colonneRoiEsami = [
     intestazione: 'roi.tabella.n', fallbackSuZero: '',
     segnaposto: r => r.n_esami || 1 },
   { col: 'listino_concorrenza', tipo: 'numero', larghezza: 95, gruppo: 'concorrenza',
-    intestazione: 'comune.listinoConc', totale: 'tot_listino_conc', segnaposto: '0.00' },
+    intestazione: 'comune.listinoConc', totale: 'tot_listino_conc', segnaposto: '0,00' },
   { col: 'sconto_concorrenza', tipo: 'numero', larghezza: 65, larghezzaCampo: 55, gruppo: 'concorrenza',
     intestazione: 'roi.tabella.scontoPct', segnaposto: '%',
-    valore: r => { const sc = parseFloat(r.sconto_concorrenza) || 0; return sc > 0 ? String(sc) : ''; } },
+    valore: r => valoreSconto(r.sconto_concorrenza) },
   { col: 'tot_conc', tipo: 'calcolato', larghezza: 95, gruppo: 'concorrenza',
     intestazione: 'roi.tabella.totConc', totale: 'tot_conc' },
   { col: 'prezzo_conc', tipo: 'calcolato', larghezza: 95, gruppo: 'concorrenza',
@@ -3105,11 +3216,11 @@ const colonneRoiEsami = [
   { col: 'n_esami', tipo: 'numero', larghezza: 60, larghezzaCampo: 50, gruppo: 'mylav',
     intestazione: 'roi.tabella.n', fallbackSuZero: 1, segnaposto: '1' },
   { col: 'listino_lav', tipo: 'numero', larghezza: 95, gruppo: 'mylav',
-    intestazione: 'roi.tabella.listinoMyl', totale: 'tot_listino_lav', segnaposto: '0.00' },
+    intestazione: 'roi.tabella.listinoMyl', totale: 'tot_listino_lav', segnaposto: '0,00' },
   { col: 'tot_listino_lav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav',
     intestazione: 'roi.tabella.totMyl', totale: 'tot_tot_lav' },
   { col: 'prezzo_scontato_lav', tipo: 'numero', larghezza: 95, gruppo: 'mylav',
-    intestazione: 'roi.tabella.pianoMyl', totale: 'tot_prezzo_lav_sc', segnaposto: '0.00' },
+    intestazione: 'roi.tabella.pianoMyl', totale: 'tot_prezzo_lav_sc', segnaposto: '0,00' },
   { col: 'tot_prezzo_lav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav',
     intestazione: 'roi.tabella.totScMyl', totale: 'tot_tot_prezzo_lav' },
   { col: 'risparmio', tipo: 'calcolato', larghezza: 95, gruppo: 'nessuno', separaInTestata: true,
@@ -3128,14 +3239,17 @@ async function suCampoUscitoRoiEsami(tr, col) {
     await compilaDaEsameConcorrente(tr);
   } else if (col === 'prezzo_scontato_lav') {
     const inp = tr.querySelector('[data-col="prezzo_scontato_lav"]');
-    if (inp && S.roi.pianoId && inp.dataset.auto !== '1' && inp.value.trim()) {
+    // Solo un prezzo valido diventa il prezzo personalizzato del piano: prima
+    // «12,50» si salvava 12, e un testo si salvava 0 per tutti i calcoli futuri.
+    const letto = inp ? Importi.leggiCampo(inp.value, 'prezzo') : { vuoto: true };
+    if (inp && S.roi.pianoId && inp.dataset.auto !== '1' && letto.valore != null) {
       const esameInp = tr.querySelector('[data-col="esame"]');
       const esame = esameInp ? esameInp.value.trim() : '';
       if (esame) {
         await fetch('/api/prezzi-custom', {
           method: 'POST',
           headers: authHeaders({ 'Content-Type': 'application/json' }),
-          body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: parseFloat(inp.value) || 0 })
+          body: JSON.stringify({ esame_nome: esame, piano_id: S.roi.pianoId, prezzo: letto.valore })
         });
         inp.dataset.auto = '1';
         inp.classList.remove('roi-prezzo-nuovo');
@@ -3503,12 +3617,15 @@ async function aggiornaMatchConcorrente(tr) {
     // Non campoFillabile: quello guarda un numero, e un nome scritto a mano
     // per lui sarebbe "vuoto". Qui si riempie solo un campo davvero vuoto o
     // gia' riempito da noi.
-    if (ecInp && m.nomeOriginale && (!(ecInp.value || '').trim() || ecInp.dataset.auto === '1')) {
+    // Nome e prezzo vanno insieme: con un prezzo scritto a mano (che resta),
+    // il nome dell'esame abbinato descriverebbe un prezzo che non e' il suo.
+    const prezzoDaAbbinamento = campoFillabile(lcInp);
+    if (prezzoDaAbbinamento && ecInp && m.nomeOriginale && (!(ecInp.value || '').trim() || ecInp.dataset.auto === '1')) {
       ecInp.value = m.nomeOriginale;
       ecInp.dataset.auto = '1';
     }
-    if (campoFillabile(lcInp)) {
-      lcInp.value = m.prezzo;
+    if (prezzoDaAbbinamento) {
+      lcInp.value = String(m.prezzo).replace('.', ',');
       lcInp.dataset.auto = '1';
     }
     if (m.sconto != null && campoFillabile(scInp)) {
@@ -3601,12 +3718,12 @@ function calcPrezConc(lc, sc, n) {
 // DEVE restare identica a lib/calcoloesami.js, che fa lo stesso conto al
 // salvataggio: se divergono, la cronologia non dice cio' che lo schermo mostra.
 function calcolaRigaRoi(r) {
-  const n  = r.n_esami || 1;
-  const nc = parseFloat(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav
-  const lc = parseFloat(r.listino_concorrenza) || 0;
-  const sc = parseFloat(r.sconto_concorrenza)  || 0;
-  const ll = parseFloat(r.listino_lav) || 0;
-  const pl = parseFloat(r.prezzo_scontato_lav) || 0;
+  const n  = numero(r.n_esami) || 1;
+  const nc = numero(r.n_concorrenza) || n;   // senza quantita' propria segue quella Mylav
+  const lc = numero(r.listino_concorrenza) || 0;
+  const sc = numero(r.sconto_concorrenza)  || 0;
+  const ll = numero(r.listino_lav) || 0;
+  const pl = numero(r.prezzo_scontato_lav) || 0;
 
   const totConc  = lc * nc;
   const prezConc = calcPrezConc(totConc, sc, 1);
@@ -3623,10 +3740,17 @@ function calcolaRigaRoi(r) {
 function fmtE(n) {
   if (!n && n !== 0) return '—';
   const v = Number(n) || 0;
-  return '€ ' + v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return '€ ' + numeroIt(v, 2);
 }
 
-function escHtml(s) { return String(s || '').replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+// Testo dell'operatore dentro l'HTML. Tutti e cinque i caratteri speciali:
+// prima solo " e <, e un nome come «a & b» o con un apice in un attributo
+// tra apici singoli non era coperto.
+function escHtml(s) {
+  return String(s || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
 
 // Un valore dell'operatore dentro un onclick attraversa DUE parser: prima
 // l'HTML decodifica l'attributo, poi il JS legge il codice che ne esce. Per
@@ -3646,15 +3770,15 @@ function calcolaRoiTotali(righe) {
   righe = righe || S.roi.righe;
   let t = { tot_listino_conc:0, tot_conc:0, tot_prezzo_conc:0, tot_listino_lav:0, tot_tot_lav:0, tot_prezzo_lav_sc:0, tot_tot_prezzo_lav:0, differenziale:0 };
   for (const r of righe) {
-    const n  = r.n_esami || 1;
+    const n  = numero(r.n_esami) || 1;
     // Le due quantita' sono indipendenti: il concorrente puo' fatturare tre
     // esami dove Mylav ne ha uno. Senza quantita' propria si usa quella Mylav,
     // che e' come si comportavano tutte le righe prima delle due colonne.
-    const nc = parseFloat(r.n_concorrenza) || n;
-    const lc = parseFloat(r.listino_concorrenza) || 0;
-    const sc = parseFloat(r.sconto_concorrenza)  || 0;
-    const ll = parseFloat(r.listino_lav) || 0;
-    const pl = parseFloat(r.prezzo_scontato_lav) || 0;
+    const nc = numero(r.n_concorrenza) || n;
+    const lc = numero(r.listino_concorrenza) || 0;
+    const sc = numero(r.sconto_concorrenza)  || 0;
+    const ll = numero(r.listino_lav) || 0;
+    const pl = numero(r.prezzo_scontato_lav) || 0;
     const tc  = lc * nc;
     const pc  = calcPrezConc(tc, sc, 1);
     const tll = ll * n;
@@ -3672,10 +3796,10 @@ function calcolaRoiTotali(righe) {
 }
 
 // Un campo prezzo e' sovrascrivibile dall'autofill se e' vuoto, 0, o gia' automatico.
-// (aggiornaRigaDOM forza i campi vuoti a 0 in stato: senza questo, dopo un re-render
-//  un "0" verrebbe scambiato per valore inserito a mano e bloccherebbe l'autofill.)
+// (Un "0" rimasto da un calcolo vecchio non deve bloccare l'autofill; numero()
+//  legge la virgola, quindi «0,50» e' un valore dell'operatore e resta.)
 function campoFillabile(inp) {
-  return !parseFloat(inp.value) || inp.dataset.auto === '1';
+  return !numero(inp.value) || inp.dataset.auto === '1';
 }
 
 // Riempie listino_lav della riga (calcolatore esami) col prezzo base
@@ -3721,12 +3845,17 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
     // Un nome del concorrente messo dall'abbinamento (auto) e' guidato
     // dall'esame Mylav quanto il suo prezzo: se ne va insieme a lui.
     const concGuidato = !concInp || !(concInp.value || '').trim() || concInp.dataset.auto === '1';
-    const daAzzerare = concGuidato
-      ? ['esame_concorrente', 'listino_concorrenza', 'sconto_concorrenza', 'listino_lav', 'prezzo_scontato_lav']
-      : ['listino_lav', 'prezzo_scontato_lav'];
-    daAzzerare.forEach(col => {
+    // Lato Mylav: appartiene all'esame Mylav, si azzera sempre e lo riempie
+    // la cascata. Lato concorrenza: solo cio' che aveva riempito l'abbinamento
+    // (auto). Un prezzo del concorrente scritto a mano resta: prima, scritto
+    // il prezzo e poi scelto l'esame Mylav, il prezzo spariva.
+    const lato = (concGuidato ? ['esame_concorrente', 'listino_concorrenza', 'sconto_concorrenza'] : [])
+      .map(col => ({ col, soloAuto: true }))
+      .concat([{ col: 'listino_lav' }, { col: 'prezzo_scontato_lav' }]);
+    lato.forEach(({ col, soloAuto }) => {
       const inp = tr.querySelector(`[data-col="${col}"]`);
-      if (inp) { inp.value = ''; inp.dataset.auto = '0'; inp.classList.remove('roi-prezzo-nuovo'); inp.title = ''; }
+      if (!inp || (soloAuto && inp.dataset.auto !== '1')) return;
+      inp.value = ''; inp.dataset.auto = '0'; inp.classList.remove('roi-prezzo-nuovo'); inp.title = '';
     });
     esameInp.dataset.lastEsame = esame;
     aggiornaRigaDOM(tr);
@@ -3900,6 +4029,23 @@ function getRoiRigheValide() { return motoreEsami.righeValide(); }
 
 function roiMsg(msg, tipo) { motoreEsami.messaggio(msg, tipo); }
 
+// La prima riga, fra quelle che si salverebbero, con un valore impossibile:
+// { riga, campo } per il messaggio, o null. Stessa regola del server
+// (Importi.campiNonValidi), che rifiuterebbe comunque la riga: qui serve a dire
+// all'operatore DOVE correggere invece di un errore generico.
+function primoValoreSbagliato(righe, colonne, valida) {
+  const numeriche = colonne.filter(c => c.tipo === 'numero');
+  for (let i = 0; i < righe.length; i++) {
+    if (!valida(righe[i])) continue;
+    const sbagliati = Importi.campiNonValidi(righe[i], numeriche.map(c => c.col));
+    if (sbagliati.length) {
+      const col = numeriche.find(c => c.col === sbagliati[0]);
+      return { riga: i + 1, campo: t(col.intestazione) };
+    }
+  }
+  return null;
+}
+
 async function salvaCalcolo() {
   if (S.auth.guest || !S.auth.token) { roiMsg(t('stato.ospiteAccedi', { azione: t('azione.salvareDati') }), 'error'); return; }
   const righe    = getRoiRigheValide();
@@ -3907,6 +4053,8 @@ async function salvaCalcolo() {
 
   if (!struttura) return roiMsg(t('roi.scriviStruttura'), 'error');
   if (!righe.length) return roiMsg(t('roi.nessunEsameConNome'), 'error');
+  const sbagliato = primoValoreSbagliato(S.roi.righe, colonneRoiEsami, r => !!(r.esame && r.esame.trim()));
+  if (sbagliato) return roiMsg(t('calcolatore.valoreNonValido', sbagliato), 'error');
 
   // Una riga con il solo esame del concorrente non viene salvata: senza l'esame
   // Mylav non c'e' niente da confrontare. Prima si poteva solo sbagliare in un
@@ -3925,7 +4073,7 @@ async function salvaCalcolo() {
     const resp = await api('/api/calcolo/salva', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ struttura, foglio: 'Platinum', righe: righeDaSalvare, nomeFile, piano_id: S.roi.pianoId })
+      body: JSON.stringify({ struttura, foglio: 'Platinum', righe: righeDaSalvare, nomeFile, piano_id: S.roi.pianoId, concorrente_id: S.roi.concorrenteId })
     });
     roiMsg(t('roi.salvatoOk'), 'ok');
     await loadStrutture();
@@ -3935,33 +4083,83 @@ async function salvaCalcolo() {
   }
 }
 
+// L'Excel di un calcolo, per tutti e due i calcolatori. Le colonne sono quelle
+// della tabella a schermo, con i loro titoli nella lingua dell'operatore: il
+// file che riceve il cliente dice le stesse cose dello schermo. In cima
+// struttura, piano, laboratorio e data; in fondo il totale (lib/esporta.js).
+async function scaricaExcelCalcolo({ tipo, colonne, righe, struttura, intestazione }) {
+  const corpo = {
+    tipo, struttura, righe, intestazione,
+    titoloTotale: t('export.totale'),
+    nomeFoglio: struttura || t('export.calcolo'),
+    // La struttura sta nell'intestazione; le colonne senza titolo (il
+    // pulsante per togliere la riga) non sono dati.
+    colonne: colonne.filter(c => c.col !== 'struttura' && c.intestazione)
+      .map(c => ({ chiave: c.col, titolo: t(c.intestazione) }))
+  };
+  const res = await fetch('/api/export-excel', {
+    method: 'POST',
+    headers: authHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(corpo)
+  });
+  if (res.status === 401) {
+    if (S.auth && S.auth.token) authLogout(true);
+    throw new Error(t('roi.sessioneScaduta'));
+  }
+  if (!res.ok) {
+    const dati = await res.json().catch(() => ({}));
+    throw new Error(I18n.messaggioErrore(dati, t('errore.rispostaServer', { stato: res.status })));
+  }
+  const blob = await res.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  // Lo stesso nome che propone il server, leggibile: «mylav_Clinica X.xlsx».
+  a.href = url; a.download = `mylav_${(struttura || t('export.calcolo')).replace(/[\\/:*?"<>|]+/g, '_')}.xlsx`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function oggiIt() { return new Date().toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+
 async function esportaExcelRoi() {
   syncRoiStateFromDOM();
   const righe     = getRoiRigheValide();
   const struttura = (document.querySelector('.roi-struttura-inp')?.value || S.roi.struttura || '').trim();
 
   if (!righe.length) return roiMsg(t('roi.nessunEsameCompilato'), 'error');
+  // Lo stesso controllo del salvataggio: un Excel con un prezzo negativo o uno
+  // sconto del 150% finirebbe dritto al cliente.
+  const sbagliato = primoValoreSbagliato(S.roi.righe, colonneRoiEsami, r => !!(r.esame && r.esame.trim()));
+  if (sbagliato) return roiMsg(t('calcolatore.valoreNonValido', sbagliato), 'error');
   try {
-    const res = await fetch('/api/export-excel', {
-      method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ foglio: 'Platinum', struttura: struttura || 'Struttura', righe })
+    await scaricaExcelCalcolo({
+      tipo: 'esami', colonne: colonneRoiEsami, righe, struttura,
+      intestazione: [
+        [t('comune.struttura'), struttura || '—'],
+        [t('export.piano'), pianoSelezionatoNome() || t('roi.nessuno')],
+        [t('export.laboratorio'), concorrenteSelezionatoNome() || t('roi.nessuno')],
+        [t('export.data'), oggiIt()]
+      ]
     });
-    if (res.status === 401) {
-      if (S.auth && S.auth.token) authLogout(true);
-      throw new Error(t('roi.sessioneScaduta'));
-    }
-    if (!res.ok) {
-      const dati = await res.json().catch(() => ({}));
-      throw new Error(I18n.messaggioErrore(dati, t('errore.rispostaServer', { stato: res.status })));
-    }
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href = url; a.download = `mylav_roi.xlsx`;
-    document.body.appendChild(a); a.click();
-    document.body.removeChild(a); URL.revokeObjectURL(url);
   } catch(e) { roiMsg(t('roi.erroreExport', { msg: e.message }), 'error'); }
+}
+
+async function esportaExcelClip() {
+  const righe = getClipRigheValide();
+  const struttura = ((S.clip.righe.find(r => (r.struttura || '').trim())) || {}).struttura || '';
+  if (!righe.length) return clipMsg(t('clip.nessunaRigaValida'), 'error');
+  const sbagliato = primoValoreSbagliato(S.clip.righe, COLONNE_CLIP, r => !!(r.profilo_mylav && r.profilo_mylav.trim()));
+  if (sbagliato) return clipMsg(t('calcolatore.valoreNonValido', sbagliato), 'error');
+  try {
+    await scaricaExcelCalcolo({
+      tipo: 'clip', colonne: COLONNE_CLIP, righe, struttura: struttura.trim(),
+      intestazione: [
+        [t('comune.struttura'), struttura.trim() || '—'],
+        [t('export.listinoMylav'), pianoSelezionatoNomeClip() || t('roi.nessuno')],
+        [t('export.data'), oggiIt()]
+      ]
+    });
+  } catch (e) { clipMsg(t('roi.erroreExport', { msg: e.message }), 'error'); }
 }
 
 // ══════════════════════════════════════════════════
@@ -3980,25 +4178,25 @@ async function esportaExcelRoi() {
 // campo vuoto che nasconde il totale (stessa regola anche
 // sul lato Mylav).
 function calcolaRigaClip(r) {
-  const pezziGrezzi = parseFloat(r.pezzi) || 0;
-  const prezzoConf = parseFloat(r.prezzo_confezione) || 0;
-  const sconto = parseFloat(r.sconto_clip) || 0;
+  const pezziGrezzi = numero(r.pezzi) || 0;
+  const prezzoConf = numero(r.prezzo_confezione) || 0;
+  const sconto = numero(r.sconto_clip) || 0;
   const pezzi = pezziGrezzi > 0 ? pezziGrezzi : 1;
   const costoClip = parseFloat((prezzoConf / pezzi * (1 - sconto / 100)).toFixed(2));
-  const nClip = parseFloat(r.n_clip) || 1;
+  const nClip = numero(r.n_clip) || 1;
   const totaleClip = costoClip * nClip;
 
-  const nMyl = parseFloat(r.n_mylav) || 1;
-  const listinoLav = parseFloat(r.listino_lav) || 0;
-  const prezzoPiano = parseFloat(r.prezzo_scontato_lav) || 0;
+  const nMyl = numero(r.n_mylav) || 1;
+  const listinoLav = numero(r.listino_lav) || 0;
+  const prezzoPiano = numero(r.prezzo_scontato_lav) || 0;
   // pezzi_mylav (task 4): a specchio esatto di pezzi/costo_clip qui sopra —
   // stessa regola "mancante = 1", stessa divisione, cosi' i due totali
   // restano comparabili a singola unita'. ATTENZIONE: questa stessa formula
-  // e' duplicata in server.js (POST /api/calcolo-clip/salva, che ricalcola
+  // sta in lib/calcoloclip.js (salvataggio ed export la usano per ricalcolare
   // invece di fidarsi del browser): una modifica qui va rifatta identica
   // anche li', altrimenti i numeri salvati non combaciano con quelli visti
   // dall'operatore.
-  const pezziMylGrezzi = parseFloat(r.pezzi_mylav) || 0;
+  const pezziMylGrezzi = numero(r.pezzi_mylav) || 0;
   const pezziMyl = pezziMylGrezzi > 0 ? pezziMylGrezzi : 1;
   // Senza piano il veterinario paga il listino: usarlo evita un falso
   // risparmio positivo quando il piano non e' stato scelto.
@@ -4059,10 +4257,10 @@ const COLONNE_CLIP = [
     // vivo mentre si scrive il listino conc.).
     segnaposto: r => trovaListinoConcorrente(r.listino_conc) ? t('clip.placeholderClip') : t('clip.placeholderClipSenzaListino') },
   { col: 'n_clip',            intestazione: 'roi.tabella.n',           tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'concorrenza', fallbackSuZero: 1, segnaposto: '1' },
-  { col: 'prezzo_confezione', intestazione: 'clip.tabella.prezzoConf', tipo: 'numero',    larghezza: 95,  gruppo: 'concorrenza', segnaposto: '0.00', tenue: true },
+  { col: 'prezzo_confezione', intestazione: 'clip.tabella.prezzoConf', tipo: 'numero',    larghezza: 95,  gruppo: 'concorrenza', segnaposto: '0,00', tenue: true },
   { col: 'pezzi',             intestazione: 'clip.tabella.pezzi',      tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'concorrenza', tenue: true },
   { col: 'sconto_clip',       intestazione: 'roi.tabella.scontoPct',   tipo: 'numero',    larghezza: 65,  larghezzaCampo: 55, gruppo: 'concorrenza', segnaposto: '%',
-    valore: r => { const sc = parseFloat(r.sconto_clip) || 0; return sc > 0 ? String(sc) : ''; } },
+    valore: r => valoreSconto(r.sconto_clip) },
   { col: 'costo_clip',        intestazione: 'clip.tabella.costoClip',  tipo: 'calcolato', larghezza: 95,  gruppo: 'concorrenza', totale: 'tot_costo_clip', tenue: true },
   { col: 'totale_clip',       intestazione: 'clip.tabella.totaleClip', tipo: 'calcolato', larghezza: 95,  gruppo: 'concorrenza', totale: 'tot_totale_clip' },
   // A specchio di 'laboratorio' ma sul lato blu: quale PDF di
@@ -4087,8 +4285,8 @@ const COLONNE_CLIP = [
   // proprio (rule 1a) o quando il valore arriva gia' diviso per unita' (il
   // costo del catalogo analizzatori). Scrivibile a mano: vedi calcolaRigaClip.
   { col: 'pezzi_mylav',       intestazione: 'clip.tabella.pezziMylav', tipo: 'numero',    larghezza: 60,  larghezzaCampo: 50, gruppo: 'mylav', tenue: true },
-  { col: 'listino_lav',       intestazione: 'roi.tabella.listinoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_listino_lav', segnaposto: '0.00' },
-  { col: 'prezzo_scontato_lav', intestazione: 'roi.tabella.pianoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_prezzo_scontato_lav', segnaposto: '0.00' },
+  { col: 'listino_lav',       intestazione: 'roi.tabella.listinoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_listino_lav', segnaposto: '0,00' },
+  { col: 'prezzo_scontato_lav', intestazione: 'roi.tabella.pianoMyl',  tipo: 'numero',    larghezza: 95,  gruppo: 'mylav', totale: 'tot_prezzo_scontato_lav', segnaposto: '0,00' },
   { col: 'totale_mylav',      intestazione: 'clip.tabella.totaleMylav', tipo: 'calcolato', larghezza: 95, gruppo: 'mylav', totale: 'tot_totale_mylav' },
   { col: 'risparmio',         intestazione: 'comune.risparmio',        tipo: 'calcolato', larghezza: 95,  gruppo: 'nessuno', separaInTestata: true,
     totale: 'differenziale', coloreCondizionale: true },
@@ -4610,11 +4808,11 @@ function calcolaClipTotali(righe) {
   };
   for (const r of righe) {
     const v = calcolaRigaClip(r);
-    t2.tot_prezzo_confezione += parseFloat(r.prezzo_confezione) || 0;
+    t2.tot_prezzo_confezione += numero(r.prezzo_confezione) || 0;
     t2.tot_costo_clip        += v.costo_clip || 0;
     t2.tot_totale_clip       += v.totale_clip || 0;
-    t2.tot_listino_lav       += parseFloat(r.listino_lav) || 0;
-    t2.tot_prezzo_scontato_lav += parseFloat(r.prezzo_scontato_lav) || 0;
+    t2.tot_listino_lav       += numero(r.listino_lav) || 0;
+    t2.tot_prezzo_scontato_lav += numero(r.prezzo_scontato_lav) || 0;
     t2.tot_totale_mylav      += v.totale_mylav || 0;
     t2.differenziale         += v.risparmio || 0;
   }
@@ -4820,6 +5018,7 @@ function buildClipActionsHtml() {
   return `
     <div class="roi-actions-bar">
       <button class="btn-outline" onclick="salvaCalcoloClip()" style="color:var(--blue);border-color:var(--blue)">${t('roi.salvaComeFile')}</button>
+      <button class="btn-outline" onclick="esportaExcelClip()">${t('roi.esportaExcel')}</button>
     </div>
     <button class="roi-clear-all-btn" onclick="rimuoviTuttoClip()">${t('confronto.rimuoviTutto')}</button>
   `;
@@ -4837,6 +5036,7 @@ function rimuoviTuttoClip() {
 // calcolatore esami): il titolo dice cosa si sta decidendo, non come
 // funziona lo strumento.
 async function renderCalcolatoreClip() {
+  const _disegno = inizioDisegno();
   try { S.clip.catalogo = await api('/api/clip'); }
   catch (_) { S.clip.catalogo = []; }
   // Catalogo analizzatori_mylav per la colonna Listino Mylav: tutte le righe
@@ -4844,14 +5044,14 @@ async function renderCalcolatoreClip() {
   // in server.js), in cache perche' condiviso con l'altro calcolatore.
   if (!S.analizzatoriCatalogo) S.analizzatoriCatalogo = await api('/api/analizzatori').catch(() => []);
 
-  setMain(`
+  if (!setMainSe(_disegno, `
     <div class="page-header">
       <div><div class="page-title">${t('clip.pagina.titolo')}</div></div>
     </div>
     <div class="page-body">
       <div class="section-card" id="clip-hero"></div>
     </div>
-  `);
+  `)) return;
 
   el('clip-hero').innerHTML = buildClipSectionHtml() + buildClipActionsHtml();
   motoreClip.inizializzaEventi();
@@ -4866,6 +5066,8 @@ async function salvaCalcoloClip() {
 
   if (!struttura.trim()) return clipMsg(t('clip.scriviStruttura'), 'error');
   if (!righe.length) return clipMsg(t('clip.nessunaRigaValida'), 'error');
+  const sbagliato = primoValoreSbagliato(S.clip.righe, COLONNE_CLIP, r => !!(r.profilo_mylav && r.profilo_mylav.trim()));
+  if (sbagliato) return clipMsg(t('calcolatore.valoreNonValido', sbagliato), 'error');
 
   // Una riga con la sola clip non viene salvata: senza il profilo Mylav non
   // c'e' niente da confrontare. Come nel calcolatore esami, va detto invece di
