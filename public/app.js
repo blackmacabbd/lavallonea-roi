@@ -735,15 +735,18 @@ async function renderRisparmioTotale() {
 
 // ── Vista Foglio ───────────────────────────────────
 // Riapre il file corrente (S.foglio) nel Calcolatore ROI, precaricandone le righe.
-function modificaNelCalcolatore() {
+async function modificaNelCalcolatore() {
   const f = S.foglio;
   if (!f || !Array.isArray(f.dati) || !f.dati.length) return;
   S.roi.struttura = f.file?.struttura_nome || '';
   const pid = f.dati.find(d => d.piano_id != null)?.piano_id;
   S.roi.pianoId = pid != null ? pid : null;
   // Anche il laboratorio concorrente, se il calcolo lo ha salvato e se esiste
-  // ancora (fra quelli con esami): prima tornava sempre «Nessuno».
+  // ancora (fra quelli con esami): prima tornava sempre «Nessuno». L'elenco
+  // dei laboratori e' quello caricato all'avvio: uno creato dopo (in un'altra
+  // scheda, da un import) non c'e' ancora, e si rilegge prima di cercarlo.
   const cid = f.file?.concorrente_id;
+  if (cid != null && !(S.concorrenti || []).some(c => c.id === cid)) await loadConcorrenti().catch(() => {});
   S.roi.concorrenteId = cid != null && (S.concorrenti || []).some(c => c.id === cid) ? cid : null;
   S.roi.righe = f.dati.map(d => {
     const tc = d.totale_concorrenza || 0;
