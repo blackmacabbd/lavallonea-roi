@@ -1120,7 +1120,8 @@ tbody tr.clickable:hover td { background: var(--blue-tint); color: var(--blue); 
 /* I due riquadri dei consigli sono fissi in basso a destra e coprivano la
    fine della classifica dei piani: spazio in fondo alla pagina del
    calcolatore, cosi' scorrendo l'ultima riga sale sempre sopra di loro. */
-.page-body:has(#roi-classifica) { padding-bottom: 170px; }
+.page-body:has(#roi-classifica),
+.page-body:has(#clip-classifica) { padding-bottom: 170px; }
 .roi-consiglio-close {
   position: absolute;
   top: 6px;

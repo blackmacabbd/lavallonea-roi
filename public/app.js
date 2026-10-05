@@ -628,6 +628,8 @@ async function renderDashboard() {
     actions.innerHTML = buildRoiActionsHtml();
     el('main-content').querySelector('.page-body').appendChild(actions);
     motoreEsami.inizializzaEventi();
+    mostraConsiglioTotale();
+    mostraClassificaPiani();
     return;
   }
 
@@ -648,6 +650,9 @@ async function renderDashboard() {
   // Calcolatore ROI — eroe in cima alla dashboard
   el('roi-hero').innerHTML = buildRoiSectionHtml();
   motoreEsami.inizializzaEventi();
+  // Un calcolo riaperto mostra subito consiglio e classifica dei piani.
+  mostraConsiglioTotale();
+  mostraClassificaPiani();
   // I suggerimenti della colonna concorrenza arrivano dal listino del
   // concorrente gia' selezionato: senza questo comparirebbero solo dopo averlo
   // riselezionato a mano.
@@ -3257,6 +3262,13 @@ async function suCampoUscitoRoiEsami(tr, col) {
       }
     }
   }
+  // Una quantita' o un prezzo cambiano i totali: consiglio e classifica si
+  // rifanno (prima restavano al valore di prima fino al cambio di un esame).
+  // Dopo il prezzo personalizzato, che il server usa nel totale del piano.
+  if (colonneRoiEsami.some(c => c.col === col && c.tipo === 'numero')) {
+    mostraConsiglioTotale();
+    mostraClassificaPiani();
+  }
 }
 
 // Selezionato un suggerimento dalla tendina esami: la cascata prezzi Mylav,
@@ -3911,81 +3923,136 @@ async function aggiornaPrezziAutomatici(tr, force = false) {
   aggiornaMatchConcorrente(tr);
 }
 
+// Consiglio del piano e classifica, per i due calcolatori. La logica e' una
+// sola: cambiano da dove si leggono le righe, il totale della concorrenza, il
+// piano scelto e i testi. Nel calcolatore macchinari il «piano» si chiama
+// listino (vedi il pulsante «Listino:»), e i testi lo dicono.
+//
+// Nel calcolatore macchinari ogni riga Mylav vale prezzo ÷ pezzi × quantita'
+// (calcolaRigaClip): al server si passa n = quantita' ÷ pezzi, cosi' il
+// totale di un piano coincide con la colonna «Totale Mylav» della tabella. La
+// concorrenza e' il totale delle clip («Tot. clip»).
+const CONSIGLIO_PIANO = {
+  esami: {
+    classifica: 'roi-classifica', banner: 'roi-consiglio-banner', testi: 'roi', seleziona: 'selezionaPiano',
+    esami: () => getRoiRigheValide().map(r => ({ nome: r.esame, n: r.n_esami || 1 })),
+    totaleConcorrenza: () => calcolaRoiTotali().tot_prezzo_conc,
+    pianoScelto: () => S.roi.pianoId,
+    nomeScelto: () => pianoSelezionatoNome()
+  },
+  clip: {
+    classifica: 'clip-classifica', banner: 'clip-consiglio-banner', testi: 'clip', seleziona: 'selezionaPianoClip',
+    esami: () => getClipRigheValide().map(r => {
+      const pezzi = numero(r.pezzi_mylav) > 0 ? numero(r.pezzi_mylav) : 1;
+      return { nome: r.profilo_mylav, n: (numero(r.n_mylav) || 1) / pezzi };
+    }),
+    totaleConcorrenza: () => calcolaClipTotali().tot_totale_clip,
+    pianoScelto: () => S.clip.pianoId,
+    nomeScelto: () => pianoSelezionatoNomeClip()
+  }
+};
+
 // Elenca tutti i piani MYLAV convenienti per gli esami inseriti, dal piu' economico
 // al meno. Con un totale concorrenza disponibile mostra solo i piani sotto la
 // concorrenza + il risparmio; senza, mostra tutti i piani ordinati. Click = seleziona.
-async function mostraClassificaPiani() {
-  const box = el('roi-classifica');
+async function mostraClassifica(tipo) {
+  const cfg = CONSIGLIO_PIANO[tipo];
+  const box = el(cfg.classifica);
   if (!box) return;
-  const esami = getRoiRigheValide().map(r => ({ nome: r.esame, n: r.n_esami || 1 }));
+  const esami = cfg.esami();
   if (!esami.length) { box.innerHTML = ''; return; }
 
+  // Partono piu' richieste di fila (ogni riga, ogni campo): una risposta
+  // vecchia che arriva per ultima ricopriva la classifica nuova con i totali
+  // di prima. Conta solo la richiesta piu' recente.
+  const giro = cfg.giroClassifica = (cfg.giroClassifica || 0) + 1;
   const piani = await fetch('/api/piani/classifica', {
     method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ esami })
   }).then(r => r.json()).catch(() => null);
+  if (giro !== cfg.giroClassifica) return;
   if (!Array.isArray(piani) || !piani.length) { box.innerHTML = ''; return; }
 
-  const totConc = calcolaRoiTotali().tot_prezzo_conc;
+  const totConc = cfg.totaleConcorrenza();
   const conConc = totConc > 0;
   const mostrati = conConc ? piani.filter(p => p.totale < totConc) : piani;
+  const k = chiave => `${cfg.testi}.classifica.${chiave}`;
 
-  const titolo = `<div class="section-card-title">${t('roi.classifica.titolo')}</div>`;
+  const titolo = `<div class="section-card-title">${t(k('titolo'))}</div>`;
 
   if (conConc && !mostrati.length) {
     box.innerHTML = `<div class="section-card roi-classifica-card">${titolo}
-      <div class="roi-classifica-empty">${t('roi.classifica.nessunoConviene')}</div></div>`;
+      <div class="roi-classifica-empty">${t(k('nessunoConviene'))}</div></div>`;
     return;
   }
 
+  const scelto = cfg.pianoScelto();
   const righe = mostrati.map(p => {
-    const attivo = p.pianoId === S.roi.pianoId;
+    const attivo = p.pianoId === scelto;
     const risp = conConc
       ? `<td class="roi-classifica-risp">${fmtE(totConc - p.totale)}</td>` : '';
-    return `<tr class="${attivo ? 'riga-attiva' : ''}" onclick="selezionaPiano(${p.pianoId})">
-      <td>${escHtml(p.pianoNome)}${attivo ? ` <span class="roi-classifica-badge">${t('roi.classifica.selezionato')}</span>` : ''}</td>
+    return `<tr class="${attivo ? 'riga-attiva' : ''}" onclick="${cfg.seleziona}(${p.pianoId})">
+      <td>${escHtml(p.pianoNome)}${attivo ? ` <span class="roi-classifica-badge">${t(k('selezionato'))}</span>` : ''}</td>
       <td class="roi-classifica-tot">${fmtE(p.totale)}</td>${risp}</tr>`;
   }).join('');
 
   box.innerHTML = `<div class="section-card roi-classifica-card">${titolo}
     <table class="roi-classifica-table">
-      <thead><tr><th>${t('roi.classifica.colPiano')}</th><th>${t('roi.classifica.colTotale')}</th>${conConc ? `<th>${t('roi.classifica.colRisparmio')}</th>` : ''}</tr></thead>
+      <thead><tr><th>${t(k('colPiano'))}</th><th>${t(k('colTotale'))}</th>${conConc ? `<th>${t(k('colRisparmio'))}</th>` : ''}</tr></thead>
       <tbody>${righe}</tbody>
     </table></div>`;
 }
 
 // Suggerisce il piano MYLAV piu conveniente sul TOTALE di tutti gli esami in tabella.
-async function mostraConsiglioTotale() {
-  const banner = el('roi-consiglio-banner');
+async function mostraConsiglio(tipo) {
+  const cfg = CONSIGLIO_PIANO[tipo];
+  const banner = el(cfg.banner);
   if (!banner) return;
-  const esami = getRoiRigheValide().map(r => ({ nome: r.esame, n: r.n_esami || 1 }));
+  const esami = cfg.esami();
   if (!esami.length) { banner.style.display = 'none'; return; }
 
+  const scelto = cfg.pianoScelto();
+  // Stesso motivo della classifica: conta solo la richiesta piu' recente.
+  const giro = cfg.giroConsiglio = (cfg.giroConsiglio || 0) + 1;
   const resp = await fetch('/api/piani/consiglio-totale', {
     method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
-    body: JSON.stringify({ esami, pianoIdAttuale: S.roi.pianoId })
+    body: JSON.stringify({ esami, pianoIdAttuale: scelto })
   }).then(r => r.json()).catch(() => null);
+  if (giro !== cfg.giroConsiglio) return;
   if (!resp) { banner.style.display = 'none'; return; }
+  const k = chiave => `${cfg.testi}.consiglio.${chiave}`;
 
-  const stesso = resp.pianoId === S.roi.pianoId;
+  // Il piano scelto e' gia' il migliore anche se costa QUANTO il migliore:
+  // con piu' piani a pari merito, prima il pop-up consigliava di passare a un
+  // altro allo stesso prezzo, senza nessun risparmio.
+  const stesso = resp.pianoId === scelto
+    || (resp.totaleAttuale != null && resp.totaleAttuale <= resp.totale);
   const saltati = resp.nSaltati > 0
-    ? `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.esamiEsclusi' + (resp.nSaltati === 1 ? '.uno' : '.molti'), { n: resp.nSaltati })}</span>` : '';
+    ? `<br><span style="font-size:11px;color:#6b7280">${t(k('esamiEsclusi') + (resp.nSaltati === 1 ? '.uno' : '.molti'), { n: resp.nSaltati })}</span>` : '';
   let messaggio;
   if (stesso) {
-    messaggio = t('roi.consiglio.stessoPiano' + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(resp.pianoNome), totale: fmtE(resp.totale) }) + saltati;
+    // A pari merito il nome e' quello del piano scelto, non dell'altro.
+    const nome = resp.pianoId === scelto ? resp.pianoNome : (cfg.nomeScelto() || resp.pianoNome);
+    messaggio = t(k('stessoPiano') + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(nome), totale: fmtE(resp.totale) }) + saltati;
   } else {
     const risparmio = (resp.totaleAttuale != null && resp.totaleAttuale > resp.totale)
-      ? `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.risparmioAttuale', { risparmio: fmtE(resp.totaleAttuale - resp.totale) })}</span>` : '';
-    messaggio = t('roi.consiglio.pianoConviene' + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(resp.pianoNome), totale: fmtE(resp.totale) })
-      + risparmio + `<br><span style="font-size:11px;color:#6b7280">${t('roi.consiglio.clicaSeleziona')}</span>` + saltati;
+      ? `<br><span style="font-size:11px;color:#6b7280">${t(k('risparmioAttuale'), { risparmio: fmtE(resp.totaleAttuale - resp.totale) })}</span>` : '';
+    messaggio = t(k('pianoConviene') + (resp.nEsami === 1 ? '.uno' : '.molti'), { n: resp.nEsami, pianoNome: escHtml(resp.pianoNome), totale: fmtE(resp.totale) })
+      + risparmio + `<br><span style="font-size:11px;color:#6b7280">${t(k('clicaSeleziona'))}</span>` + saltati;
   }
 
   banner.innerHTML = `
     <span class="roi-consiglio-close" onclick="event.stopPropagation(); this.parentElement.style.display='none'">×</span>
-    <div ${stesso ? '' : `onclick="selezionaPiano(${resp.pianoId})" style="cursor:pointer"`}>${messaggio}</div>
+    <div ${stesso ? '' : `onclick="${cfg.seleziona}(${resp.pianoId})" style="cursor:pointer"`}>${messaggio}</div>
   `;
   banner.style.display = 'block';
 }
+
+// I nomi di sempre, per il calcolatore esami (chiamati in molti punti).
+function mostraClassificaPiani() { return mostraClassifica('esami'); }
+function mostraConsiglioTotale() { return mostraConsiglio('esami'); }
+// Gli stessi due, per il calcolatore macchinari.
+function aggiornaConsiglioClip() { mostraConsiglio('clip'); mostraClassifica('clip'); }
 
 async function mostraConsiglioPiano(esame) {
   const banner = el('roi-consiglio-banner');
@@ -4745,7 +4812,9 @@ async function aggiornaPrezziAutomaticiClip(tr, force = false) {
     aggiornaRigaDOMClip(tr);
   }
 
-  if (!profilo) { aggiornaRigaDOMClip(tr); return; }
+  // Profilo svuotato: come nel calcolatore esami, consiglio e classifica si
+  // ricalcolano senza questa riga.
+  if (!profilo) { aggiornaRigaDOMClip(tr); aggiornaConsiglioClip(); return; }
 
   // Il riempimento di listino_lav e' delegato: se un listino Mylav e' scelto
   // per questa riga e la contiene, il valore viene da li'; altrimenti e'
@@ -4781,6 +4850,7 @@ async function aggiornaPrezziAutomaticiClip(tr, force = false) {
   }
 
   aggiornaRigaDOMClip(tr);
+  aggiornaConsiglioClip();
 }
 
 async function suCampoUscitoClip(tr, col) {
@@ -4790,6 +4860,9 @@ async function suCampoUscitoClip(tr, col) {
   else if (col === 'clip_nome') await compilaDaClip(tr);
   else if (col === 'listino_mylav') await suListinoMylavCambiatoClip(tr);
   else if (col === 'profilo_mylav') await aggiornaPrezziAutomaticiClip(tr);
+  // Una quantita', i pezzi o un prezzo cambiano i totali: la classifica dei
+  // listini e il consiglio si rifanno, invece di restare fermi al valore di prima.
+  else if (COLONNE_CLIP.some(c => c.col === col && c.tipo === 'numero')) aggiornaConsiglioClip();
 }
 
 // Selezionato un suggerimento dalla tendina profilo Mylav: solo la cascata di
@@ -4914,7 +4987,10 @@ const motoreClip = window.Calcolatore.crea({
 
 function aggiornaRigaDOMClip(tr) { motoreClip.aggiornaRiga(tr); }
 function addRigaClip() { motoreClip.aggiungiRiga(); }
-function removeRigaClip(idx) { motoreClip.rimuoviRiga(idx); }
+function removeRigaClip(idx) {
+  motoreClip.rimuoviRiga(idx);
+  aggiornaConsiglioClip();
+}
 function getClipRigheValide() { return motoreClip.righeValide(); }
 function clipMsg(msg, tipo) { motoreClip.messaggio(msg, tipo); }
 
@@ -5011,6 +5087,7 @@ function buildClipSectionHtml() {
     </div>
     <div id="clip-msg" style="margin-top:8px;font-size:12px;min-height:18px"></div>
     <div id="clip-ac" class="roi-autocomplete" style="display:none"></div>
+    <div id="clip-consiglio-banner" class="roi-consiglio-banner" style="display:none"></div>
   `;
 }
 
@@ -5021,6 +5098,7 @@ function buildClipActionsHtml() {
       <button class="btn-outline" onclick="esportaExcelClip()">${t('roi.esportaExcel')}</button>
     </div>
     <button class="roi-clear-all-btn" onclick="rimuoviTuttoClip()">${t('confronto.rimuoviTutto')}</button>
+    <div id="clip-classifica"></div>
   `;
 }
 
@@ -5055,6 +5133,8 @@ async function renderCalcolatoreClip() {
 
   el('clip-hero').innerHTML = buildClipSectionHtml() + buildClipActionsHtml();
   motoreClip.inizializzaEventi();
+  // Un calcolo riaperto mostra subito consiglio e classifica dei listini.
+  aggiornaConsiglioClip();
 }
 
 async function salvaCalcoloClip() {
